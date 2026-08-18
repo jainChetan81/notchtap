@@ -1,42 +1,14 @@
-//! the news icon's CHARGE state
-//! machine — pure, no I/O, same discipline `tabs.rs` follows
-//! (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many items have landed
-//! since the news icon was last visited and whether a full batch has
-//! accumulated by a poll-cycle boundary, per spec
-//! `docs/superpowers/specs/2026-08-02-tab-notch-design.md` §8 / open
-//! question 4's default (ship both the fill level and the count badge).
+//! The News Charge state machine — pure, no I/O, same discipline
+//! `tabs.rs` follows (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many
+//! items have landed since the news icon was last visited and whether a
+//! full batch has accumulated by a poll-cycle boundary
+//! (`docs/superpowers/specs/2026-08-02-tab-notch-design.md`).
 //!
-//! An edge-trigger
-//! discipline: `charged` is not live "is a full batch sitting there right
-//! now" arithmetic re-evaluated on every read — `cycle_end()` sets it
-//! once, at the moment a cycle closes with the batch full, and only
-//! `visit()` clears it. A charge earned on one cycle survives however
-//! many further cycles pass without a visit — it stays fired until
-//! visited rather than the next poll silently unfiring it.
-//!
-//! **Design decision, recorded rather than left implicit**: "charged"
-//! means cycle-ended AND the batch is FULL (`items_since_visit >=
-//! batch_size`), not cycle-ended with merely *any* items waiting. This
-//! follows the mission brief's own literal wording — "glowing when the
-//! user-defined batch is ready" — over the looser "anything landed"
-//! reading. If that reading turns out wrong once this is on real
-//! hardware next to the actual RSS cadence, the fix is a single
-//! comparison in `cycle_end` below, not a restructure.
-//!
-//! Not yet wired into `rss_poller.rs`'s poll loop or into `StatusState`
-//! (`status.rs`): the wire shape this feeds (`StatusState`'s icon-
-//! presence extension) is Slice A's call per the plan's own §0 cross-
-//! slice contract note, and Slice A's remaining scope is itself gated on
-//! the Mac Mini click-detection hand-off — wiring this in ahead of that
-//! risks inventing a shape Slice A/K's integration then has to unwind.
-//! This module knows about neither `rss_poller.rs` nor `StatusState`; it
-//! is ready to be driven by whichever one ends up calling it.
-//!
-//! `#![allow(dead_code)]`: same staged-ahead-of-its-caller situation as
-//! `tabs.rs` — `cargo clippy --all-targets -D warnings` (the CI gate,
-//! justfile's `check-rust`) has no exemption for a plain `pub fn` the way
-//! it does for `#[cfg(test)]`-reached items. Remove this attribute the
-//! moment `NewsCharge` gets a real call site outside its own tests.
+//! `charged` is EDGE-TRIGGERED, not live "is a full batch sitting there
+//! right now" arithmetic re-evaluated on every read: `cycle_end` sets it
+//! once, at the moment a cycle closes with the batch FULL, and only
+//! `visit` clears it — a charge earned on one cycle survives however
+//! many further cycles pass without a visit.
 
 /// Tracks landed-since-visit count and the edge-triggered "charged" flag
 /// for the news icon. `batch_size` is clamped to at least 1 at
@@ -77,17 +49,17 @@ impl NewsCharge {
         }
     }
 
-    /// The news icon being visited (selected, or otherwise acknowledged)
-    /// — spec §7/§8: "cleared, not remembered". Resets both the count and
-    /// the charge, re-arming the edge trigger for the next batch.
+    /// The news icon being visited (selected, or otherwise
+    /// acknowledged) — cleared, not remembered. Resets both the count
+    /// and the charge, re-arming the edge trigger for the next batch.
     pub fn visit(&mut self) {
         self.items_since_visit = 0;
         self.charged = false;
     }
 
     /// `0.0..=1.0`, clamped — the interior fill level the icon's charging
-    /// animation reads (`icon-strip.css`'s `.charge` transform, plan
-    /// 171's `NEWS_CHARGE_STEP_MS` token). Never exceeds `1.0` even once
+    /// animation reads (`icon-strip.css`'s `.charge` transform, the
+    /// `NEWS_CHARGE_STEP_MS` token). Never exceeds `1.0` even once
     /// `items_since_visit` overshoots `batch_size` (a cycle can land more
     /// than one batch's worth at once).
     pub fn fill(&self) -> f32 {
@@ -98,9 +70,8 @@ impl NewsCharge {
         self.charged
     }
 
-    /// The literal count badge (spec §12 open question 5's "ship both"
-    /// default) — items landed since the last visit, uncapped (unlike
-    /// `fill`, which clamps for the animation).
+    /// The literal count badge — items landed since the last visit,
+    /// uncapped (unlike `fill`, which clamps for the animation).
     pub fn count(&self) -> usize {
         self.items_since_visit
     }

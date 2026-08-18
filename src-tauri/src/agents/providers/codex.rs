@@ -24,15 +24,16 @@
 //!
 //! ## Sanitization
 //!
-//! Same discipline as `claude_code.rs`: `tool_name` forwarded as a
-//! short identifier; `tool_input`/`tool_response` never forwarded
-//! wholesale (`tool_input.command`, `tool_input.description`, and
-//! `tool_response` are never read at all); `Path` detail only from a
-//! known path-shaped key, basename only; free text never forwarded.
+//! `super::wire`'s `safe_tool_name` and `safe_path_detail` carry the
+//! shared discipline for tool names and paths. On top of that this
+//! parser never reads `tool_response` at all, and every `summary` is a
+//! fixed template — free text is never forwarded.
 
 use thiserror::Error;
 
-use super::wire::NormalizedEvent;
+use super::wire::{
+    basename, safe_path_detail, safe_tool_name, Mapped, NormalizedEvent, RawHookPayload,
+};
 
 /// Codex's declared capability set, restricted to what the documented
 /// hook surface actually supports — see the module doc for why
@@ -56,70 +57,6 @@ pub enum CodexParseError {
     MissingHookEventName,
     #[error("unsupported hook_event_name: {0}")]
     UnsupportedHookEvent(String),
-}
-
-/// The raw wire shape Codex hooks send — every field is `Option` so a
-/// payload missing a field this parser doesn't use for a given event
-/// still deserializes cleanly.
-#[derive(Debug, serde::Deserialize)]
-struct RawHookPayload {
-    session_id: Option<String>,
-    hook_event_name: Option<String>,
-    cwd: Option<String>,
-    // SessionStart
-    source: Option<String>,
-    // SessionEnd — an open string, not a hardcoded "other", so a future
-    // documented value passes through unchanged.
-    reason: Option<String>,
-    // PermissionRequest / PreToolUse / PostToolUse
-    tool_name: Option<String>,
-    tool_input: Option<serde_json::Value>,
-    // SubagentStart / SubagentStop
-    agent_id: Option<String>,
-    agent_type: Option<String>,
-}
-
-/// One `(label, value)`-shaped intermediate the match arms below build
-/// before wrapping into a [`NormalizedEvent`].
-struct Mapped {
-    kind: &'static str,
-    state: &'static str,
-    terminal: bool,
-    summary: Option<String>,
-    details: Vec<(String, String)>,
-    subagent: Option<(String, Option<String>, Option<String>)>,
-}
-
-fn basename(path: &str) -> Option<String> {
-    std::path::Path::new(path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-}
-
-/// Never empty — a missing/blank `tool_name` becomes the generic
-/// `"a tool"` rather than an empty detail value. Mirrors
-/// `claude_code::safe_tool_name`.
-fn safe_tool_name(tool_name: Option<&str>) -> String {
-    tool_name
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("a tool")
-        .to_string()
-}
-
-/// Pulls a basename-only path detail out of `tool_input` — only from a
-/// small, known set of path-shaped keys, NEVER from `command` (where a
-/// full shell command line would live) or `description` (free text).
-/// Mirrors `claude_code::safe_path_detail`.
-fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, String)> {
-    let obj = tool_input?.as_object()?;
-    for key in ["file_path", "path", "notebook_path"] {
-        if let Some(raw) = obj.get(key).and_then(|v| v.as_str()) {
-            let value = basename(raw).unwrap_or_else(|| raw.to_string());
-            return Some(("Path".to_string(), value));
-        }
-    }
-    None
 }
 
 fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, CodexParseError> {

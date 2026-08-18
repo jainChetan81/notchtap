@@ -1,21 +1,19 @@
-// the agent tab's below-block —
-// mounted by whichever parent owns the icon-strip's hover-with-a-
-// selection shell (slice K's integration; this component only renders
-// what goes INSIDE `.below-block`, the same scope every other slice in
-// this plan keeps to). Spec section 7's agent bullet, verbatim:
+// The agent tab's below-block — mounted by whichever parent owns the
+// icon-strip's hover-with-a-selection shell. This component only renders
+// what goes INSIDE `.below-block`.
 //
-// "the hero (one, the VIEWED session) through the same unified
-// template AgentHeroCard/AgentBoard.tsx already render ... at shipped
-// card height — hero only in compact, no roster rows. Below the hero,
-// the session position bar (§8) replaces the roster stack."
+// It renders the hero (one: the VIEWED session) through the same unified
+// template `AgentHeroCard`/`AgentBoard.tsx` render, at shipped card
+// height — hero only in compact, no roster rows. Below the hero, the
+// session position bar stands in for the roster stack.
 //
 // Deliberately NOT `AgentBoard.tsx` reused wholesale: that component
 // mounts its OWN shell (`.card-assembly.agent-board-shell`), has its own
 // hover-expand mechanism (`expanded` prop, the scrollable roster list),
 // and picks its "primary" session by PRIORITY (highest-ranked state
 // first) rather than by an operator-driven cursor. This tab is a
-// different selection axis entirely — `prefix-[`/`prefix-]` (slice D's
-// `PrefixAction::PreviousSession`/`NextSession`) cycles a VIEWED index
+// different selection axis entirely — `prefix-[`/`prefix-]`
+// (`PrefixAction::PreviousSession`/`NextSession`) cycles a VIEWED index
 // through ALL sessions in wire order, independent of which one AgentBoard
 // would rank primary. What genuinely IS shared (the hero's title/
 // subtitle/body/facts/priority derivation) is reused via
@@ -28,12 +26,12 @@ import { agentHeroPropsFor } from "./AgentBoard";
 import { AgentHeroCard } from "./NotificationBody";
 import { PositionBar } from "./PositionBar";
 
-/// `prefix-[`/`prefix-]` (spec section 9): wraps at both ends rather
+/// `prefix-[`/`prefix-]` cycling: wraps at both ends rather
 /// than clamping, so cycling never dead-ends at the first/last session —
 /// same reasoning `Tab::ORDER`-adjacent cycling would want on the rust
 /// side, kept here as the frontend's own pure mirror since the VIEWED
 /// index is frontend-local state (rust only emits which ACTION fired,
-/// per slice D's `PrefixAction::PreviousSession`/`NextSession` — it does
+/// via `PrefixAction::PreviousSession`/`NextSession` — it does
 /// not itself track a viewed index; see prefix.rs's own doc on that
 /// split). A non-positive `total` returns 0, matching `PositionBar`'s
 /// own "nothing to show" floor.

@@ -57,8 +57,8 @@ export function useTabSelection(): Tab | null {
     listen<unknown>("tab-selection-changed", ({ payload }) =>
       // A malformed payload falls back to "nothing selected" whole — the
       // same all-off posture `useStatusState`'s FALLBACK_STATUS takes,
-      // and the one state that can never render wrong data (spec section
-      // 7's "none" page shows no below-block at all).
+      // and the one state that can never render wrong data (the "none"
+      // page shows no below-block at all).
       setSelected(isValidTabSelection(payload) ? payload.selected : null),
     )
       .then((fn) => {

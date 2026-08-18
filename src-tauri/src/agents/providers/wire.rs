@@ -6,6 +6,14 @@
 //! Pure — no HTTP, no clock read, no randomness. `eventId`/
 //! `occurredAtMs` are supplied by the caller
 //! (`src/bin/notchtap_agent.rs`) because generating them is impure.
+//!
+//! Also holds what every hook parser shares: the `RawHookPayload`
+//! stdin shape, the `Mapped` intermediate its match arms build, and
+//! the sanitization helpers `basename`, `safe_tool_name`,
+//! `safe_path_detail`, `classify_notification`. Those helpers encode a
+//! forwarding decision the server-side caps in `agents::adapter`
+//! cannot undo, so they live in exactly one place and no parser may
+//! reimplement them.
 
 use serde_json::{json, Value};
 
@@ -96,4 +104,115 @@ pub fn build_wire_body(
     }
 
     body
+}
+
+/// The raw hook-payload shape a runtime writes to a hook command's
+/// stdin. Every field is `Option` so a payload missing a field the
+/// reading parser doesn't use for a given event still deserializes
+/// cleanly; unknown keys are ignored.
+///
+/// SessionEnd names its reason differently per runtime — Claude Code
+/// and Kimi send `end_reason`, Codex sends `reason` — so both are kept
+/// as distinct fields and each parser reads only its own runtime's.
+/// Both stay open strings rather than enums, so a future documented
+/// value passes through unchanged.
+#[derive(Debug, serde::Deserialize)]
+pub(super) struct RawHookPayload {
+    pub(super) session_id: Option<String>,
+    pub(super) hook_event_name: Option<String>,
+    pub(super) cwd: Option<String>,
+    // SessionStart
+    pub(super) source: Option<String>,
+    // SessionEnd (Claude Code, Kimi)
+    pub(super) end_reason: Option<String>,
+    // SessionEnd (Codex)
+    pub(super) reason: Option<String>,
+    // PermissionRequest / PreToolUse / PostToolUse / PostToolUseFailure
+    pub(super) tool_name: Option<String>,
+    pub(super) tool_input: Option<serde_json::Value>,
+    // Notification
+    pub(super) notification_type: Option<String>,
+    // StopFailure
+    pub(super) error_type: Option<String>,
+    // SubagentStart / SubagentStop
+    pub(super) agent_id: Option<String>,
+    pub(super) agent_type: Option<String>,
+}
+
+/// One `(label, value)`-shaped intermediate a parser's match arms build
+/// before wrapping into a [`NormalizedEvent`].
+pub(super) struct Mapped {
+    pub(super) kind: &'static str,
+    pub(super) state: &'static str,
+    pub(super) terminal: bool,
+    pub(super) summary: Option<String>,
+    pub(super) details: Vec<(String, String)>,
+    pub(super) subagent: Option<(String, Option<String>, Option<String>)>,
+}
+
+pub(super) fn basename(path: &str) -> Option<String> {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+}
+
+/// Never empty — a missing/blank `tool_name` becomes the generic
+/// `"a tool"` rather than an empty detail value.
+pub(super) fn safe_tool_name(tool_name: Option<&str>) -> String {
+    tool_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("a tool")
+        .to_string()
+}
+
+/// Pulls a basename-only `Path` detail out of a payload's `tool_input`.
+/// Reads ONLY the path-shaped keys `file_path`, `path`,
+/// `notebook_path`, in that order, and keeps just the basename. Every
+/// other key is ignored — `command` (where a full shell command line
+/// lives) and `description` (free text) are deliberately excluded, so
+/// raw tool input never reaches the wire. Returns `None` when
+/// `tool_input` is absent, is not an object, or carries none of those
+/// keys as a string.
+pub(super) fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, String)> {
+    let obj = tool_input?.as_object()?;
+    for key in ["file_path", "path", "notebook_path"] {
+        if let Some(raw) = obj.get(key).and_then(|v| v.as_str()) {
+            let value = basename(raw).unwrap_or_else(|| raw.to_string());
+            return Some(("Path".to_string(), value));
+        }
+    }
+    None
+}
+
+/// Maps a `Notification` payload by its closed `notification_type` enum
+/// only, never by `message` — an unrecognized value becomes
+/// `Informational`; wording is never parsed to infer state.
+pub(super) fn classify_notification(notification_type: Option<&str>) -> Mapped {
+    match notification_type {
+        Some("permission_prompt") => Mapped {
+            kind: "permission_requested",
+            state: "waiting_for_permission",
+            terminal: false,
+            summary: Some("Approval needed".to_string()),
+            details: Vec::new(),
+            subagent: None,
+        },
+        Some("idle_prompt") | Some("agent_needs_input") => Mapped {
+            kind: "input_required",
+            state: "waiting_for_input",
+            terminal: false,
+            summary: Some("Waiting for input".to_string()),
+            details: Vec::new(),
+            subagent: None,
+        },
+        _ => Mapped {
+            kind: "informational",
+            state: "working",
+            terminal: false,
+            summary: Some("Notification".to_string()),
+            details: Vec::new(),
+            subagent: None,
+        },
+    }
 }

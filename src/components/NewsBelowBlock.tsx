@@ -62,16 +62,11 @@ import { Stamp } from "./Stamp";
 // **Flagged, not improvised** (matching `FootballHeroCard`'s own
 // `secondaryMatches` doc in `NotificationBody.tsx`): nothing on the wire
 // currently supplies this shape. `StatusState.news` (`src-tauri/src/
-// status.rs`) is still just `{ enabled: bool }` (confirmed by reading it
-// directly), and `NewsCharge` (`src-tauri/src/news_charge.rs`, Slice B) is
-// a pure state machine with no caller wiring it into `rss_poller.rs`'s
-// poll loop or onto the wire at all yet. Extending that wire shape is
-// explicitly Slice A's call per the plan's own section 0 cross-slice
-// contract ("Icon presence/liveness... Slice A owns defining this"), and
-// out of this slice's file scope (`src-tauri/src/status.rs`/
-// `news_charge.rs` are both off-limits here per this slice's own
-// boundaries). This component is built to be correct once a real caller
-// supplies these fields; until then nothing populates it.
+// status.rs`) is just `{ enabled: bool }`, and `NewsCharge`
+// (`src-tauri/src/news_charge.rs`) is a pure state machine with no
+// caller wiring it into `rss_poller.rs`'s poll loop or onto the wire.
+// This component is built to be correct once a real caller supplies
+// these fields; until then nothing populates it.
 export interface NewsStoryView {
   /** Masthead label, e.g. "The Verge" — already resolved (the shipped
    * card's own `slot.source ?? "RSS"` fallback, `NotificationBody.tsx`,
@@ -79,7 +74,7 @@ export interface NewsStoryView {
   source: string;
   headline: string;
   /** The manifest's summary body — `Manifest`'s own `body` prop, opened
-   * via `prefix+enter` (spec section 7's news bullet). */
+   * via `prefix+enter`. */
   summary: string;
   /** Raw category key (e.g. "tech"), fed through the same
    * `categoryClass`/`categoryLabel` helpers `StatusRailCard.tsx` already
@@ -116,8 +111,8 @@ export function NewsBelowBlock({
   freshCount: number;
   cycleEndedAgo: string | null;
   /** Whether the summary `<Manifest>` panel is open — `prefix+enter`/`o`
-   * (spec section 9: "the ONLY expansion gesture that exists anywhere in
-   * this feature"). Required, not defaulted, matching
+   * — the ONLY expansion gesture that exists anywhere in this feature.
+   * Required, not defaulted, matching
    * `NotificationBody.tsx`'s own `expanded` prop — an explicit caller
    * decision, never an implicit default that could silently diverge from
    * the shell's real expand state. */

@@ -7,8 +7,8 @@ import { useEffect, useState } from "react";
 /// viewed-session index is only meaningful once sessions exist).
 /// **Rust owns this value, not this hook** — both the manual prefix-key
 /// cycling (`handle_prefix_followup` in `src-tauri/src/lib.rs`) and the
-/// auto-advance timer (this plan's Part 2) write `tab_wire.viewed_session`
-/// and emit this event; the frontend only ever renders what it's told.
+/// auto-advance timer write `tab_wire.viewed_session` and emit this
+/// event; the frontend only ever renders what it's told.
 export type AgentViewedSessionPayload = { index: number };
 
 export function isValidAgentViewedSession(v: unknown): v is AgentViewedSessionPayload {

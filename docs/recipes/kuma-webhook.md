@@ -95,8 +95,8 @@ unlabeled manual pushes, not just kuma's.
   machine can already post to `/notify` (`ARCHITECTURE.md` §7's own
   documented scope note); this recipe doesn't change or worsen that, it's
   an existing, accepted property of the endpoint.
-- **whether this is worth configuring at all** is genuinely unresolved
-  (`IMPLEMENTATION_PLAN.md` §8): if you're rarely looking at this machine's
+- **whether this is worth configuring at all** is genuinely unresolved:
+  if you're rarely looking at this machine's
   screen when a monitor fires, kuma's own telegram/other alert channels
   already cover the same signal and this recipe adds nothing beyond a
   redundant notification path.

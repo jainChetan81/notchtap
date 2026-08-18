@@ -7,21 +7,17 @@ import { Button } from "./button";
 // auto-cleanup (which hooks a global `afterEach`) never registers.
 afterEach(cleanup);
 
-// the bare `transition-all` this component used to
-// carry animated every property change, including ones with no visual
-// transition author ever intended (a broad, imprecise wildcard). Swapping
-// it for an explicit property list must keep `translate`/`scale` in that
-// list — it's what makes `active:not-aria-[haspopup]:translate-y-px` and
-// `active:scale-[0.96]`'s press feedback actually animate instead of
-// snapping. This is a string-level pin, not a computed-style assertion:
-// jsdom doesn't run CSS transitions, so the only thing to assert is that
-// the utility class carries the right transition-property list.
-// CodeRabbit review (PR #11): this pin originally named `transform`, not
-// `translate,scale` — Tailwind v4 emits `scale-*`/`translate-*` utilities
-// as the standalone `scale`/`translate` CSS properties, not `transform`
-// (confirmed against the built CSS output), so the pin was guarding the
-// wrong property name the whole time. Updated to match the real fix.
-describe("Button — transition-property (plan 126)", () => {
+// The button carries an explicit transition-property list, never the
+// bare `transition-all` wildcard (which animates every property change,
+// including ones no author intended). That list must keep `translate`
+// and `scale` — they are what make `active:not-aria-[haspopup]:
+// translate-y-px` and `active:scale-[0.96]`'s press feedback animate
+// instead of snapping. Tailwind v4 emits `scale-*`/`translate-*` as the
+// standalone `scale`/`translate` CSS properties, NOT as `transform`, so
+// the pin names those two and never `transform`. String-level pin, not a
+// computed-style assertion: jsdom doesn't run CSS transitions, so the
+// only thing to assert is the utility class's own property list.
+describe("Button — transition-property", () => {
   it("keeps translate/scale in the transition property list, and drops the bare transition-all wildcard", () => {
     render(<Button>Click me</Button>);
     const button = screen.getByRole("button", { name: "Click me" });

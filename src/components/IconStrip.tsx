@@ -8,10 +8,10 @@
 // collapse to zero width" contract exactly: this component renders every
 // tab UNCONDITIONALLY, in the fixed strip order, and lets CSS width/
 // opacity/scale transitions do the collapsing — never `display: none`,
-// per spec section 6's own "must never jump mid-hover" rule.
+// per the "must never jump mid-hover" rule.
 //
-// All glyphs are original notchtap drawings (CLAUDE.md "naming";
-// spec section 2 decision 13) — hand-authored paths, not a third-party
+// All glyphs are original notchtap drawings (CLAUDE.md "naming") —
+// hand-authored paths, not a third-party
 // icon set. Redraw freely; the shapes here are a first pass, not a
 // locked asset.
 import { type ReactNode, useId } from "react";
@@ -209,9 +209,9 @@ export function IconStrip({
             className={iconClass(tab, state, isSelected, isCharged)}
             aria-label={iconAriaLabel(tab, newsCount)}
             aria-pressed={isSelected}
-            // A hidden icon is not a real control — spec section 6's own
-            // "hidden AND opacity 0 AND pointer-events none" rule
-            // (mirrored in CSS); `disabled` is the React/DOM-level twin
+            // A hidden icon is not a real control — the "hidden AND
+            // opacity 0 AND pointer-events none" rule (mirrored in CSS);
+            // `disabled` is the React/DOM-level twin
             // of that same rule, not a separate decision.
             disabled={!isPresent}
             onClick={isPresent ? () => onSelect?.(tab) : undefined}

@@ -2,12 +2,8 @@
 //! anywhere in this module. `lib.rs` wires the `tauri-nspanel`
 //! tracking-area callbacks to the functions here; this module never
 //! touches a window, a lock, or an event object, so it is unit-testable
-//! without a GUI, the same discipline `presentation::presentation_mode`
-//! follows (`docs/TESTING_STRATEGY.md` §4.4).
-//!
-//! Rationale of record: `docs/design/hover-cursor-tracking.md` — §2 for
-//! why a tracking area works at all under
-//! `set_ignore_cursor_events(true)`, §6 for the rect-derivation decision.
+//! without a GUI (`docs/TESTING_STRATEGY.md` §4.4). Design rationale:
+//! `docs/design/hover-cursor-tracking.md`.
 
 use crate::presentation::Mode;
 
@@ -180,7 +176,7 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 }
 
 /// The screen-space rect, in AppKit window coordinates, currently
-/// covered by the rendered card — the region where hover should count.
+/// covered by the rendered card — the region where hover counts.
 /// Deliberately CONSERVATIVE: it may be slightly wider than the true
 /// rendered edge, never narrower.
 ///
@@ -189,47 +185,36 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 /// MUST change the constants at the top of this file — see
 /// `active_card_rect_geometry_constants_match_named_style_constants`.
 ///
-/// The WIDTH FORMULA never branches on `mode` — idle/showing/expanded
-/// use the same three formulas in both notch and HUD mode. `mode`
-/// resolves exactly one thing: the cutout TERM those formulas take as
-/// input — the measured hardware value in notch mode, the
-/// `HUD_CUTOUT_W`/`HUD_CUTOUT_H` synthetic constants in HUD mode.
-///
-/// The vertical span: `top` is always `0.0`, and `height` derives from
-/// the assembly state — idle with peek closed: cutout height alone; idle
-/// with peek open (`idle_peek_open`): `IDLE_PEEK_BELOW_BLOCK_H` added;
-/// showing: `BELOW_BLOCK_SHOWING_H` added; expanded (manually or by
-/// hover): `BELOW_BLOCK_EXPANDED_H` added. Total capped at
-/// `WINDOW_HEIGHT`, flipped through `css_top_down_to_appkit_y` so the
-/// one coordinate-flip seam stays in exactly one place.
+/// The WIDTH FORMULA never branches on `mode`; `mode` resolves exactly
+/// one thing, the cutout TERM those formulas take as input — the
+/// measured hardware value in notch mode, the `HUD_CUTOUT_W`/
+/// `HUD_CUTOUT_H` synthetic constants in HUD mode. `top` is always
+/// `0.0`; `height` is the cutout height plus the below-block term for
+/// the current assembly state, capped at `WINDOW_HEIGHT` and flipped
+/// through `css_top_down_to_appkit_y` so the coordinate-flip seam stays
+/// in exactly one place.
 ///
 /// `scale` is `Config.appearance.card_scale` — a COSMETIC preference. It
-/// multiplies every design width (the flank px figures, matching
-/// `styles.css`'s `var(--card-scale)`) but must NOT multiply the cutout
-/// terms in ANY mode: those are hardware/synthetic measurements (the
-/// physical `NSScreen` safe-area inset via `notchtap-detect`, or the HUD
-/// constants), never user-scalable design values. Do not "fix" a cutout
-/// term back to multiplying by `scale` — that reverts a deliberate,
-/// decided exemption, not an oversight.
+/// multiplies every design width (matching `styles.css`'s
+/// `var(--card-scale)`) but must NOT multiply the cutout terms in ANY
+/// mode: those are hardware/synthetic measurements (the physical
+/// `NSScreen` safe-area inset via `notchtap-detect`, or the HUD
+/// constants), never user-scalable design values — a deliberate
+/// exemption, not an oversight.
 ///
-/// `idle_peek_open` is deliberately NOT "is there live-match data" — it
-/// is hover HYSTERESIS: "as of the last computed frame, was the cursor
-/// already registered as hovering." It lets the rect GROW to cover the
-/// peek's newly-opened area once hover starts (so moving further down
-/// into the just-revealed area doesn't snap the peek shut), while
-/// staying at the tight cutout-only height the rest of the time. Only
-/// relevant while `!visible`; ignored whenever `visible` is `true`.
-///
-/// `hover_expand_open` is its exact mirror on the OTHER side of the
-/// `visible` branch: a SHOWING card also paints expanded while hovered
-/// (`src/useExitChoreography.ts`: `slot.expanded || hovered`), so the
-/// rect must grow the same way or the revealed manifest is painted but
-/// not hoverable and the card collapses out from under the pointer in a
-/// flicker loop. `lib.rs` feeds ONE latch read into BOTH parameters;
-/// entering requires the SMALL rect, leaving requires exiting the LARGE
-/// one — real hysteresis. The latch resets whenever the visible item
-/// changes (the `slot-state` listener in `lib.rs`), so a freshly
-/// promoted card starts compact. Only relevant while `visible`.
+/// `idle_peek_open` and `hover_expand_open` are ONE hover latch read on
+/// the two sides of the `visible` branch, and neither means "is there
+/// data": both mean "as of the last computed frame, was the cursor
+/// already registered as hovering." The rect must GROW to cover whatever
+/// the hover itself revealed — the idle peek while `!visible`, the
+/// expanded manifest while `visible` — or the revealed area is painted
+/// but not hoverable and the card collapses out from under the pointer
+/// in a flicker loop. `hover_expand_open` mirrors
+/// `src/useExitChoreography.ts`'s `slot.expanded || hovered` exactly.
+/// Entering requires the SMALL rect, leaving requires exiting the LARGE
+/// one — real hysteresis. `lib.rs` resets the latch whenever the visible
+/// item changes (its `slot-state` listener), so a freshly promoted card
+/// starts compact.
 // The 8th parameter crosses clippy's default 7-arg threshold. Same call
 // as `lib.rs`'s `hover_point_is_over_card`/
 // `emit_hover_changed_if_transitioned` (which carry the same `#[allow]`
@@ -300,55 +285,29 @@ pub fn active_card_rect(
     }
 }
 
-// the Agent Board's RESTING
-// hover-detection rect — a card conservatively estimated the same way
-// every other formula above is, but sized off the board's own shape
+// The Agent Board's hover-detection rect — conservatively estimated the
+// same way every formula above is, but sized off the board's own shape
 // (`AgentBoard.tsx`'s permanent `.card-assembly.expanded` class, plus
 // one compact `.agent-row` per non-primary session) instead of the
-// Notification queue's `visible`/`expanded` state, which
-// `hover_point_is_over_card` (`lib.rs`) can't derive board-ness from at
-// all — the Slot reads `Empty` the whole time the Board is showing.
-//
-// P0 FIX (tab-notch redesign, 2026-08-02): the RESTING board rect stays
-// within the fixed `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas, but the EXPANDED
-// board (hovered, `lib.rs`'s `try_expand_board_for_hover`) genuinely
-// resizes the real native window taller via
-// `agents::expand::expanded_board_frame` — `content_height` there is
-// `HEADER_HEIGHT (210) + EXPANDED_ROW_HEIGHT (96) * extra_rows`, which
-// exceeds `WINDOW_HEIGHT` (300) with just one extra session. Once that
-// resize has actually happened, every subsequent AppKit `locationInWindow`
-// mouse event is reported relative to the NEW, taller window frame — but
-// this function used to unconditionally flip coordinates through
-// `css_top_down_to_appkit_y(WINDOW_HEIGHT, ...)`, i.e. it kept assuming a
-// 300px-tall canvas no matter how tall the real window had actually grown.
-// That stale assumption is exactly the bug: a point genuinely far down in
-// the now-much-taller real window (well below the last rendered row) could
-// still fall inside the [0, 300]-relative rect the old math produced,
-// because that range no longer corresponded to "the top of the window"
-// once the window itself grew past 300px. `hovered=true` then fired for a
-// cursor nowhere near the painted card.
-//
-// The fix: the caller (`lib.rs`) tracks the REAL, currently-applied window
-// height in `BoardFrameState.height` — set from the exact same `frame`
-// value `try_expand_board_for_hover` passed to `window.set_size`, so it
-// can never drift from what the OS window actually is — and passes it in
-// here as `window_height`, which replaces every use of the module-level
-// `WINDOW_HEIGHT` constant for this rect's height cap and y-flip. Ordinary
-// (non-board) hover detection is unaffected: `active_card_rect` never
-// triggers a real resize, so its canvas is always the true `WINDOW_HEIGHT`
-// and it keeps using the constant directly.
+// Notification queue's `visible`/`expanded` state: the Slot reads
+// `Empty` the whole time the Board is showing, so
+// `hover_point_is_over_card` (`lib.rs`) cannot derive board-ness from it
+// at all.
 const BOARD_PRIMARY_H: f64 = 150.0; // conservative estimate, agent-board.css's `.agent-board-primary` block
 const BOARD_ROW_H: f64 = 18.0; // conservative estimate, agent-board.css's `.agent-row`
 
 /// `session_count` is every session the Board currently renders (primary
 /// + rows) — `lib.rs` reads this from `AgentBoardPublisher::last_session_count`.
 ///
-/// `window_height` is the REAL, currently-applied native window height —
-/// `WINDOW_HEIGHT` whenever the board frame is resting, or the taller
-/// applied `agents::expand::expanded_board_frame` height while a hover has
-/// actually expanded it (see the P0 FIX note above `BOARD_PRIMARY_H`).
-/// Passing `WINDOW_HEIGHT` itself here reproduces the pre-fix behavior
-/// exactly, which is what every resting-state test below still does.
+/// `window_height` MUST be the REAL, currently-applied native window
+/// height, never the `WINDOW_HEIGHT` constant: hovering the board
+/// genuinely resizes the native window taller via
+/// `agents::expand::expanded_board_frame`, and AppKit then reports every
+/// `locationInWindow` against that taller frame. Flipping coordinates
+/// against a stale 300px canvas makes a point far below the painted
+/// board read as hovered. `lib.rs` tracks the applied height in
+/// `BoardFrameState.height`, set from the same frame value passed to
+/// `window.set_size`, so it cannot drift from the real window.
 pub fn board_rect(
     mode: Mode,
     cutout_width: f64,
@@ -390,9 +349,9 @@ pub fn board_rect(
 mod tests {
     use super::*;
 
-    // --- active_card_rect: 's three state formulas, HUD mode
-    // (effective cutout = HUD_CUTOUT_W, always — the `cutout_width`
-    // argument is irrelevant in this mode, pinned below), at scale 1.0 ---
+    // --- active_card_rect's three state formulas, HUD mode (effective
+    // cutout = HUD_CUTOUT_W, always — the `cutout_width` argument is
+    // irrelevant in this mode, pinned below), at scale 1.0 ---
 
     #[test]
     fn hud_idle_is_cutout_plus_two_flanks_at_scale_1() {
@@ -415,11 +374,9 @@ mod tests {
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
-    // HUD mode always resolves the cutout term to
-    // `HUD_CUTOUT_W` — the `cutout_width` argument passed in is simply
-    // never consulted in this mode (lib.rs's caller happens to send
-    // 0.0 for hud today; this test proves the result doesn't depend on
-    // whatever it sends).
+    // HUD mode always resolves the cutout term to `HUD_CUTOUT_W` — the
+    // `cutout_width` argument is never consulted in this mode, whatever
+    // the caller sends.
     #[test]
     fn hud_mode_ignores_the_passed_cutout_width_argument() {
         let with_zero = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
@@ -470,11 +427,10 @@ mod tests {
         );
     }
 
-    // a real, useful invariant this exposes — BASE_EXPANDED
-    // (500) equals WINDOW_WIDTH (500) exactly, so the expanded state
-    // hits its window cap at any scale above 1.0, in EITHER mode (a
-    // user with `card_scale` > 1.0 always gets a full-window expanded
-    // card, never wider).
+    // BASE_EXPANDED (500) equals WINDOW_WIDTH (500) exactly, so the
+    // expanded state hits its window cap at any scale above 1.0, in
+    // EITHER mode: `card_scale` > 1.0 always gets a full-window expanded
+    // card, never wider.
     #[test]
     fn expanded_at_scale_above_1_hits_the_window_cap() {
         let hud = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, true, true, false, false);
@@ -483,14 +439,14 @@ mod tests {
         assert_eq!(notch.x_max - notch.x_min, WINDOW_WIDTH);
     }
 
-    // --- notch mode: the SAME three formulas, fed the measured cutout
-    // (Decision 6 — "no mode branch" in the shape itself, so this is
-    // deliberately not a separate code path, just a different input). ---
+    // --- notch mode: the SAME three formulas, fed the measured cutout.
+    // No mode branch in the shape itself — deliberately not a separate
+    // code path, just a different input. ---
 
     #[test]
     fn notch_idle_is_measured_cutout_plus_two_flanks_at_scale_1() {
-        // 's own fixture (`src-tauri/src/lib.rs`'s
-        // cutout_width_js_value test) — a realistic measured width.
+        // Matches `lib.rs`'s own `cutout_width_js_value` fixture — a
+        // realistic measured width.
         let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * FLANK_IDLE);
     }
@@ -512,15 +468,13 @@ mod tests {
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
-    // the cutout term stays unscaled in notch mode too — but
-    // unlike the old design (where the whole notch-mode rect was
-    // scale-invariant, since flanks never scaled there at all), the
-    // FLANK term now scales in every mode (Decision 6). This isolates
-    // just the cutout term's exemption: the scale-1.0-to-1.25 delta must
-    // equal exactly the flank term's own delta, with nothing attributed
-    // to the 200px cutout figure. (200, not 319, so the result stays
-    // under the WINDOW_WIDTH cap at both scales — see the cap tests
-    // below for what happens when it doesn't.
+    // The cutout term stays unscaled in notch mode too, while the FLANK
+    // term scales in every mode. This isolates the cutout term's
+    // exemption: the scale-1.0-to-1.25 delta must equal exactly the
+    // flank term's own delta, with nothing attributed to the 200px
+    // cutout figure. (200, not 319, so the result stays under the
+    // WINDOW_WIDTH cap at both scales — the cap has its own tests
+    // below.)
     #[test]
     fn notch_mode_cutout_term_stays_unscaled_only_the_flank_term_scales() {
         let at_scale_1 =
@@ -536,9 +490,9 @@ mod tests {
         );
     }
 
-    // --- the `min(..., 100%)` cap (Geometry contract) — `WINDOW_WIDTH`
-    // in this window's own coordinate space. A wide-enough measured
-    // cutout can otherwise exceed the window, which must never happen. ---
+    // --- the `min(..., 100%)` cap — `WINDOW_WIDTH` in this window's own
+    // coordinate space. A wide-enough measured cutout can otherwise
+    // exceed the window, which must never happen. ---
 
     #[test]
     fn notch_idle_caps_at_the_window_width_for_a_very_wide_cutout() {
@@ -602,16 +556,11 @@ mod tests {
     // `.card-assembly`/`.card-assembly.expanded` (showing/expanded:
     // MIN_FLANK_SHOWING + BASE_SHOWING/BASE_EXPANDED), and App.tsx's HUD
     // synthetic constants (HUD_CUTOUT_W/HUD_CUTOUT_H) — a NAMED-constant
-    // assertion, not a live CSS parse (spike §6's explicit
-    // simplification, carried forward by ). If a future edit
-    // changes one of these numbers in styles.css or App.tsx without
-    // updating the constants at the top of this file, this test does NOT
-    // catch it by itself (it only asserts internal self-consistency) —
-    // it exists so a reviewer diffing this file sees the citations and
-    // checks both sides. replaces the old BASE_WIDTH/
-    // EXPANDED_WIDTH/IDLE_WIDTH/IDLE_STATUS_WIDTH/NOTCH_CLAMP_MIN/
-    // NOTCH_CLAMP_MAX set (see the constants' own doc comments for why
-    // each was removed).
+    // assertion, not a live CSS parse. If an edit changes one of these
+    // numbers in styles.css or App.tsx without updating the constants at
+    // the top of this file, this test does NOT catch it by itself (it
+    // only asserts internal self-consistency) — it exists so a reviewer
+    // diffing this file sees the citations and checks both sides.
     #[test]
     fn active_card_rect_geometry_constants_match_named_style_constants() {
         assert_eq!(FLANK_IDLE, 85.0);
@@ -628,13 +577,13 @@ mod tests {
         assert_eq!(IDLE_PEEK_BELOW_BLOCK_H, 100.0);
     }
 
-    // --- cold-read Gap 3: the coordinate-space flip, unit-tested on its own ---
+    // --- the coordinate-space flip, unit-tested on its own ---
 
     #[test]
     fn top_of_window_maps_to_high_appkit_y_not_low() {
         // A 50px-tall rect at the very top of a 300px window (top == 0.0)
         // must occupy the HIGH end of AppKit's y-range (250..300), not the
-        // low end — the specific inversion Gap 3 flagged.
+        // low end.
         let (low, high) = css_top_down_to_appkit_y(300.0, 0.0, 50.0);
         assert_eq!(high, 300.0);
         assert_eq!(low, 250.0);
@@ -661,20 +610,14 @@ mod tests {
         assert_eq!(high, WINDOW_HEIGHT);
     }
 
-    // was `active_card_rect_y_span_is_the_full_window_height`,
-    // pinning the pre-093 "always the whole window" behavior — UPDATED,
-    // not deleted, per the plan's explicit instruction. Idle, peek
-    // closed: the y-span is now the cutout row's height alone, nowhere
-    // near the full 300px window — the headline fix this plan exists for.
+    // Idle, peek closed: the y-span is the cutout row's height alone,
+    // nowhere near the full 300px window.
     #[test]
     fn idle_peek_closed_y_span_is_the_cutout_height_alone() {
         let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
         let height = r.y_max - r.y_min;
         assert_eq!(height, HUD_CUTOUT_H);
-        assert!(
-            height < WINDOW_HEIGHT,
-            "the whole point of plan 093's y-span fix: idle must not span the full window"
-        );
+        assert!(height < WINDOW_HEIGHT, "idle must not span the full window");
     }
 
     // --- the y-span's height term, one case per assembly state ---
@@ -709,9 +652,9 @@ mod tests {
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_EXPANDED_H);
     }
 
-    // idle_peek_open is documented as irrelevant once `visible` is true —
-    // prove it the same way `hud_mode_ignores_the_passed_cutout_width_
-    // argument` proves the analogous width-side claim.
+    // idle_peek_open is irrelevant once `visible` is true — proven the
+    // same way `hud_mode_ignores_the_passed_cutout_width_argument`
+    // proves the analogous width-side claim.
     #[test]
     fn idle_peek_open_is_ignored_while_visible() {
         let showing_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
@@ -732,30 +675,27 @@ mod tests {
         assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
     }
 
-    // --- the actual behavioral fix: a point in the old dead zone below
-    // the idle card no longer registers as hovered. ---
+    // --- a point below the idle card does not register as hovered ---
 
     #[test]
     fn idle_peek_closed_point_below_the_cutout_row_is_not_in_the_rect() {
-        // HUD idle: cutout height alone is 32.0. A point comfortably
-        // inside the OLD full-300px span but below the real 32px-tall
-        // card (in CSS top-down terms, y=100 — i.e. AppKit y = 300-100 =
-        // 200) must no longer count as hovered.
+        // HUD idle: cutout height alone is 32.0. A point inside the full
+        // 300px window span but below the real 32px-tall card (in CSS
+        // top-down terms, y=100 — i.e. AppKit y = 300-100 = 200) must not
+        // count as hovered.
         let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
         let (appkit_y_min, appkit_y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, 32.0);
         assert_eq!((appkit_y_min, appkit_y_max), (268.0, 300.0));
-        // AppKit y=200 is well below the idle rect's low edge (268) — the
-        // dead zone the pre-093 full-window rect used to wrongly cover.
+        // AppKit y=200 is well below the idle rect's low edge (268).
         assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, 200.0));
         // sanity: a point actually inside the real idle rect still hovers.
         assert!(point_in_rect(&r, WINDOW_WIDTH / 2.0, 280.0));
     }
 
-    // --- animation audit 2026-08-02: `hover_expand_open`, the showing
-    // card's counterpart to `idle_peek_open`'s hysteresis. Same shape of
-    // coverage the peek got above: the two geometry terms, the mirror
-    // "ignored on the other side of the `visible` branch" proof, and the
-    // behavioral case (the point that used to fall out of the rect). ---
+    // --- `hover_expand_open`, the showing card's counterpart to
+    // `idle_peek_open`'s hysteresis. Same shape of coverage the peek got
+    // above: the two geometry terms, the mirror "ignored on the other
+    // side of the `visible` branch" proof, and the behavioral case. ---
 
     #[test]
     fn hover_expand_open_widens_a_showing_card_to_the_expanded_width() {
@@ -811,11 +751,11 @@ mod tests {
         assert_eq!(expanded_only, expanded_and_hovered);
     }
 
-    // The actual behavioral fix, stated as the bug it closes: a point in
-    // the manifest the hover itself just revealed (below the compact
-    // card's bottom edge, inside the expanded card's) counts as hovered
-    // once the latch is set — WITHOUT the latch it does not, which is
-    // exactly the hysteresis (enter the small rect, leave the large one).
+    // A point in the manifest the hover itself just revealed (below the
+    // compact card's bottom edge, inside the expanded card's) counts as
+    // hovered once the latch is set — WITHOUT the latch it does not,
+    // which is exactly the hysteresis (enter the small rect, leave the
+    // large one).
     #[test]
     fn a_point_in_the_hover_revealed_manifest_stays_inside_the_grown_rect() {
         let compact = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
@@ -825,7 +765,7 @@ mod tests {
         let (_, appkit_y) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 250.0, 0.0);
         assert!(
             !point_in_rect(&compact, WINDOW_WIDTH / 2.0, appkit_y),
-            "the pre-fix rect: the revealed manifest was painted but not hoverable"
+            "the revealed manifest must be hoverable, not just painted"
         );
         assert!(
             point_in_rect(&grown, WINDOW_WIDTH / 2.0, appkit_y),
@@ -879,12 +819,11 @@ mod tests {
         assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
     }
 
-    // --- P0 fix (tab-notch redesign): the real-window-height coordinate
-    // bug. Once `try_expand_board_for_hover` has actually resized the
-    // native window taller than `WINDOW_HEIGHT`, the rect must be computed
-    // against THAT real height, not the stale 300px constant — otherwise a
-    // point genuinely far down in the now-taller window can still fall
-    // inside a rect whose range was only ever valid for a 300px canvas. ---
+    // --- the real-window-height coordinate contract. Once a hover has
+    // resized the native window taller than `WINDOW_HEIGHT`, the rect
+    // must be computed against THAT real height, not the 300px constant
+    // — otherwise a point far down in the taller window falls inside a
+    // rect whose range is only valid for a 300px canvas. ---
 
     #[test]
     fn board_rect_caps_at_the_real_window_height_when_taller_than_the_constant() {
@@ -903,32 +842,27 @@ mod tests {
 
     #[test]
     fn board_rect_y_flip_uses_the_real_window_height_not_the_stale_constant() {
-        // The actual bug, reproduced directly: at the OLD (wrong) fixed
-        // WINDOW_HEIGHT, the rect's top (`y_max`) sits at 300 — but once
-        // the real window has grown to `real_height` (e.g. 520, a
-        // plausible multi-session board), the window's TRUE top is at
-        // y=520 in AppKit's bottom-left-origin space, and a point at
-        // y=300 (which used to read as the rect's very top edge, i.e.
-        // "at the card") is now deep in the window's own middle — nowhere
-        // near the card, which is top-anchored and therefore occupies the
-        // HIGH end of the real coordinate range, not the range around the
-        // stale constant.
+        // At the fixed WINDOW_HEIGHT the rect's top (`y_max`) sits at
+        // 300 — but once the real window has grown to `real_height`
+        // (e.g. 520, a plausible multi-session board), the window's TRUE
+        // top is at y=520 in AppKit's bottom-left-origin space, and a
+        // point at y=300 is deep in the window's own middle. The card is
+        // top-anchored, so it occupies the HIGH end of the real
+        // coordinate range, not the range around the constant.
         let real_height = 520.0;
         let stale = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         let fixed = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
-        assert_eq!(stale.y_max, WINDOW_HEIGHT, "sanity: the old/stale top");
+        assert_eq!(stale.y_max, WINDOW_HEIGHT, "sanity: the stale rect's top");
         assert_eq!(
             fixed.y_max, real_height,
-            "the fixed rect's top must track the real applied window height"
+            "the real-height rect's top must track the applied window height"
         );
-        // The point that used to sit right at the stale rect's top edge —
-        // i.e. exactly where a cursor over the real card's top would have
-        // been reported, back when the window really was 300px tall — no
-        // longer counts as hovered once the real window has actually grown
-        // to 520px: the true card has moved up with the window's own top.
+        // A point at the 300px canvas's top edge does not count as
+        // hovered once the real window is 520px tall: the true card has
+        // moved up with the window's own top.
         assert!(
             !point_in_rect(&fixed, WINDOW_WIDTH / 2.0, WINDOW_HEIGHT),
-            "a point at the OLD window's top must not register as hovered \
+            "a point at the canvas-height window's top must not register as hovered \
              against the real, taller window's rect"
         );
         // The real card's own top, at the ACTUAL window height, does.
@@ -937,17 +871,15 @@ mod tests {
 
     #[test]
     fn board_rect_a_point_far_below_the_real_card_is_correctly_excluded() {
-        // The exact failure mode named in the bug report: "hovered=true
-        // fires with the cursor far below the card" once the board has
-        // genuinely expanded past the stale 300px assumption. A point
-        // comfortably inside the OLD [y_min, 300] range but which, in a
-        // real 520px-tall window, sits in the dead space well below the
+        // The failure mode this guards: "hovered=true fires with the
+        // cursor far below the card" once the board has expanded past
+        // 300px. A point inside the [y_min, 300] range that, in a real
+        // 520px-tall window, sits in the dead space well below the
         // painted board content must be excluded.
         let real_height = 520.0;
         let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
-        // With the fix, dead space is [0, y_min); pick a point in the
-        // middle of the OLD (300-relative) range that the pre-fix rect
-        // would have wrongly accepted.
+        // Dead space is [0, y_min); pick a point in the middle of the
+        // 300-relative range.
         let old_rect_midpoint_y = (WINDOW_HEIGHT - HUD_CUTOUT_H - BOARD_PRIMARY_H) / 2.0;
         assert!(
             old_rect_midpoint_y < r.y_min,
@@ -980,15 +912,12 @@ mod tests {
     #[test]
     fn icon_strip_rects_two_icons_uses_the_85px_rail_floor() {
         // 2 icons: strip_w = (18+8)*2 + 16 = 68, which loses to the 85px
-        // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
-        // wins" case the spec table states explicitly. (Inset 16, not the
-        // mock's old 14, since — the floor wins either way, so
-        // this case's own numbers are unchanged.)
+        // rail floor at scale 1.
         let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2, WINDOW_HEIGHT);
         let flank_w = hovered_right_flank_width(2, 1.0);
         assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
-                                         // total card width = 200 (hud cutout) + 2*85 = 370, matching the
-                                         // mock's own worked example ("hovered, 2 icons: shell width 370px").
+                                         // total card width = 200 (hud cutout) + 2*85 = 370, the
+                                         // "hovered, 2 icons: shell width 370px" worked example.
         let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
         assert_eq!(total_width, 370.0);
         let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
@@ -1000,9 +929,9 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_three_icons_matches_the_388px_worked_example() {
-        // 3 icons (the full strip since the 5->3 shrink): strip_w =
-        // (18+8)*3 + 16 = 94, beats the 85px floor — so the full strip
-        // makes a 200 + 2*94 = 388px shell.
+        // 3 icons (the full strip): strip_w = (18+8)*3 + 16 = 94, beats
+        // the 85px floor — so the full strip makes a 200 + 2*94 = 388px
+        // shell.
         let flank_w = hovered_right_flank_width(3, 1.0);
         assert_eq!(flank_w, 94.0);
         let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
@@ -1011,13 +940,12 @@ mod tests {
 
     #[test]
     fn hovered_right_flank_width_pins_the_whole_icon_count_curve() {
-        // `max(85, 26n + 16)` at scale 1, the
-        // exact curve card-chrome.css's two strip-visible `--cw` rules
-        // now compute as `max(85px * var(--card-scale), (26 *
-        // var(--present-icons, 0) + 16) * 1px)`. The floor wins at n<=2;
-        // the strip wins from n=3 on, which is precisely where the old
-        // flat-85px CSS started clipping glyphs the hit-test still
-        // believed in.
+        // `max(85, 26n + 16)` at scale 1 — the exact curve
+        // card-chrome.css's two strip-visible `--cw` rules compute as
+        // `max(85px * var(--card-scale), (26 * var(--present-icons, 0) +
+        // 16) * 1px)`. The floor wins at n<=2; the strip wins from n=3
+        // on, which is where a flat 85px flank would start clipping
+        // glyphs the hit-test still believed in.
         let expected = [85.0, 85.0, 94.0, 120.0, 146.0];
         for (i, want) in expected.iter().enumerate() {
             let n = i + 1;
@@ -1070,9 +998,9 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_scale_only_affects_the_rail_floor_not_the_raw_icon_geometry() {
-        // ICON_BOX/ICON_GAP/FLANK_INSET are unscaled raw px per the mock's
-        // own formula (only the 85px rail floor multiplies by --card-scale)
-        // — at a present_count where the strip genuinely beats the floor
+        // ICON_BOX/ICON_GAP/FLANK_INSET are unscaled raw px (only the
+        // 85px rail floor multiplies by --card-scale) — at a
+        // present_count where the strip genuinely beats the floor
         // even at an elevated scale, the icon box width itself must stay
         // exactly ICON_BOX regardless of scale.
         let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.25, 5, WINDOW_HEIGHT);

@@ -56,9 +56,9 @@ function Switch({
           "group-data-[size=sm]/switch:size-3 group-data-[size=sm]/switch:data-checked:translate-x-[13px]",
           // checked keeps the AA-safe dark-thumb-on-blue-track pair, pinned
           // to `bg-background` (not `--primary-foreground`) so the switch
-          // doesn't ride on that token's meaning. unchecked moves off the
-          // old bright-white `bg-foreground` to a muted light gray so an off
-          // switch doesn't read as a blown-out white blob.
+          // doesn't ride on that token's meaning. unchecked uses a muted
+          // light gray, not bright white, so an off switch doesn't read as
+          // a blown-out white blob.
           "dark:data-checked:bg-background dark:data-unchecked:bg-muted-foreground",
         )}
       />

@@ -132,7 +132,7 @@ mod tests {
         const {
             assert!(
                 EXPANDED_ROW_HEIGHT >= 90.0,
-                "EXPANDED_ROW_HEIGHT no longer covers a real expanded row"
+                "EXPANDED_ROW_HEIGHT must cover a real expanded row"
             );
         }
     }
@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn eight_sessions_the_plans_own_test_floor_hits_the_cap_and_scrolls() {
+    fn eight_sessions_hit_the_screen_cap_and_scroll() {
         // The cap binds before 8 sessions on a 982pt screen; the frame
         // stays screen-bounded and the surplus scrolls in the frontend's
         // bounded container — capped is the cap doing its job.

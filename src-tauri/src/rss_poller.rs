@@ -27,7 +27,7 @@ const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("tech", "tech"),
     ("gadget", "tech"),
     // science gets its own category (cat-science, --cat: #f2a2c8)
-    // instead of falling under tech — retargeted from ("science", "tech").
+    // instead of falling under tech.
     ("science", "science"),
     ("physics", "science"),
     ("space", "science"),
@@ -109,8 +109,7 @@ pub(crate) fn expand_topic_url(topic: &str) -> String {
 /// One poll unit: either a configured feed (`topic: None`) or a
 /// topic-expanded query feed (`topic: Some(label)`). `diff_feed` uses
 /// the label to stamp `meta.subtitle` on every event it produces from
-/// this source — a plain feed keeps today's no-subtitle behavior
-/// unchanged.
+/// this source — a plain feed carries no subtitle.
 pub(crate) struct PollSource {
     pub(crate) config: RssFeedConfig,
     pub(crate) topic: Option<String>,
@@ -420,7 +419,7 @@ pub fn diff_feed(
     now: Instant,
     // `Some(label)` for a topic-expanded source — stamped onto
     // every event's `meta.subtitle`. `None` for a plain configured feed,
-    // which keeps the pre-130 no-subtitle behavior byte-identical.
+    // which carries no subtitle.
     topic: Option<&str>,
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
@@ -592,7 +591,7 @@ async fn fetch_feed(
     Ok(Some(feed))
 }
 
-/// L-sec2 fix: a feed's `config.url` is operator-supplied and may embed a
+/// A feed's `config.url` is operator-supplied and may embed a
 /// token in its query string (a private feed URL, an API key param,
 /// etc.) — logging it verbatim would put a secret into a world-readable
 /// log file. Prefers the feed's own `source` label when the operator set
@@ -681,8 +680,8 @@ pub fn spawn_rss_poller(
                         continue;
                     }
                     Err(error) => {
-                        // L-sec2: never log the full feed url (it may
-                        // embed a token) — `feed_log_ref` reduces it to
+                        // never log the full feed url (it may embed a
+                        // token) — `feed_log_ref` reduces it to
                         // the operator's `source` label or the bare host.
                         tracing::warn!(feed = %feed_log_ref(&source.config), "rss poll failed: {error}");
                         state.backoff.on_failure(now);
@@ -692,7 +691,7 @@ pub fn spawn_rss_poller(
 
                 let events = {
                     let seen_state = app_handle.state::<StdMutex<SeenStore>>();
-                    // R6: poison-tolerant — a panic while holding this
+                    // poison-tolerant — a panic while holding this
                     // lock elsewhere must not permanently kill the rss
                     // poller task, same convention as settings.rs/crests.rs.
                     let mut seen = seen_state.lock().unwrap_or_else(|e| e.into_inner());
@@ -731,8 +730,8 @@ pub fn spawn_rss_poller(
     });
 }
 
-/// One-shot fetch+diff for an ad-hoc search (`settings::search_news_now`,
-/// Step 3). The caller is expected to have built `url` via the
+/// One-shot fetch+diff for an ad-hoc search (`settings::search_news_now`).
+/// The caller is expected to have built `url` via the
 /// SAME `expand_topic_url` the continuous poller's topic list uses (one
 /// shared path, no fork — see `search_news_now`'s own body) and to pass
 /// the exact (trimmed) query back in as `topic_label`, stamped onto
@@ -762,7 +761,7 @@ pub async fn search_once(
         category: None,
     };
     let now = Instant::now();
-    // R6: poison-tolerant, same convention as settings.rs/crests.rs and
+    // poison-tolerant, same convention as settings.rs/crests.rs and
     // the poller loop's own lock above.
     let mut guard = seen.lock().unwrap_or_else(|e| e.into_inner());
     Ok(diff_feed(
@@ -813,8 +812,8 @@ mod tests {
         }
     }
 
-    // --- L-sec2: `feed_log_ref` must never leak the full feed url (which
-    // may embed a token in its query string) into a log line ---
+    // --- `feed_log_ref` must never leak the full feed url (which may
+    // embed a token in its query string) into a log line ---
 
     #[test]
     fn feed_log_ref_prefers_the_operator_supplied_source_label() {
@@ -964,8 +963,8 @@ mod tests {
         // Hostile input: no ';' anywhere, so the pre-cap decoder would
         // rescan the remainder of the string for every '&'. The bounded
         // window + bounded sanitize prefix make this structurally linear
-        // rather than O(n^2) — this test asserts on output content (not
-        // wall time), but it would still hang the old implementation.
+        // rather than O(n^2) — this test asserts on output content, not
+        // wall time.
         let flood = "&".repeat(100_000);
         let result = sanitize(&flood, 240);
         assert!(result.starts_with("&&&"));
@@ -1320,10 +1319,9 @@ mod tests {
 
     #[test]
     fn diff_feed_keeps_short_genuine_summary_on_a_non_google_news_feed() {
-        // Regression for the external-review finding: rule (c)
-        // (title-prefix-plus-short-tail) must NOT fire for an arbitrary
-        // configured feed — only Google News's `<description>` is
-        // guaranteed to be title+source with no real content.
+        // Rule (c) (title-prefix-plus-short-tail) must NOT fire for an
+        // arbitrary configured feed — only Google News's `<description>`
+        // is guaranteed to be title+source with no real content.
         let feed = parse_feed(
             r#"<item><guid>quake</guid><title>Earthquake hits city</title><link>https://example.com/quake</link><description>Earthquake hits city; 12 dead</description></item>"#,
         );

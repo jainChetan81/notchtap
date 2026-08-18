@@ -238,7 +238,7 @@ describe("App", () => {
 
   // the resting-state render choice rides the same appearance
   // channel as scale/radius/opacity — seeded at boot, hot-updated live.
-  describe("resting_state (plan 085)", () => {
+  describe("resting_state", () => {
     afterEach(() => {
       delete window.__NOTCHTAP_APPEARANCE__;
     });
@@ -307,7 +307,7 @@ describe("App", () => {
   // (the pre-091 behavior, when only width existed and only in notch
   // mode). Notch mode with a real measurement is unaffected — the
   // measured value always wins over the synthetic fallback.
-  describe("HUD synthetic cutout vars (plan 091)", () => {
+  describe("HUD synthetic cutout vars", () => {
     afterEach(() => {
       delete window.__NOTCHTAP_MODE__;
       delete window.__NOTCHTAP_CUTOUT_WIDTH__;
@@ -363,7 +363,7 @@ describe("App", () => {
   // one call site, so this is where "slot-occupied hides the board",
   // "board over idle", and "empty registry falls back to idle" actually
   // get exercised end to end, not just as a pure-function unit test.
-  describe("Agent Board precedence (plan 136)", () => {
+  describe("Agent Board precedence", () => {
     it("an empty registry falls back to the existing idle rail, never mounting the board", () => {
       const { container } = render(<App />);
       emitAgentState({ revision: 1, capturedAtMs: Date.now(), sessions: [], adapterHealth: [] });
@@ -404,10 +404,9 @@ describe("App", () => {
       ).not.toBeNull();
     });
 
-    // Operator feedback (2026-08-02): pausing notifications left the Agent
-    // Board on screen, still ticking with live agent activity. Paused
-    // quiets the WHOLE notch (CONTEXT.md's Paused), so the board falls
-    // through to the idle rail until the engine resumes.
+    // Paused quiets the WHOLE notch, so the Agent Board falls through to
+    // the idle rail until the engine resumes — it never stays on screen
+    // ticking with live agent activity.
     it("hides the board while the engine is paused, and brings it back on resume", async () => {
       const { container } = render(<App />);
       emitAgentState({
@@ -432,15 +431,14 @@ describe("App", () => {
       });
     });
 
-    // 2026-08-02 animation audit (finding #1) + the same day's operator
-    // rejection of its transform entrance: the surfaces stack in one grid
-    // cell instead of queueing in flow during the overlap, and the Board
-    // branch (only the Board branch) arrives on a longer clock — with NO
-    // transform on the shell, since that would move/resize the synthetic
-    // notch cutout. Structure and exported consts are pinned here, never
-    // mid-flight styles: jsdom runs no compositor, same discipline as
-    // AgentBoard.test.tsx's own motion-vitals block.
-    describe("surface swap (2026-08-02 animation audit)", () => {
+    // The surfaces stack in one grid cell instead of queueing in flow
+    // during the overlap, and the Board branch (only the Board branch)
+    // arrives on a longer clock — with NO transform on the shell, since
+    // that would move/resize the synthetic notch cutout. Structure and
+    // exported consts are pinned here, never mid-flight styles: jsdom
+    // runs no compositor, same discipline as AgentBoard.test.tsx's own
+    // motion-vitals block.
+    describe("surface swap", () => {
       it("stacks both surfaces in one grid cell so an overlap never pushes either one down", async () => {
         const { container } = render(<App />);
         // SAFETY: App always renders the `.surface-stack` wrapper; the
@@ -478,12 +476,11 @@ describe("App", () => {
       });
 
       it("never transforms the shell — the summon's emphasis is duration only", () => {
-        // Operator feedback (2026-08-02, live): a scale/drop entrance on
-        // this wrapper animated the synthetic notch cutout along with the
-        // rest of the shell, and that cutout has to read as fixed
-        // hardware (card-chrome.css's `transform-origin` doc). Both
-        // surfaces are opacity-only; the Board's arrival earns its
-        // emphasis from the LONGER clock instead.
+        // A scale/drop entrance on this wrapper would animate the
+        // synthetic notch cutout along with the rest of the shell, and
+        // that cutout has to read as fixed hardware (card-chrome.css's
+        // `transform-origin` doc). Both surfaces are opacity-only; the
+        // Board's arrival earns its emphasis from the LONGER clock.
         expect(BOARD_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(BOARD_SURFACE_MOTION.animate).toEqual({
           opacity: 1,
@@ -545,14 +542,14 @@ describe("App", () => {
   // those wiring mistakes is loud: drop the prop or mistype the channel
   // name and the overlay degrades to "clicking an icon does nothing" with
   // the whole suite still green, because every layer's own failure mode
-  // is the silent "nothing is selected" page (spec §7's "none").
+  // is the silent "nothing is selected" page.
   //
   // Three events are needed to reach the seam, and all three are real
   // rust-emitted channels, not test scaffolding: an agent-state wire with
   // a session on it (the below-block renders nothing without content),
   // the hover that opens the tab pull at all (`tabPullOpen = !showing &&
   // hovered`, StatusRailCard.tsx), and the selection itself.
-  describe("tab selection seam (plan 180)", () => {
+  describe("tab selection seam", () => {
     it("mounts the selected tab's below-block once hovered", async () => {
       const { container } = render(<App />);
       emitAgentTabSession();

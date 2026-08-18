@@ -1,28 +1,12 @@
-//! (v7 ticket 11 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-//! §4.6/§8/§10): per-runtime Adapter Health.
-//!
-//! Two halves, same split this crate already uses elsewhere
-//! (`kimi_version.rs`'s own doc: "keep the pure decision logic...
-//! separate from that subprocess call"):
-//!
-//! - pure derivation ([`declared_capabilities`], [`availability_for`],
-//!   [`compatibility_message`], [`build_adapter_health`]) — unit-tested
-//!   directly, no clock/subprocess/lock involved;
-//! - [`HealthTracker`], the impure, shared bookkeeping [`http.rs`]'s
-//!   `/agent/events` handler updates on every accepted/rejected event
-//!   (last-accepted-event time, last bounded error category) and that
-//!   caches the one genuinely impure input this module needs — Kimi's
-//!   `kimi --version` hook-support probe (`providers::kimi_version`) —
-//!   so a live health read (the `agent-state` publish path, and the
-//!   Settings `get_agent_health` command) never shells out more than
-//!   once per [`KIMI_PROBE_CACHE_TTL`].
-//!
-//! Spec §10's five Adapter Health fields land as [`AdapterHealth`]'s five
-//! non-runtime fields: availability, declared capabilities, last
-//! accepted event time, last bounded error category, and a setup
-//! compatibility message — never a raw provider version string or a raw
-//! error message (CLAUDE.md/spec §3.2: bounded categories, not free text,
-//! for anything derived from untrusted wire input).
+//! Per-runtime Adapter Health, in two halves: pure derivation
+//! ([`declared_capabilities`], [`availability_for`],
+//! [`compatibility_message`], [`build_adapter_health`]), and
+//! [`HealthTracker`], the shared impure bookkeeping `http.rs`'s
+//! `/agent/events` handler updates on every accepted/rejected event. The
+//! tracker caches Kimi's `kimi --version` hook-support probe, so a live
+//! health read never shells out more than once per
+//! [`KIMI_PROBE_CACHE_TTL`]. A health row carries bounded categories
+//! only — never a raw provider version string or a raw error message.
 
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
@@ -40,14 +24,14 @@ use crate::config::AgentRuntimesConfig;
 /// see that constant's own doc for why the tick itself stays cheap.
 pub const KIMI_PROBE_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// spec §10's three-state Adapter Health status.
+/// The three-state Adapter Health status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterAvailability {
     /// Enabled, and (for Kimi) hook-version-gated support confirmed.
     Available,
     /// Enabled and usable, but this runtime's own declared capability
-    /// set has known gaps against the full reference set (spec §1's
-    /// matrix) — Codex (no `input_required`/`failure` hook) and
+    /// set has known gaps against the full reference set — Codex (no
+    /// `input_required`/`failure` hook) and
     /// OpenCode (no `subagents`) both land here truthfully rather than
     /// being reported as fully `Available`.
     Partial,
@@ -86,13 +70,11 @@ pub enum AdapterErrorCategory {
     /// via the best-effort hint below, which itself only ever resolves
     /// to a *known* runtime).
     UnsupportedRuntime,
-    /// Reserved for a future internal (non-wire) failure category —
-    /// nothing in the current `/agent/events` handler produces one
-    /// (parse failures are always `400`, an accepted event is always
-    /// `202`), but spec §10 lists "last bounded error category" as an
-    /// open-ended bounded set, not just the two wire-parse categories
-    /// above, so this variant exists now rather than being a breaking
-    /// addition later.
+    /// Reserved for an internal (non-wire) failure category. Nothing in
+    /// the `/agent/events` handler produces one — parse failures are
+    /// always `400`, an accepted event always `202` — but the bounded
+    /// error set is open-ended by design, so the variant exists rather
+    /// than being a breaking addition later.
     #[allow(dead_code)]
     Internal,
 }
@@ -122,16 +104,15 @@ impl AdapterErrorCategory {
     }
 }
 
-/// One runtime's full Adapter Health snapshot (spec §10, §8's Settings
-/// adapter cards).
+/// One runtime's full Adapter Health snapshot, as the Settings adapter
+/// cards render it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdapterHealth {
     pub runtime: AgentRuntime,
     /// Mirrors `[agents.runtimes.*]`'s own toggle directly — surfaced
     /// alongside `availability` because "administratively disabled" and
     /// "Kimi hook version too old" are both real reasons for
-    /// `Unavailable`, and the Settings card needs to tell them apart
-    /// (spec §4.6: "detected/undetected status").
+    /// `Unavailable`, and the Settings card needs to tell them apart.
     pub enabled: bool,
     pub availability: AdapterAvailability,
     pub capabilities: Vec<AgentCapability>,
@@ -141,8 +122,8 @@ pub struct AdapterHealth {
 }
 
 /// Declaration order used everywhere a full four-runtime health snapshot
-/// is built — matches [`AgentRuntime`]'s own declaration order (spec §0:
-/// "Claude Code, Codex, Kimi, and OpenCode").
+/// is built — matches [`AgentRuntime`]'s own declaration order: Claude
+/// Code, Codex, Kimi, OpenCode.
 pub const ALL_RUNTIMES: [AgentRuntime; 4] = [
     AgentRuntime::ClaudeCode,
     AgentRuntime::Codex,
@@ -150,16 +131,13 @@ pub const ALL_RUNTIMES: [AgentRuntime; 4] = [
     AgentRuntime::OpenCode,
 ];
 
-/// Spec §1's per-runtime capability row, restricted (like every provider
+/// The per-runtime capability row, restricted (like every provider
 /// parser's own `CAPABILITIES` const) to what that adapter actually
 /// declares on the wire — `open_or_focus` is Host-dependent and never
-/// part of a runtime's own declared set (same exclusion
-/// `claude_code::CAPABILITIES`'s doc gives). Kept as its own small table
-/// here (rather than importing each provider module's string-typed
-/// `CAPABILITIES` const) because Health needs the typed
-/// [`AgentCapability`] enum, not the wire-label strings those consts
-/// carry — see this module's top doc for why a health snapshot never
-/// serializes a raw provider string.
+/// part of a runtime's own declared set. Kept as its own small table
+/// here, rather than importing each provider module's string-typed
+/// `CAPABILITIES` const, because Health needs the typed
+/// [`AgentCapability`] enum, not wire-label strings.
 pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability] {
     use AgentCapability::*;
     match runtime {
@@ -212,7 +190,7 @@ pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability
 /// two that currently do.
 const FULL_REFERENCE_CAPABILITY_COUNT: usize = 7;
 
-/// Pure availability derivation (spec §10/§4.4). `kimi_hook` is `None`
+/// Pure availability derivation. `kimi_hook` is `None`
 /// for every runtime except Kimi, where it's the (possibly cached) probe
 /// result — passing it in rather than probing inside this function keeps
 /// it unit-testable without a real `kimi` binary on the test machine.
@@ -237,9 +215,9 @@ pub fn availability_for(
     }
 }
 
-/// Pure, human-readable setup-compatibility line (spec §4.6's "setup
-/// compatibility message"). Never `None` for a disabled or gapped
-/// runtime — only a fully healthy, ungapped runtime has nothing to add.
+/// Pure, human-readable setup-compatibility line. Never `None` for a
+/// disabled or gapped runtime — only a fully healthy, ungapped runtime
+/// has nothing to add.
 pub fn compatibility_message(
     runtime: AgentRuntime,
     enabled: bool,
@@ -280,8 +258,8 @@ pub fn compatibility_message(
 }
 
 /// Pure combination of every input above into one [`AdapterHealth`] row
-/// — the unit-testable "state derivation" half this ticket's checklist
-/// names. `kimi_hook` is ignored for every runtime but Kimi.
+/// — the unit-testable state-derivation half. `kimi_hook` is ignored for
+/// every runtime but Kimi.
 pub fn build_adapter_health(
     runtime: AgentRuntime,
     enabled: bool,
@@ -423,12 +401,12 @@ impl HealthTracker {
         let support = kimi_version::probe_hook_support();
         // Deliberate, benign race: two callers arriving together on an
         // expired cache may both probe. Cost is one extra bounded
-        // `kimi --version`; the alternative (holding the lock) is the bug
-        // being fixed. `records` and `kimi_cache` are structurally
-        // independent — no invariant couples them — so nothing can
-        // observe a torn state. The only visible effect is that a
-        // later-finishing caller may store an EARLIER `now`, marginally
-        // shortening the effective cache TTL.
+        // `kimi --version`; holding the lock across a subprocess instead
+        // would stall ingestion. `records` and `kimi_cache` are
+        // structurally independent — no invariant couples them — so
+        // nothing can observe a torn state. The only visible effect is
+        // that a later-finishing caller may store an EARLIER `now`,
+        // marginally shortening the effective cache TTL.
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.kimi_cache = Some((now, support.clone()));
         support

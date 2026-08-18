@@ -1,17 +1,8 @@
 mod about;
-// v7: provider-neutral Agent domain model + registry
-// (`model.rs`/`registry.rs`, ) plus wire parsing and the
-// `/agent/events` route (`adapter.rs`, ) — see `agents/mod.rs`'s
-// doc for the ticket boundary. `pub` (, otherwise this module's
-// comment above `error`/`event`/`queue` would still hold: "nothing else
-// consumes this crate as a library") is the one-line exception those
-// three already carved out — the `notchtap-agent` bin target
-// (`src/bin/notchtap_agent.rs`, its own separate crate within this same
-// package) calls `agents::providers::*` and `agents::adapter::*`, which
-// is unreachable across a crate boundary while this stays a private
-// `mod`. Nothing under `agents` gained new internal-to-this-crate
-// visibility — every item this exposes was already `pub` within the
-// crate; only the outermost `mod` keyword changed.
+// provider-neutral Agent domain model, registry, wire parsing, and the
+// `/agent/events` route. `pub` because the `notchtap-agent` bin target
+// (`src/bin/notchtap_agent.rs`) is its own crate and calls
+// `agents::providers::*` / `agents::adapter::*` across that boundary.
 pub mod agents;
 mod config;
 mod crests;
@@ -45,11 +36,12 @@ mod settings_commands;
 pub mod silence;
 mod status;
 mod tabs;
+mod tray;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+#[cfg(target_os = "macos")]
+use tauri::menu::MenuItem;
 use tauri::webview::PageLoadEvent;
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
@@ -61,29 +53,24 @@ use crate::engine::Engine;
 use crate::history::HistoryStore;
 use crate::queue::SingleSlotQueue;
 use crate::settings::AppearanceChangedPayload;
+use crate::tray::{build_tray, spawn_silence_task};
+#[cfg(target_os = "macos")]
+use crate::tray::{open_settings_window, toggle_pause};
 
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-// tauri-nspanel v2.1's to_panel() requires an explicit panel
-// type. can_become_key_window: true preserves the pinned rev's behavior
-// (RawNSPanel hardcoded canBecomeKeyWindow -> YES); can_become_main_window:
-// false matches NSPanel's AppKit default, which the pinned rev never
-// overrode.
+// `to_panel()` requires an explicit panel type. `can_become_main_window:
+// false` matches NSPanel's AppKit default.
 //
-// `with: { tracking_area: {...} }` attaches a real
-// NSTrackingArea to the panel's content view — this is what makes
-// mouseEntered/mouseMoved/mouseExited observable at all. Empirically
-// verified (docs/design/hover-cursor-tracking.md §2) to fire normally
-// even with `set_ignore_cursor_events(true)` (apply_overlay_native_config,
-// below) permanently set — that call is NEVER made conditional on this.
-// `active_always()` is required (not `active_in_active_app()`): this is
-// a non-activating accessory panel, so hover must be observable while
-// another app is focused. `auto_resize: true` mirrors the upstream
-// examples but is a no-op here since the window frame itself never
-// resizes (`tauri.conf.json`'s `"resizable": false`) — only the CSS
-// width within it changes; that's the reason `hover::active_card_rect`
-// exists at all (see its doc comment).
+// `with: { tracking_area: {...} }` attaches a real NSTrackingArea to the
+// panel's content view — this is what makes mouseEntered/mouseMoved/
+// mouseExited observable at all. It fires normally even with
+// `set_ignore_cursor_events(true)` (apply_overlay_native_config, below)
+// permanently set (docs/design/hover-cursor-tracking.md §2) — that call
+// is NEVER made conditional on this. `active_always()` is required (not
+// `active_in_active_app()`): this is a non-activating accessory panel,
+// so hover must be observable while another app is focused.
 #[cfg(target_os = "macos")]
 tauri_nspanel::tauri_panel! {
     panel!(OverlayPanel {
@@ -105,8 +92,6 @@ tauri_nspanel::tauri_panel! {
     panel_event!(OverlayPanelEventHandler {})
 }
 
-// placeholder combo — v3.6 spec §7.1 explicitly defers "exact global hotkey
-// combination" as an open detail; isolated to one constant.
 #[cfg(target_os = "macos")]
 const EXPAND_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyN);
@@ -120,9 +105,8 @@ const DISMISS_SHORTCUT: (Option<Modifiers>, Code) =
 const PAUSE_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyP);
 
-// ⌃⇧] / ⌃⇧, — chosen (and already shipped in the settings UI's shortcut
-// table) to avoid the four combos above and common macOS ⌘-based
-// shortcuts, same rule as ⌃⇧X/⌃⇧P (v3.6 spec §7.1.2).
+// ⌃⇧] / ⌃⇧, — chosen to avoid the four combos above and common macOS
+// ⌘-based shortcuts; the settings UI's shortcut table lists the same pairs.
 #[cfg(target_os = "macos")]
 const SKIP_SHORTCUT: (Option<Modifiers>, Code) = (
     Some(Modifiers::CONTROL.union(Modifiers::SHIFT)),
@@ -134,9 +118,8 @@ const OPEN_SETTINGS_SHORTCUT: (Option<Modifiers>, Code) = (
     Code::Comma,
 );
 
-// the Open/Focus Session
-// shortcut — ⌃⇧A, chosen by the same "avoid the combos already listed
-// above and common ⌘-based shortcuts" rule as SKIP/OPEN_SETTINGS.
+// Open/Focus Session — ⌃⇧A, same "avoid the combos above and common
+// ⌘-based shortcuts" rule as SKIP/OPEN_SETTINGS.
 #[cfg(target_os = "macos")]
 const FOCUS_SESSION_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyA);
@@ -155,7 +138,7 @@ pub fn run() {
     }
 
     // malformed config is a boot-time error: fail fast with a clear
-    // message (spec §9). a missing file is fine and yields defaults.
+    // message. a missing file is fine and yields defaults.
     let config = match Config::load() {
         Ok(c) => c,
         Err(e) => {
@@ -174,10 +157,10 @@ pub fn run() {
         }
     };
 
-    // Boot-time contract parity with the settings window: the
-    // file is the other editing surface, so it gets the same validation —
-    // but warn-and-continue, not exit: a range violation must not brick an
-    // always-on login item. Malformed TOML still fails fast in Config::load.
+    // Boot-time parity with the settings window: config.toml is the other
+    // editing surface, so it gets the same validation — but warn-and-continue,
+    // not exit: a range violation must not brick an always-on login item.
+    // Malformed TOML still fails fast in Config::load.
     if let Err(violations) = crate::settings::validate(&config) {
         for v in &violations {
             tracing::warn!(violation = %v, "config.toml value out of range — running with it anyway");
@@ -187,13 +170,13 @@ pub fn run() {
     let (mode, inset, cutout) = presentation::detect_mode(&config);
     // this info line is load-bearing: the hud fallback is silent by
     // design, so the log is the only tell that detection worked
-    // (manual checklist, IMPLEMENTATION_PLAN.md §6)
+    // (manual checklist, docs/TESTING_STRATEGY.md §6)
     tracing::info!(?mode, inset, "presentation mode resolved");
 
-    // v5 kill switch (spec §5): launch with promotion already paused.
-    // reuses the paused semantics wholesale — pushes still buffer (202),
-    // rotation still ages out anything visible; only the launch state
-    // differs. the tray toggle stays session-only.
+    // Kill Switch: launch with promotion already paused. reuses the paused
+    // semantics wholesale — pushes still buffer (202), rotation still ages
+    // out anything visible; only the launch state differs. the tray toggle
+    // stays session-only.
     let mut initial_queue = SingleSlotQueue::new(config.max_queued_per_tier)
         .with_rotation_order(config.rotation_order.clone());
     if config.start_paused {
@@ -204,7 +187,7 @@ pub fn run() {
     // it BY VALUE and creates the wake and live-match handle internally —
     // after that, no code outside engine.rs can hold any of the three.
     let start_paused = config.start_paused;
-    // v5 settings window reads the *booted* config via get_config —
+    // the settings window reads the *booted* config via get_config —
     // managed as state in setup, after the fields below are cloned out.
     let config_for_state = config.clone();
     let port = config.port;
@@ -216,10 +199,9 @@ pub fn run() {
     let espn_ttl_secs = config.espn_ttl_secs;
     let espn_live_card = config.espn_live_card;
     let espn_rich_events = config.espn_rich_events;
-    // `~/.config/notchtap/crests/`, a sibling of
-    // config.toml under the same directory
-    // (`Config::dir_from_home`) — the repo's first binary-asset cache.
-    // Crest PNGs are runtime-cached here, never committed to git.
+    // `~/.config/notchtap/crests/`, a sibling of config.toml under the
+    // same directory (`Config::dir_from_home`). Crest PNGs are
+    // runtime-cached here, never committed to git.
     let crests = dirs::home_dir()
         .map(|h| CrestCache::new(Config::dir_from_home(&h).join("crests")))
         .unwrap_or_else(|| {
@@ -236,10 +218,10 @@ pub fn run() {
     let manual_default_priority = config.manual_default_priority;
     let agent_priority = config.agent_priority;
     let agent_ttl_secs = config.agent_ttl_secs;
-    // v7: `[agents]` config drives both the Agent
-    // Registry's stale/retention durations (below, at registry
-    // construction) and the `agent_events_handler`'s `NotificationPolicy`/
-    // per-runtime gate (`http::AppState`, further down in `setup`).
+    // `[agents]` config drives both the Agent Registry's stale/retention
+    // durations (below, at registry construction) and the
+    // `agent_events_handler`'s `NotificationPolicy`/per-runtime gate
+    // (`http::AppState`, further down in `setup`).
     let agents_config = config.agents.clone();
     let agent_notification_policy = agents::notification::NotificationPolicy {
         informational_notifications: agents_config.informational_notifications,
@@ -251,20 +233,20 @@ pub fn run() {
     };
     let agent_runtimes = agents_config.runtimes;
     let agent_enabled = agents_config.enabled;
-    // Operator decision 2026-08-02: the Agent Board's PRESENCE gate,
-    // applied in exactly one place — `AgentBoardPublisher::gate_presence`
-    // (agents/board.rs). Nothing downstream of the publisher (the
-    // overlay's `presentationMode`, the hover-expand path below) knows
-    // this flag exists; they all read the published snapshot instead.
+    // the Agent Board's PRESENCE gate, applied in exactly one place —
+    // `AgentBoardPublisher::gate_presence` (agents/board.rs). Nothing
+    // downstream of the publisher (the overlay's `presentationMode`, the
+    // hover-expand path below) knows this flag exists; they all read the
+    // published snapshot instead.
     let agent_board_show_working = agents_config.board_show_working;
     let agent_stale_after = std::time::Duration::from_secs(agents_config.stale_after_secs);
     let agent_terminal_retention =
         std::time::Duration::from_secs(agents_config.terminal_retention_secs);
     let agent_stale_retention = std::time::Duration::from_secs(agents_config.stale_retention_secs);
     let history_enabled = config.history_enabled;
-    // the `[silence]` block feeds `SilenceController::new` at
-    // boot (below, in `setup`) — session-only mute/skip state is never
-    // read from config, only the daily schedule.
+    // the `[silence]` block feeds `SilenceController::new` at boot (below,
+    // in `setup`) — session-only mute/skip state is never read from config,
+    // only the daily schedule.
     let silence_schedule_enabled = config.silence.enabled;
     let silence_window = config.silence.window;
 
@@ -274,9 +256,9 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
     builder
-        // v5 settings commands (settings.rs) — every one of these is also
+        // settings commands (settings.rs) — every one of these is also
         // listed in build.rs's AppManifest::commands; that pairing is what
-        // keeps them deniable to the overlay window (spec §2).
+        // keeps them deniable to the overlay window.
         .invoke_handler(tauri::generate_handler![
             settings::clear_history,
             settings::clear_queue,
@@ -322,11 +304,10 @@ pub fn run() {
             // so the settings commands (send_test_notification) and the
             // on_page_load/server_once closures below can reach the same
             // Engine the rotation loop and pollers run on.
-            // `None` when disabled (the default) — the Engine's
-            // hook is then a no-op and behavior is byte-identical to
-            // pre-088. A store that fails to open (unwritable config dir)
-            // degrades to `None` with a warning rather than failing boot;
-            // history is a convenience, not a correctness requirement.
+            // `None` when disabled (the default) — the Engine's hook is
+            // then a no-op. A store that fails to open (unwritable config
+            // dir) degrades to `None` with a warning rather than failing
+            // boot; history is a convenience, not a correctness requirement.
             let history = if history_enabled {
                 match dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
@@ -373,16 +354,9 @@ pub fn run() {
             )));
             app.manage(silence_controller.clone());
 
-            // v7: the one Agent Registry, managed exactly
-            // like `engine` above so both the HTTP layer (`http::AppState`,
-            // below) and later tickets (IPC, settings) can reach the same
-            // instance via `AppHandle::state`. `stale_after`/
-            // `terminal_retention`/`stale_retention` now come from real
-            // `[agents]` config (`agent_stale_after`/`agent_terminal_retention`/
-            // `agent_stale_retention`, hoisted above from
-            // `config.agents.stale_after_secs`/`terminal_retention_secs`/
-            // `stale_retention_secs`) rather than the spec-default
-            // hardcodes shipped with.
+            // the one Agent Registry, managed exactly like `engine` above
+            // so the HTTP layer (`http::AppState`, below), IPC and settings
+            // all reach the same instance via `AppHandle::state`.
             let agent_registry = agents::registry::AgentRegistryHandle::new(
                 agents::registry::AgentRegistry::new(
                     agent_stale_after,
@@ -403,8 +377,8 @@ pub fn run() {
             let agent_health = std::sync::Arc::new(agents::health::HealthTracker::new());
             app.manage(agent_health.clone());
 
-            // v7: the `agent-state` IPC publisher —
-            // managed the same way as `engine`/`agent_registry` above so
+            // the `agent-state` IPC publisher — managed the same way as
+            // `engine`/`agent_registry` above so
             // `server_once`'s `http::AppState` (below) can reach the same
             // instance the periodic tick (`spawn_tick`, right after) also
             // publishes through; both call sites must share one
@@ -436,37 +410,21 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let was_hovered = Arc::new(StdMutex::new(false));
 
-            // whether
-            // the Agent Board's window frame is CURRENTLY the expanded
-            // one (and pointer delivery is temporarily enabled) — set the
-            // instant a board hover-entry expands it, cleared the instant
-            // a hover-exit (or any other `emit_hover_changed_if_transitioned`
-            // call site going false) collapses it back. Gates the
-            // collapse path so a hover-exit over a NON-board card (which
-            // never expanded anything) doesn't do needless window-frame
-            // churn.
-            // Animation audit 2026-08-02: now a `BoardFrameState` (that
-            // same boolean plus a generation counter) because the shrink
-            // half of the collapse is deferred — see `BoardFrameState`
-            // and `collapse_board_if_expanded` for why.
+            // whether the Agent Board's window frame is CURRENTLY the
+            // expanded one (and pointer delivery is temporarily enabled) —
+            // set the instant a board hover-entry expands it, cleared the
+            // instant a hover-exit (or any other
+            // `emit_hover_changed_if_transitioned` call site going false)
+            // collapses it back. Gates the collapse path so a hover-exit
+            // over a NON-board card doesn't do needless window-frame churn.
+            // The generation counter beside it is what lets the deferred
+            // shrink cancel itself — see `BoardFrameState`.
             #[cfg(target_os = "macos")]
             let board_frame = Arc::new(StdMutex::new(BoardFrameState::default()));
 
-            // `tabs::TabSelection`
-            // (the icon strip's own selection state — see tabs.rs) is
-            // deliberately NOT wired up as app state here yet. It needs a
-            // real consumer (the click detection mechanism, still an open
-            // question — see plans/171-tab-notch-redesign.md's own note)
-            // before it's threaded through `Arc<StdMutex<..>>` the same
-            // way `board_frame` is just above; declaring it unconsumed
-            // would trip clippy's unused-variable lint on a real macOS
-            // build (invisible from this Linux dev environment, but real
-            // on CI) — added in the same commit as whatever first reads
-            // or writes it.
-
-            // permanent-overlay pass: a plain NSWindow is never composited
-            // into another app's fullscreen Space, regardless of level or
-            // collection behavior — macOS only honors fullScreenAuxiliary
+            // a plain NSWindow is never composited into another app's
+            // fullscreen Space, regardless of level or collection
+            // behavior — macOS only honors fullScreenAuxiliary
             // for nonactivating panels (or perfectly nonactivating agent
             // windows, which tao's show path is not). swizzle the window
             // into an NSPanel with the nonactivating style mask; same
@@ -491,16 +449,12 @@ pub fn run() {
                 // per mouse-move.
                 let hover_handler = OverlayPanelEventHandler::new();
                 let hover_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
-                // the y-span fix's cutout-HEIGHT term. Mirrors
-                // `cutout_height_js_value`'s own reasoning (lib.rs, near
-                // the on_page_load eval-splice site) — `CutoutGeometry`
-                // carries no height field, so `inset`
-                // (`DetectOutput::safe_area_top_inset`, already
-                // destructured above and already in scope here) is the
-                // notch's real height in notch mode; `0.0` in HUD mode,
-                // where `hover::active_card_rect` ignores this argument
-                // entirely in favor of `HUD_CUTOUT_H` anyway (same
-                // pattern `hover_cutout_width` already follows).
+                // the cutout-HEIGHT term. `CutoutGeometry` carries no
+                // height field, so `inset`
+                // (`DetectOutput::safe_area_top_inset`) is the notch's real
+                // height in notch mode; `0.0` in HUD mode, where
+                // `hover::active_card_rect` ignores this argument entirely
+                // in favor of `HUD_CUTOUT_H`.
                 let hover_cutout_height = inset;
 
                 {
@@ -513,17 +467,17 @@ pub fn run() {
                     let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
-                        // read BEFORE this event can overwrite
-                        // it — `hover_point_is_over_card`'s own doc
-                        // explains why the CURRENT (pre-event) value is
-                        // the correct hysteresis input for whether the
-                        // idle peek's (2026-08-02: or the showing card's
-                        // hover-expanded) rect should already be grown.
+                        // read BEFORE this event can overwrite it —
+                        // `hover_point_is_over_card`'s own doc explains why
+                        // the CURRENT (pre-event) value is the correct
+                        // hysteresis input for whether the idle peek's (or
+                        // the showing card's hover-expanded) rect should
+                        // already be grown.
                         let hover_latched = *was_hovered.lock().unwrap_or_else(|e| e.into_inner());
-                        // P0 fix: the REAL currently-applied window height
-                        // — `hover::WINDOW_HEIGHT` at rest, or the taller
-                        // applied board-expand frame — never the stale
-                        // constant. See `hover::board_rect`'s doc comment.
+                        // the REAL currently-applied window height —
+                        // `hover::WINDOW_HEIGHT` at rest, or the taller
+                        // applied board-expand frame — never the constant.
+                        // See `hover::board_rect`'s doc comment.
                         let real_window_height =
                             board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
@@ -563,8 +517,8 @@ pub fn run() {
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
                         let hover_latched = *was_hovered.lock().unwrap_or_else(|e| e.into_inner());
-                        // P0 fix: see the matching comment in
-                        // `on_mouse_entered` just above.
+                        // see the matching comment in `on_mouse_entered`
+                        // just above.
                         let real_window_height =
                             board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
@@ -622,52 +576,33 @@ pub fn run() {
 
                 panel.set_event_handler(Some(hover_handler.as_ref()));
 
-                // Generic hover-latch reset (M5): reset
-                // `was_hovered` back to false after the dismiss/skip
-                // hotkeys specifically, because those replace the visible
-                // card with no mouse event firing to trip the
-                // transitions-only gate naturally. That fix enumerated
-                // caller sites and missed two others that also replace the
-                // visible item with no mouse event: an idle-peek card
-                // promoting under an already-hovering cursor (the idle
-                // rect and the new Showing rect can both contain the
-                // cursor, so `hovered` reads true before AND after the
-                // promotion — the gate sees no transition and
-                // `hover_enter` never fires for the new item, so the TTL
-                // hover-pause stays dead and the card rotates out under a
-                // moving cursor), and the settings window's `skip_current`
-                // command (which mutates through `Engine::apply`, nowhere
-                // near this AppKit event handler at all).
-                //
-                // Rather than chase every current and future caller that
-                // can change the visible item, listen for the one channel
-                // EVERY such change already flows through regardless of
-                // origin: the `slot-state` wire event itself. Whenever the
-                // emitted item's id differs from the last one observed,
-                // force `was_hovered` back to false — the transitions-only
-                // gate then treats the cursor's hover state as unknown
-                // again, so the next real mouse-move (the cursor is, per
-                // the bug report, already moving in the case this exists
-                // to fix) recomputes fresh for the new item instead of
-                // staying latched true from the old one and never firing.
-                // Same accepted residual as a perfectly
-                // stationary cursor doesn't recompute until it moves 1px.
+                // Generic hover-latch reset. Many paths replace the
+                // visible item with no mouse event firing (dismiss/skip
+                // hotkeys, a promotion under an already-hovering cursor,
+                // the settings window's `skip_current`), and the
+                // transitions-only gate then sees no transition — so
+                // `hover_enter` never fires for the new item and the TTL
+                // hover-pause stays dead. Rather than enumerate callers,
+                // listen on the one channel EVERY visible-item change
+                // flows through: the `slot-state` wire event. A changed id
+                // forces `was_hovered` back to false, so the next real
+                // mouse-move recomputes fresh for the new item. Accepted
+                // residual: a perfectly stationary cursor doesn't
+                // recompute until it moves 1px.
                 {
                     use tauri::Listener;
                     let was_hovered = was_hovered.clone();
                     let last_visible_id: Arc<StdMutex<Option<String>>> =
                         Arc::new(StdMutex::new(None));
-                    // also clone in the board-collapse inputs — a
-                    // new Notification taking the Slot (a real `id` arriving
-                    // here) means the overlay's own `presentationMode`
-                    // switches away from the Board entirely (spec §6.1's
-                    // precedence: Visible Notification always wins), so any
+                    // a new Notification taking the Slot (a real `id`
+                    // arriving here) switches the overlay's own
+                    // `presentationMode` away from the Board entirely (a
+                    // Visible Notification always wins), so any
                     // still-expanded Board window frame must collapse right
-                    // alongside the existing hover-latch reset — this path
-                    // deliberately never emits `hover-changed` (see the
-                    // paragraph above), so it can't route through
-                    // `emit_hover_changed_if_transitioned` itself; it calls
-                    // the same idempotent collapse helper directly instead.
+                    // alongside the hover-latch reset. This path
+                    // deliberately never emits `hover-changed`, so it can't
+                    // route through `emit_hover_changed_if_transitioned`;
+                    // it calls the same idempotent collapse helper directly.
                     let board_frame = board_frame.clone();
                     let window = window.clone();
                     app.handle()
@@ -706,13 +641,12 @@ pub fn run() {
                 }
             }
 
-            // the icon-strip click monitor —
-            // mechanism (a), an NSEvent LOCAL monitor (click.rs's module
-            // doc records why (b) alone can never satisfy the receive-only
-            // overlay). Installed once, before the native config below
-            // re-asserts click-through; events only ever reach it while
-            // `emit_hover_changed_if_transitioned` has opened the window
-            // for cursor events (strip hovered, slot idle).
+            // the icon-strip click monitor — an NSEvent LOCAL monitor
+            // (click.rs's module doc records why nothing else satisfies the
+            // receive-only overlay). Installed once, before the native
+            // config below re-asserts click-through; events only ever reach
+            // it while `emit_hover_changed_if_transitioned` has opened the
+            // window for cursor events (strip hovered, slot idle).
             #[cfg(target_os = "macos")]
             {
                 let monitor_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
@@ -735,7 +669,7 @@ pub fn run() {
                 });
             }
 
-            // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
+            // survive Spaces switches and fullscreen apps.
             #[cfg(target_os = "macos")]
             apply_overlay_native_config(&window)?;
 
@@ -747,10 +681,9 @@ pub fn run() {
                 silence_controller.clone(),
             )?;
 
-            // v3.6 spec §7.1: manual expand toggle, rust-side only — the
-            // frontend never calls the plugin's JS api (receive-only
-            // boundary, unchanged), so no capabilities/permissions entry
-            // is needed for this.
+            // manual expand toggle, rust-side only — the frontend never
+            // calls the plugin's JS api (receive-only boundary), so no
+            // capabilities/permissions entry is needed for this.
             #[cfg(target_os = "macos")]
             {
                 // the configured prefix combo, parsed
@@ -904,12 +837,11 @@ pub fn run() {
                     FOCUS_SESSION_SHORTCUT.0,
                     FOCUS_SESSION_SHORTCUT.1,
                 ))?;
-                // the prefix combo — the ONLY
-                // always-registered addition. The seven follow-up keys
-                // are bare, system-wide grabs and are registered only
-                // inside a live armed window (spec §9's mechanism note),
-                // never here: a permanently-registered bare Return or
-                // `1` would eat ordinary typing everywhere.
+                // the prefix combo — the ONLY always-registered grab. The
+                // follow-up keys are bare, system-wide grabs registered
+                // only inside a live armed window, never here: a
+                // permanently-registered bare Return or `1` would eat
+                // ordinary typing everywhere.
                 if let Err(e) = app
                     .global_shortcut()
                     .register(prefix_shortcut_from_config(&config.prefix_shortcut))
@@ -923,16 +855,13 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             login_item::register();
-            // v6: polling is enabled/disabled once at boot from Config and
-            // never flipped again (no longer tray-toggleable — the tray's
-            // "Pause Football Scores"/"Pause News" items were redundant
-            // with the settings panel's espn_enabled/rss_enabled toggles,
-            // ARCHITECTURE.md §17's "richer than a toggle lives in
-            // Settings" rule). Each poller below simply doesn't spawn when
-            // its `_enabled` flag is false.
-            // the rotation loop (formerly spawn_heartbeat) lives
-            // inside the Engine — it is the consumer of the wake, so the
-            // wake never escapes engine.rs.
+            // polling is enabled/disabled once at boot from Config and
+            // never flipped again — the settings panel's
+            // espn_enabled/rss_enabled toggles are the only control
+            // (`docs/ARCHITECTURE.md` §17). Each poller below simply
+            // doesn't spawn when its `_enabled` flag is false.
+            // the rotation loop lives inside the Engine — it is the
+            // consumer of the wake, so the wake never escapes engine.rs.
             engine.spawn_rotation();
 
             // the Silenced schedule/mute timer — always spawned
@@ -1023,7 +952,7 @@ pub fn run() {
                 });
             }
 
-            // espn poller (v2 spec §3) — config-gated: `espn_enabled =
+            // espn poller — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
             // (silent), so starting before the webview loads can't drop
             // anything a listener would have shown.
@@ -1056,48 +985,41 @@ pub fn run() {
             Ok(())
         })
         .on_page_load(move |webview, payload| {
-            // listener-ready gate (spec §3): tauri events are transient, so
+            // listener-ready gate: tauri events are transient, so
             // the /notify listener binds only once the webview has loaded
             // and its `notification-promoted` listener can exist. before
             // this, the cli gets connection-refused — honest, not a silent
             // 200-drop.
             if payload.event() == PageLoadEvent::Finished && webview.label() == "main" {
                 let app_handle = webview.app_handle().clone();
-                // retrieve the ONE Engine via managed state —
-                // this closure is built before `setup` runs, so it cannot
-                // capture the Engine; a second Engine::new here would
-                // create a second wake AND a second live-match handle no
-                // rotation loop waits on or writes to (the exact
-                // stall/desync class 015/036 fixed).
+                // retrieve the ONE Engine via managed state — this closure
+                // is built before `setup` runs, so it cannot capture the
+                // Engine; a second Engine::new here would create a second
+                // wake AND a second live-match handle no rotation loop
+                // waits on or writes to.
                 let engine = app_handle.state::<Engine>().inner().clone();
 
                 // slot-state is double-shielded against the
-                // listener-registration race (2026-07-17 review, this
-                // migration's own fix): the eval plants a global that react
-                // reads as *initial* state if it mounts after this moment;
-                // the emit reaches the listener if react mounted before it.
-                // one of the two always lands, and running on every page
-                // load (not once) covers reloads too — which is why the
-                // emit is UNCONDITIONAL (dedup deliberately bypassed).
-                // blocking_lock is safe here, same as the tray menu
-                // handler below: this callback runs off the tokio runtime,
-                // not on it.
+                // listener-registration race: the eval plants a global that
+                // react reads as *initial* state if it mounts after this
+                // moment; the emit reaches the listener if react mounted
+                // before it. One of the two always lands, and running on
+                // every page load (not once) covers reloads too — which is
+                // why the emit is UNCONDITIONAL (dedup deliberately
+                // bypassed). blocking_lock is safe here, same as the tray
+                // menu handler below: this callback runs off the tokio
+                // runtime, not on it.
                 //
-                // Ordering fix: the global is planted BEFORE the wire emit
-                // fires, not after. Emitting first left a real gap — a
-                // webview that finishes mounting its `slot-state` listener
-                // between the emit and the eval call would see neither (the
-                // emit already fired with no listener yet, and the global
-                // isn't set yet either), landing on `undefined` until the
-                // next real content change. Planting first means the two
-                // now overlap instead: a late-mounting react reads the
-                // global either way, and an already-mounted listener still
-                // gets the emit a moment later — the frontend's own dedup
-                // is what makes that harmless double-land a no-op.
+                // Plant the global BEFORE the emit, never after: a webview
+                // that mounts its `slot-state` listener between the two
+                // would otherwise see neither and land on `undefined` until
+                // the next real content change. Planting first makes the
+                // two overlap, and the frontend's own dedup makes the
+                // harmless double-land a no-op.
                 // `current_slot_state_blocking`/`status_snapshot_blocking`
                 // (engine.rs) are the non-emitting halves that make this
                 // ordering possible; `emit_slot_state`/`emit_status_state`
-                // below are then called explicitly, after the eval.
+                // are then called explicitly, after the eval.
                 {
                     let current_state = engine.current_slot_state_blocking();
                     let state_json =
@@ -1141,9 +1063,9 @@ pub fn run() {
                     let _ = webview.emit("appearance-changed", &payload);
                 }
 
-                // presentation facts for the frontend — the mode boolean and
-                // the numeric cutout width, one eval, same page-load site as the other
-                // boot facts. will consume __NOTCHTAP_MODE__ when it lands.
+                // presentation facts for the frontend — the mode string and
+                // the numeric cutout geometry, one eval, same page-load site
+                // as the other boot facts.
                 {
                     let mode_str = match mode {
                         presentation::Mode::Notch => "notch",
@@ -1219,12 +1141,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running notchtap")
         .run(|app_handle, event| {
-            // PAL consensus 2026-08-03: the other path by which a bare
-            // follow-up grab could outlive the app's own control flow —
-            // quitting while armed. Releasing on Exit is cheap and
-            // idempotent, and macOS reclaiming the grabs on process death
-            // is not something to rely on when the cost of being wrong is
-            // the user's keyboard.
+            // Quitting while armed is the other path by which a bare
+            // follow-up grab could outlive the app's own control flow.
+            // Releasing on Exit is cheap and idempotent, and macOS
+            // reclaiming the grabs on process death is not something to
+            // rely on when the cost of being wrong is the user's keyboard.
             #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(tab_wire) = app_handle.try_state::<Arc<tabs::TabWire>>() {
@@ -1241,15 +1162,11 @@ pub fn run() {
 /// invisible to the user; without this, a malformed `config.toml` looks
 /// like the app silently refusing to launch, with no way to learn why.
 ///
-/// No new dependency: neither `rfd` nor `tauri-plugin-dialog` is in
-/// Cargo.toml, and adding one is out of scope here (see this fix's own
-/// instructions) — `osascript` is a system binary already reachable via
-/// `std::process::Command`, the same mechanism `open_current_story`
-/// already uses to shell out to `/usr/bin/open`. `.status()` blocks this
-/// thread until the dialog is dismissed, which is exactly what "shown
-/// BEFORE the exit" requires — `run()` calls this and then
-/// `std::process::exit(1)` immediately after, so there is nothing else
-/// for this thread to do in the meantime anyway.
+/// `osascript` keeps this dependency-free: a system binary reached via
+/// `std::process::Command`, the same mechanism `open_current_story` uses
+/// for `/usr/bin/open`. `.status()` blocks this thread until the dialog is
+/// dismissed, which is what "shown BEFORE the exit" requires — `run()`
+/// calls this and then `std::process::exit(1)` immediately after.
 #[cfg(target_os = "macos")]
 fn show_boot_error_dialog(message: &str) {
     let script = format!(
@@ -1282,40 +1199,35 @@ fn escape_for_osascript(s: &str) -> String {
 
 /// Makes a serde_json string safe to splice into eval'd JS source:
 /// payloads may carry arbitrary caller text (espn scoring-play strings,
-/// agent titles — superseded the earlier cmux relay, ).
-/// U+2028/U+2029 are legal in JSON but illegal raw in JS
-/// source, and `<` closes the gap JSON leaves (it doesn't escape `/`,
-/// so a literal "</script>" would otherwise break out of the script
-/// context).
+/// agent titles). U+2028/U+2029 are legal in JSON but illegal raw in JS
+/// source, and `<` closes the gap JSON leaves (it doesn't escape `/`, so
+/// a literal "</script>" would otherwise break out of the script context).
 fn escape_for_eval_splice(json: &str) -> String {
     json.replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029")
         .replace('<', "\\u003c")
 }
 
-// v3.6 spec §7.2 + permanent-overlay pass: the window must overlap the menu
-// bar (flush to y=0), survive Spaces switches, and stay visible over
-// fullscreen apps. tao resets the window level and collection behavior when
-// it shows the window (observed live: layer back to 5, y clamped below the
-// menu bar), so this must be applied both at setup AND re-applied after the
-// window is actually shown (the page-load hook).
+// The window must overlap the menu bar (flush to y=0), survive Spaces
+// switches, and stay visible over fullscreen apps. tao resets the window
+// level and collection behavior when it shows the window, so this must be
+// applied both at setup AND re-applied after the window is actually shown
+// (the page-load hook).
 #[cfg(target_os = "macos")]
 fn apply_overlay_native_config(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
-    // click-through at boot (2026-07-17 bug: on notchless HUD-mode machines,
-    // the flush-to-top/NSStatusWindowLevel placement below lands this window
-    // directly over the real, interactive system menu bar — not a notch
-    // cutout's dead zone — so without this, every click in its bounds
-    // (including ones meant for the menu bar's own tray icons) was captured
-    // by notchtap instead of passing through. NOTE this `true` is the BOOT
-    // DEFAULT, no longer an invariant: since the hover path
-    // (`emit_hover_changed_if_transitioned`) conditionally flips it to
-    // `false` while the icon strip is hoverable, and a rust-side `NSEvent`
-    // monitor (`click.rs`) observes clicks — the monitor's hit-test, not
-    // this toggle, is what narrows clicks to the strip. The menu-bar
-    // pass-through above is preserved because the window only accepts
-    // events while the cursor is already over the painted card rect.
-    // `docs/ARCHITECTURE.md` §22 holds that decision.
+    // Click-through at boot. On notchless HUD-mode machines the
+    // flush-to-top/NSStatusWindowLevel placement below lands this window
+    // directly over the real, interactive system menu bar, so without this
+    // every click in its bounds (including ones meant for the menu bar's
+    // own tray icons) would be captured by notchtap instead of passing
+    // through. This `true` is the BOOT DEFAULT, not an invariant: the hover
+    // path (`emit_hover_changed_if_transitioned`) flips it to `false` while
+    // the icon strip is hoverable, and the `NSEvent` monitor (`click.rs`)
+    // hit-test — not this toggle — is what narrows clicks to the strip.
+    // Menu-bar pass-through survives because the window only accepts events
+    // while the cursor is already over the painted card rect
+    // (`docs/ARCHITECTURE.md` §22).
     window.set_ignore_cursor_events(true)?;
     // tao tracks this flag in its own window state, so it survives tao's
     // internal re-applies (unlike a raw setCollectionBehavior alone).
@@ -1354,11 +1266,10 @@ fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-// the cutout width as a JS literal for the page-load eval splice
-// — a positive JSON number when the shim reported a cutout, `null`
-// otherwise (hud mode, or an older/zero-width report). `width <= 0.0`
-// cannot occur here: `presentation::DetectOutput::cutout()` normalizes it
-// to `None` upstream.
+// the cutout width as a JS literal for the page-load eval splice — a
+// positive JSON number when the shim reported a cutout, `null` otherwise
+// (hud mode, or a zero-width report). `width <= 0.0` cannot occur here:
+// `presentation::DetectOutput::cutout()` normalizes it to `None` upstream.
 fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String {
     match cutout {
         Some(c) => format!("{}", c.width),
@@ -1366,21 +1277,14 @@ fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String
     }
 }
 
-// the notch cutout's HEIGHT, exposed through the same eval-splice
-// site as its width, one line below the width's own splice. `CutoutGeometry`
+// the notch cutout's HEIGHT, spliced beside its width. `CutoutGeometry`
 // carries no height field (it's purely the horizontal bounds the shim
-// reports) — the height is `DetectOutput::safe_area_top_inset`
-// (presentation.rs:41), already destructured into `inset` at this
-// function's top (`detect_mode`'s second tuple field, presentation.rs:66)
-// and already in scope at the on_page_load call site below, so this needed
-// no new plumbing, only mirroring `cutout_width_js_value`'s shape.
-// `presentation_mode` (presentation.rs:14) treats `inset > 0.0` as the
-// notch/hud boundary, so gating on that here keeps this function's notion
-// of "a cutout was reported" identical to `Mode::Notch` itself — a hud-mode
-// `inset` (always `0.0`, presentation.rs:77's fallback) renders `null`,
-// exactly like `cutout_width_js_value` does for a missing cutout; App.tsx's
-// HUD synthetic-height constant fills the gap client-side, same pattern as
-// width.
+// reports) — the height is `DetectOutput::safe_area_top_inset`.
+// `presentation::presentation_mode` treats `inset > 0.0` as the notch/hud
+// boundary, so gating on that here keeps this function's notion of "a
+// cutout was reported" identical to `Mode::Notch` itself; a hud-mode
+// `inset` renders `null` and App.tsx's HUD synthetic-height constant fills
+// the gap client-side.
 fn cutout_height_js_value(inset: f64) -> String {
     if inset > 0.0 {
         format!("{inset}")
@@ -1389,59 +1293,35 @@ fn cutout_height_js_value(inset: f64) -> String {
     }
 }
 
-// called fresh from every tracking-area callback (mouseEntered/
+// Called fresh from every tracking-area callback (mouseEntered/
 // mouseMoved) — cheap (a few short-lived mutex locks, no lock held across
-// the return) rather than cached, since the card's rect can change
-// between events (a new item promoted, expand toggled) while the cursor
-// is still resting over the window. Lock discipline: each of
-// `engine.read_blocking`/the config lock acquires, reads, and drops
-// before the next opens — never nested (cold-read Gap 2).
-// `cutout_height`/`hover_latched` added for the y-span fix —
-// see `hover::active_card_rect`'s doc comment for what each means.
+// the return) rather than cached, since the card's rect can change between
+// events (a new item promoted, expand toggled) while the cursor is still
+// resting over the window. Lock discipline: each of
+// `engine.read_blocking`/the config lock acquires, reads, and drops before
+// the next opens — never nested.
+//
 // `hover_latched` is the caller's job to supply (it needs `was_hovered`,
-// which this function has no reason to know about); this function no
-// longer reads `StatusState` at all — `hover::status_rail_active` (the
-// old `has_status_chips` input) is gone, both the function and its call
-// here, now that the y-span's idle-peek input is hover hysteresis, not
-// ambient-data availability.
+// which this function has no reason to know about). It feeds BOTH of
+// `active_card_rect`'s hysteresis booleans — `idle_peek_open` (read only
+// while `!visible`) and `hover_expand_open` (read only while `visible`);
+// see `hover::active_card_rect`'s doc for what each means.
 //
-// Animation audit 2026-08-02: that one latch now feeds BOTH of
-// `active_card_rect`'s hysteresis booleans — `idle_peek_open` (consulted
-// only while `!visible`) and `hover_expand_open` (consulted only while
-// `visible`) — hence the rename from `idle_peek_open` to the neutral
-// `hover_latched` here: this parameter was never "the peek is open", it
-// was always "the latch says the cursor is already on the card," and it
-// now has two consumers on opposite sides of that branch. See
-// `hover::active_card_rect`'s doc for why the SHOWING side needs it too
-// (the hover-expand collapsing the card out from under the cursor).
+// `board_session_count`: when the Slot reads `Empty` (`!visible`), that
+// alone can't tell this function whether the ambient idle surface or the
+// Agent Board is on screen — the Slot has no concept of the Board, that
+// precedence lives entirely in the FRONTEND's `presentationMode`. The
+// caller answers via `AgentBoardPublisher::last_session_count` (a cheap
+// synchronous read, not a registry round-trip); a nonzero count while
+// `!visible` means `hover::board_rect` applies instead of
+// `hover::active_card_rect`'s idle formula. That count already accounts
+// for the Board's PRESENCE gate
+// (`agents::board::AgentBoardPublisher::gate_presence`), so no presence
+// check belongs at this call site — there is exactly one gate.
 //
-// pushed this to 8 positional params (over clippy's default 7-arg
-// threshold) by adding `cutout_height`/`hover_latched`. Same call as
-// `Engine::new`'s own `#[allow(clippy::too_many_arguments)]` (engine.rs):
-// a named-field params struct is a bigger surface change than this plan's
-// scope for a function with exactly two call sites, both in this same
-// file.
-//
-// `board_session_count` — when
-// the Slot reads `Empty` (`!visible`), that alone can't tell this
-// function whether the ambient idle surface is showing or the Agent
-// Board is (the Slot has no concept of the Board at all — spec §6.1's
-// precedence lives entirely in the FRONTEND's `presentationMode`). The
-// caller supplies the answer via `AgentBoardPublisher::last_session_count`
-// (a cheap synchronous read, not a registry round-trip) — a nonzero
-// count while `!visible` means the Board is what's actually rendered
-// under the cursor, so `hover::board_rect` (sized off the Board's own
-// shape) is used instead of `hover::active_card_rect`'s idle formula
-// (sized off the small ambient clock card, which is NOT what's
-// on screen in that case).
-//
-// Operator decision 2026-08-02 (`[agents] board_show_working`): that
-// count already accounts for the Board's PRESENCE gate — the publisher
-// applies it before writing the bookkeeping `last_session_count` reads
-// (`agents::board::AgentBoardPublisher::gate_presence`), so a Board that
-// working-only sessions were not allowed to summon reads `0` here and
-// this function correctly falls back to the idle card rect. No presence
-// check belongs at this call site; there is exactly one gate.
+// A named-field params struct is a bigger change than this function's two
+// call sites (both in this file) warrant, hence the `#[allow]` — same call
+// as `Engine::new`'s own (engine.rs).
 #[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn hover_point_is_over_card(
@@ -1474,11 +1354,10 @@ fn hover_point_is_over_card(
         .appearance
         .card_scale;
     let rect = if !visible && board_session_count > 0 {
-        // P0 fix: `real_window_height` is the window height ACTUALLY
-        // applied right now (`BoardFrameState.height`, read by the
-        // caller before this call) — never the stale `hover::WINDOW_HEIGHT`
-        // constant, which is only correct while the board is resting. See
-        // `hover::board_rect`'s doc comment for the bug this closes.
+        // `real_window_height` is the window height ACTUALLY applied right
+        // now (`BoardFrameState.height`, read by the caller before this
+        // call) — never the `hover::WINDOW_HEIGHT` constant, which is only
+        // correct while the board is resting. See `hover::board_rect`.
         hover::board_rect(
             mode,
             cutout_width,
@@ -1506,26 +1385,20 @@ fn hover_point_is_over_card(
     hover::point_in_rect(&rect, point_x, point_y)
 }
 
-// the transitions-only guard — `hover-changed` must fire when
-// the boolean flips and never per mouse-move (a moving cursor generates
-// many mouseMoved events per second; emitting on every one would flood
-// the webview and violate the idle-cost discipline plans 015/018
-// established). Same emission shape as `appearance-changed`
-// (`settings.rs:564`).
+// The transitions-only guard — `hover-changed` must fire when the boolean
+// flips and never per mouse-move (a moving cursor generates many
+// mouseMoved events per second; emitting on every one would flood the
+// webview and break the idle-cost discipline). Same emission shape as
+// `appearance-changed` (settings.rs).
 //
-// this is also the ONE place the TTL hover-pause hooks into
-// the Engine — the same transitions-only gate that protects the webview
-// from a flood of `hover-changed` events also protects the queue from a
-// flood of pointless hover_enter/hover_exit calls (both are no-ops once
-// already in the state they'd be set to, but there's no reason to pay a
-// queue lock per mouse-move when nothing changed). `apply_blocking`
-// carries the mutate→wake→emit protocol — no new side
-// channel, no second wake path: this is the existing protocol, reused.
-// pushed well past clippy's default arg threshold by the five
-// new board-expand parameters — same "named-field params struct is a
-// bigger surface change than this ticket's scope" call as
-// `hover_point_is_over_card`'s own `#[allow]` just above, and for the
-// same reason (every call site is in this one file).
+// This is also the ONE place the TTL hover-pause hooks into the Engine —
+// the same gate that protects the webview also protects the queue from a
+// flood of pointless hover_enter/hover_exit calls. `apply_blocking`
+// carries the mutate→wake→emit protocol: no side channel, no second wake
+// path.
+//
+// `#[allow]` for the same reason as `hover_point_is_over_card`'s just
+// above: every call site is in this one file.
 #[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn emit_hover_changed_if_transitioned(
@@ -1563,32 +1436,27 @@ fn emit_hover_changed_if_transitioned(
         }
     });
 
-    // the Agent
-    // Board's hover-expand orchestration piggybacks on this SAME
-    // transitions-only gate — a hover entry over the Board (`!visible`,
-    // at least one retained session) grows the real window frame and
-    // opens pointer delivery; ANY transition to `hovered == false`
-    // restores both, whether or not this specific call is the one that
-    // expanded it (`collapse_board_if_expanded` is a no-op when
-    // `BoardFrameState::expanded` is already false).
-    // Animation audit 2026-08-02: "restores both" is no longer "both
-    // immediately" — click-through comes back in this tick, the frame
-    // shrink is deferred by a grace period so the webview's collapse
-    // spring isn't clipped. See `collapse_board_if_expanded`.
+    // The Agent Board's hover-expand orchestration piggybacks on this SAME
+    // transitions-only gate — a hover entry over the Board (`!visible`, at
+    // least one retained session) grows the real window frame and opens
+    // pointer delivery; ANY transition to `hovered == false` restores both,
+    // whether or not this specific call is the one that expanded it
+    // (`collapse_board_if_expanded` is a no-op when
+    // `BoardFrameState::expanded` is already false). The restore is split:
+    // click-through comes back in this tick, the frame shrink is deferred
+    // by a grace period so the webview's collapse spring isn't clipped.
     if hovered {
         try_expand_board_for_hover(engine, window, agent_board, board_frame);
     } else {
         collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
 
-    // the icon-strip click-through toggle,
-    // landing in the SAME commit as the click monitor (click.rs) per the
-    // plan's own regression constraint — never alone. Scope note the OS
-    // forces on us: `set_ignore_cursor_events` is WINDOW-granular, so
-    // "accept clicks only inside the strip's rect" is enforced by the
-    // monitor's hit-test (clicks elsewhere in the window select nothing
-    // and are otherwise inert), not by the toggle itself. The gate here
-    // decides WHEN the window accepts cursor events at all:
+    // The icon-strip click-through toggle. `set_ignore_cursor_events` is
+    // WINDOW-granular, so "accept clicks only inside the strip's rect" is
+    // enforced by the click monitor's hit-test (click.rs; clicks elsewhere
+    // in the window select nothing and are otherwise inert), not by this
+    // toggle. The gate here decides WHEN the window accepts cursor events
+    // at all:
     // hovered && slot idle → accept (the strip is what's on screen —
     // and `hovered` requires the cursor to be over the painted card
     // rect, so a click that lands while accepting is over the card,
@@ -1598,10 +1466,10 @@ fn emit_hover_changed_if_transitioned(
     // hover ends → restore click-through, unless the Board-expand path
     // currently owns the window (its collapse restores it with its
     // own grace-period semantics — don't fight it).
-    // Accepted gap (documented in the plan): a card PROMOTING while the
-    // strip is hovered leaves events accepted until the next hover
-    // transition — clicks during that window land on the showing card
-    // and do nothing, matching the showing-card branch above.
+    // Accepted gap: a card PROMOTING while the strip is hovered leaves
+    // events accepted until the next hover transition — clicks during that
+    // window land on the showing card and do nothing, matching the
+    // showing-card branch above.
     if hovered {
         if !tab_wire
             .slot_occupied
@@ -1624,10 +1492,8 @@ fn emit_hover_changed_if_transitioned(
     }
 }
 
-/// Animation audit 2026-08-02 (finding 2): the Agent Board's window-frame
-/// bookkeeping. Was a bare `StdMutex<bool>`; the deferred shrink
-/// (`collapse_board_if_expanded`) needs a second field beside it, and both
-/// must be read/written under ONE lock so a timer can never observe a
+/// The Agent Board's window-frame bookkeeping. Every field is read/written
+/// under ONE lock so a pending shrink timer can never observe a
 /// half-updated pair.
 ///
 /// `generation` is bumped on EVERY frame-state transition — both the
@@ -1638,19 +1504,16 @@ fn emit_hover_changed_if_transitioned(
 /// racing it. `wrapping_add` rather than `+`: a counter that only has to
 /// detect INEQUALITY has no reason to be able to panic on overflow, and
 /// wrapping cannot produce a false match here (it would take 2^64 hover
-/// transitions inside one 450ms window).
+/// transitions inside one grace period).
 ///
-/// `height` (P0 fix, tab-notch redesign) is the REAL native window height
-/// currently applied — `hover::WINDOW_HEIGHT` while resting, or the exact
-/// `agents::expand::expanded_board_frame(...).height` value the expand
-/// path passed to `window.set_size` while expanded. `hover_point_is_over_card`
-/// reads this back and threads it into `hover::board_rect` so the hit-test
-/// coordinate transform always matches the window AppKit is actually
-/// reporting mouse coordinates against, instead of assuming a fixed 300px
-/// canvas regardless of how tall the real window has grown (see
-/// `hover::board_rect`'s own doc comment for the full bug writeup — a
-/// stale assumption here is exactly what let `hovered=true` fire for a
-/// cursor far below the painted board).
+/// `height` is the REAL native window height currently applied —
+/// `hover::WINDOW_HEIGHT` while resting, or the exact
+/// `agents::expand::expanded_board_frame(...).height` the expand path
+/// passed to `window.set_size` while expanded. `hover_point_is_over_card`
+/// reads it back and threads it into `hover::board_rect` so the hit-test
+/// coordinate transform always matches the window AppKit reports mouse
+/// coordinates against; a fixed-height assumption here fires
+/// `hovered=true` for a cursor far below the painted board.
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BoardFrameState {
@@ -1713,22 +1576,18 @@ fn board_shrink_should_run(state: BoardFrameState, armed_generation: u64) -> boo
     state.expanded && state.generation == armed_generation
 }
 
-/// on a hover ENTRY, expand the Board's window frame + open
-/// pointer delivery — but ONLY when the Slot is empty and the Board
-/// actually has sessions to show (a hover entry over an ordinary
-/// showing/idle card must never touch the window frame at all). Reads
-/// `agent_board.last_session_count()` — the same synchronous,
-/// non-registry read `hover_point_is_over_card` already uses to decide
-/// which hover RECT to compare against, reused here for the same "is
-/// the Board what's actually on screen" question.
+/// On a hover ENTRY, expand the Board's window frame + open pointer
+/// delivery — but ONLY when the Slot is empty and the Board actually has
+/// sessions to show (a hover entry over an ordinary showing/idle card must
+/// never touch the window frame at all). Reads
+/// `agent_board.last_session_count()`, the same synchronous, non-registry
+/// read `hover_point_is_over_card` uses to pick which hover RECT applies.
 ///
-/// Animation audit 2026-08-02: this also bumps `BoardFrameState::
-/// generation`, which is what cancels any shrink timer still pending from
-/// a recent hover-exit. Note the bump happens only on the paths that
-/// actually re-apply the expanded frame — the early returns above (a
-/// visible notification, or no sessions) deliberately leave a pending
-/// shrink armed, because in both of those cases the board really should
-/// go back to the resting frame.
+/// This also bumps `BoardFrameState::generation`, which cancels any shrink
+/// timer still pending from a recent hover-exit. The bump happens only on
+/// the paths that actually re-apply the expanded frame — the early returns
+/// (a visible notification, or no sessions) deliberately leave a pending
+/// shrink armed, because the board really should go back to resting then.
 #[cfg(target_os = "macos")]
 fn try_expand_board_for_hover(
     engine: &Engine,
@@ -1760,13 +1619,10 @@ fn try_expand_board_for_hover(
         tracing::warn!("board hover-expand: set_size failed: {e}");
         return;
     }
-    // CodeRabbit review fix (PR #13): the real window IS this tall now,
-    // whatever happens below — recording it here, right after the
-    // successful `set_size`, rather than after `set_ignore_cursor_events`
-    // (which can itself fail and return early, below), closes an error
-    // path that was reintroducing the exact desync the P0 fix exists to
-    // prevent: `state.height` staying at the stale resting value while
-    // the real window is genuinely taller.
+    // Record the height here, right after the successful `set_size`, and
+    // never after `set_ignore_cursor_events` (which can itself fail and
+    // return early, below): any error path in between would leave
+    // `state.height` at the resting value while the real window is taller.
     board_frame.lock().unwrap_or_else(|e| e.into_inner()).height = frame.height;
     if let Err(e) = window.set_position(tauri::LogicalPosition::new(frame.x, frame.y)) {
         tracing::warn!("board hover-expand: set_position failed: {e}");
@@ -1780,30 +1636,26 @@ fn try_expand_board_for_hover(
     state.generation = state.generation.wrapping_add(1);
 }
 
-/// the exit-side restore. Idempotent: a hover-exit over a card
-/// that never expanded anything (`expanded == false` already) does
-/// nothing, so this is safe to call from every `hovered == false` path
-/// unconditionally.
+/// The exit-side restore. Idempotent: a hover-exit over a card that never
+/// expanded anything (`expanded == false` already) does nothing, so this is
+/// safe to call from every `hovered == false` path unconditionally.
 ///
-/// Animation audit 2026-08-02 (finding 2): the restore is now SPLIT.
-/// Click-through comes back IMMEDIATELY, synchronously, in the same
-/// AppKit callback as the transition — the enlarged frame must never
-/// stay clickable for even one frame after the cursor has left it, which
-/// was already this function's stated rule and is unchanged. The frame
-/// SHRINK, however, is deferred by [`BOARD_COLLAPSE_GRACE_MS`], because
-/// at the moment of hover-out the webview has only just STARTED its
-/// `DISCLOSURE_SPRING` collapse of the expanded session list; shrinking
-/// the native frame underneath it hard-clips those exiting rows. Leaving
-/// the frame oversized for the grace period is invisible: the expanded
-/// board frame (`agents::expand::expanded_board_frame`) differs from the
-/// resting one ONLY in height — same 500px width, same `x` centering,
-/// same `y = 0` top anchor — so an un-shrunk frame is a transparent,
-/// click-through window with extra empty space below the content, which
-/// is exactly the state the EXPAND direction already relies on being
-/// unnoticeable.
+/// The restore is SPLIT. Click-through comes back IMMEDIATELY,
+/// synchronously, in the same AppKit callback as the transition — the
+/// enlarged frame must never stay clickable for even one frame after the
+/// cursor has left it. The frame SHRINK is deferred by
+/// [`BOARD_COLLAPSE_GRACE_MS`], because at the moment of hover-out the
+/// webview has only just STARTED its `DISCLOSURE_SPRING` collapse of the
+/// expanded session list; shrinking the native frame underneath it
+/// hard-clips those exiting rows. Leaving the frame oversized for the grace
+/// period is invisible: the expanded board frame
+/// (`agents::expand::expanded_board_frame`) differs from the resting one
+/// ONLY in height — same width, same `x` centering, same `y = 0` top anchor
+/// — so an un-shrunk frame is a transparent, click-through window with
+/// extra empty space below the content.
 ///
-/// Edge cases, all resolved through `BoardFrameState`'s generation
-/// counter under its single lock:
+/// Edge cases, all resolved through `BoardFrameState`'s generation counter
+/// under its single lock:
 /// - **re-hover during the grace.** `try_expand_board_for_hover` bumps
 ///   the generation, so the pending timer's `board_shrink_should_run`
 ///   check fails and it returns without touching the window. The
@@ -1824,13 +1676,10 @@ fn try_expand_board_for_hover(
 ///   one: boot (`setup`, before any board can have expanded) and the
 ///   window-shown re-assert inside `run_on_main_thread`
 ///   (`apply_overlay_native_config` alongside it). Neither RESIZES, and
-///   `position_window`'s notch branch derives `x` from the window's
-///   current `outer_size().width` — 500 in both the resting and the
-///   expanded frame — so a re-assert landing inside the grace period
-///   computes the same position either way and cannot fight the pending
-///   timer. The timer re-runs `position_window` itself after shrinking
-///   for exactly the same reason it always did, not to undo anything
-///   those callers did.
+///   `position_window`'s notch branch derives `x` from the window's current
+///   `outer_size().width` — identical in the resting and the expanded frame
+///   — so a re-assert landing inside the grace period computes the same
+///   position either way and cannot fight the pending timer.
 #[cfg(target_os = "macos")]
 fn collapse_board_if_expanded(
     window: &tauri::WebviewWindow,
@@ -1883,12 +1732,9 @@ fn collapse_board_if_expanded(
                 tracing::warn!("board hover-collapse: position_window failed: {e}");
             }
             state.expanded = false;
-            // CodeRabbit review fix (PR #13): only claim the resting
-            // height if the shrink actually landed — the previous
-            // unconditional assignment here matched the exact desync bug
-            // the P0 fix elsewhere in this function closes: on a failed
-            // `set_size`, the window is still tall, but `state.height`
-            // would have claimed it was back to resting.
+            // Only claim the resting height if the shrink actually landed:
+            // on a failed `set_size` the window is still tall, and
+            // `state.height` must not claim otherwise.
             if shrank {
                 state.height = hover::WINDOW_HEIGHT;
             }
@@ -1896,15 +1742,13 @@ fn collapse_board_if_expanded(
     });
 }
 
-/// The pure half of the generic hover-latch reset (M5, see the
-/// `slot-state` listener registered alongside `hover_handler` in
-/// `setup`, above): extracts the visible item's `id` from a raw
-/// `slot-state` wire payload (`SlotState::Showing`'s `id` field —
-/// `crate::event::SLOT_STATE_EVENT`'s JSON), or `None` for `SlotState::
-/// Empty` or a payload that fails to parse at all. Factored out of the
-/// listener closure specifically so this parsing step is unit-testable
-/// without a live window/AppKit event handler — the listener itself
-/// (a mutex compare-and-swap around this call) is not.
+/// The pure half of the generic hover-latch reset (see the `slot-state`
+/// listener registered alongside `hover_handler` in `setup`): extracts the
+/// visible item's `id` from a raw `slot-state` wire payload
+/// (`crate::event::SLOT_STATE_EVENT`'s JSON), or `None` for
+/// `SlotState::Empty` or a payload that fails to parse. Separate from the
+/// listener closure so this parsing step is unit-testable without a live
+/// window/AppKit event handler.
 #[cfg(target_os = "macos")]
 fn visible_id_from_slot_state_payload(payload: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(payload)
@@ -1914,9 +1758,9 @@ fn visible_id_from_slot_state_payload(payload: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-// notch-morph nudge: anchor to the reported cutout when we have
-// notch-precise geometry, else fall back to screen-center (covers hud mode,
-// and notch mode when the shim couldn't report a cutout).
+// Anchor to the reported cutout when we have notch-precise geometry, else
+// fall back to screen-center (covers hud mode, and notch mode when the shim
+// couldn't report a cutout).
 fn position_window(
     window: &tauri::WebviewWindow,
     mode: presentation::Mode,
@@ -1927,7 +1771,7 @@ fn position_window(
         let win_width = window.outer_size()?.to_logical::<f64>(scale_factor).width;
         let x = cutout.center_x() - (win_width / 2.0);
 
-        // coordinate-space invariant (2026-07-17 review): NSScreen reports
+        // coordinate-space invariant: NSScreen reports
         // points (= logical px, global origin); tauri's LogicalPosition
         // shares the x-axis on the primary display. multi-display
         // arrangements can break that assumption, so a result outside the
@@ -1954,11 +1798,11 @@ fn position_window(
 }
 
 // ---------------------------------------------------------------------------
-// the prefix keymap's live wiring. The state machine is
-// prefix.rs (pure, tested); everything here is the impure shell: parsing
-// the configured combo, the temporary system-wide grab of the seven
-// follow-up keys while armed, the cancellable disarm timer, and routing
-// each PrefixAction onto the EXISTING mechanism its own doc names.
+// The prefix keymap's live wiring. The state machine is prefix.rs (pure,
+// tested); everything here is the impure shell: parsing the configured
+// combo, the temporary system-wide grab of the follow-up keys while armed,
+// the cancellable disarm timer, and routing each PrefixAction onto the
+// mechanism its own doc names.
 // ---------------------------------------------------------------------------
 
 /// How long after arming the unconditional watchdog force-releases every
@@ -1971,8 +1815,8 @@ const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// The follow-up grabs, `(Code, PrefixKey)` — registered as BARE
 /// shortcuts (no modifiers) only while an armed window is live, then
 /// unregistered the moment one key is consumed, the window times out, or
-/// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
-/// `esc` maps to Disarm, per spec §9's table.
+/// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle; `esc`
+/// maps to Disarm.
 #[cfg(target_os = "macos")]
 const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 9] = [
     (Code::Digit1, prefix::PrefixKey::Digit(1)),
@@ -2030,14 +1874,12 @@ fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
 /// Registers or releases the nine bare follow-up grabs. Returns whether
 /// EVERY key reached the requested state.
 ///
-/// PAL consensus 2026-08-03 (gemini-2.5-pro + gpt-5.2, unanimous on this
-/// point): a per-key failure is asymmetric and the old "fail-open, warn,
-/// move on" comment had it backwards. Failing to REGISTER is benign — that
-/// key simply doesn't work. Failing to UNREGISTER is the catastrophic
-/// case: a bare `Enter`/`p`/`1` stays grabbed SYSTEM-WIDE and the user's
-/// typing is broken everywhere until notchtap restarts. So a failed
-/// release is logged at ERROR and reported to the caller, which keeps
-/// `followups_registered` true so the watchdog retries.
+/// A per-key failure is asymmetric. Failing to REGISTER is benign — that
+/// key simply doesn't work. Failing to UNREGISTER is the catastrophic case:
+/// a bare `Enter`/`p`/`1` stays grabbed SYSTEM-WIDE and the user's typing is
+/// broken everywhere until notchtap restarts. So a failed release is logged
+/// at ERROR and reported to the caller, which keeps `followups_registered`
+/// true so the watchdog retries.
 #[cfg(target_os = "macos")]
 fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) -> bool {
     let mut all_ok = true;
@@ -2080,15 +1922,15 @@ enum WatchdogVerdict {
 /// `docs/TESTING_STRATEGY.md` §4.4). ALL watchdog policy lives here; the
 /// async loop in `handle_prefix_fire` only sleeps and applies.
 ///
-/// the watchdog stays generation-BLIND on purpose — gating it on
+/// The watchdog stays generation-BLIND on purpose — gating it on
 /// `prefix_generation` would blind it to the "follow-up consumed
-/// (generation bumped) but its release failed" case, which is precisely
-/// the case only the watchdog can catch. What it needs instead is a TIME
-/// deadline: every arm records `last_arm_at`, and a watchdog spawned by an
-/// older arm defers to any newer arm that is still inside its own
-/// `timeout` budget rather than force-releasing grabs that live window
-/// still needs (arm at t0, lapse, re-arm at t0+4s — the t0 watchdog used
-/// to fire at t0+5s and silently kill the second window's grabs).
+/// (generation bumped) but its release failed" case, which is precisely the
+/// case only the watchdog can catch. It uses a TIME deadline instead: every
+/// arm records `last_arm_at`, and a watchdog spawned by an older arm defers
+/// to any newer arm still inside its own `timeout` budget rather than
+/// force-releasing grabs that live window needs (arm at t0, lapse, re-arm
+/// at t0+4s: the t0 watchdog waking at t0+5s must not kill the second
+/// window's grabs).
 ///
 /// A newest-arm age of exactly `timeout` releases rather than rescheduling
 /// — both because that arm's own budget is spent, and because a
@@ -2132,12 +1974,11 @@ fn force_release_prefix_followups<R: tauri::Runtime>(
     tracing::warn!("prefix watchdog: force-releasing follow-up grabs");
     let all_ok = set_prefix_followups_registered(app, false);
     if !all_ok {
-        // , the invariant every other caller honours (see
-        // `handle_prefix_fire` / `handle_prefix_followup`): a failed
-        // RELEASE keeps the flag true so the watchdog retries. Clearing it
-        // unconditionally used to LIE — the flag said "released", every
-        // later watchdog early-returned on it, and a bare `Enter` stayed
-        // grabbed system-wide until the app restarted.
+        // The invariant every caller honours (see `handle_prefix_fire` /
+        // `handle_prefix_followup`): a failed RELEASE keeps the flag true
+        // so the watchdog retries. Clearing it unconditionally would LIE —
+        // every later watchdog early-returns on the flag, and a bare
+        // `Enter` would stay grabbed system-wide until the app restarts.
         //
         // The brief false window between the `swap` above and this `store`
         // is acceptable: the only readers are the verdict loop, which
@@ -2150,7 +1991,7 @@ fn force_release_prefix_followups<R: tauri::Runtime>(
 
 /// The prefix combo fired: arm (register the follow-up grabs + start the
 /// cancellable disarm timer) or — if an armed window was already live —
-/// disarm (spec §9: the prefix again IS the disarm gesture).
+/// disarm: the prefix again IS the disarm gesture.
 #[cfg(target_os = "macos")]
 fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &Arc<tabs::TabWire>) {
     use std::sync::atomic::Ordering;
@@ -2192,21 +2033,20 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
                 }
             }
         });
-        // The watchdog (PAL consensus 2026-08-03): fires well after any
-        // legitimate window has closed and force-releases if ANYTHING is
-        // still grabbed, ignoring generation entirely. This is the net
-        // that catches what the generation-guarded timer above cannot —
-        // a wedged runtime, a lost timer, a panic that unwound past the
-        // release, or an unregister that failed per-key.
+        // The watchdog fires well after any legitimate window has closed
+        // and force-releases if ANYTHING is still grabbed, ignoring
+        // generation entirely. This is the net that catches what the
+        // generation-guarded timer above cannot — a wedged runtime, a lost
+        // timer, a panic that unwound past the release, or an unregister
+        // that failed per-key.
         //
-        // generation-blind BY DESIGN (a generation gate would
-        // blind it to the "follow-up consumed, but its release failed"
-        // case — the one only this net can catch), but DEADLINE-aware, so
-        // it can no longer kill a newer legitimate window: each wake-up
-        // asks `watchdog_verdict` whether the newest arm on record still
-        // has budget left, and defers to it if so. Overlapping loops from
-        // rapid re-arming stay harmless — every one converges to `Done`
-        // the moment nothing is registered.
+        // Generation-blind BY DESIGN (a generation gate would blind it to
+        // the "follow-up consumed, but its release failed" case) but
+        // DEADLINE-aware, so it never kills a newer legitimate window: each
+        // wake-up asks `watchdog_verdict` whether the newest arm on record
+        // still has budget left, and defers to it if so. Overlapping loops
+        // from rapid re-arming stay harmless — every one converges to
+        // `Done` the moment nothing is registered.
         let watchdog_app = app.clone();
         let watchdog_wire = tab_wire.clone();
         tauri::async_runtime::spawn(async move {
@@ -2239,7 +2079,7 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
 }
 
 /// One armed-window key landed: consume it (the state machine disarms on
-/// ANY consumed key, spec §9), release the grabs, cancel the timer via
+/// ANY consumed key), release the grabs, cancel the timer via
 /// the generation bump, and route the resulting action onto the existing
 /// mechanism its own `PrefixAction` doc names.
 #[cfg(target_os = "macos")]
@@ -2264,8 +2104,8 @@ fn handle_prefix_followup<R: tauri::Runtime>(
             apply_tab_select(app, tab_wire, tab);
         }
         prefix::PrefixAction::PreviousSession | prefix::PrefixAction::NextSession => {
-            // Spec §9: "ignored unless the agent tab is selected" — the
-            // caller-side gate PrefixAction's own doc assigns here.
+            // Ignored unless the agent tab is selected — the caller-side
+            // gate PrefixAction's own doc assigns here.
             let agent_selected = {
                 let sel = tab_wire
                     .tabs
@@ -2307,13 +2147,12 @@ fn handle_prefix_followup<R: tauri::Runtime>(
 }
 
 /// Pure decision, thin apply wrapper (house pattern — see
-/// `watchdog_verdict` in / `silence_should_flip`'s own comment).
-/// Whether this tick should advance the Agent tab's viewed session
-/// automatically: the Agent tab must be selected, there must be 2+
-/// sessions to cycle between, the app must not be hovered (pause on
-/// hover, matching the operator's own request), and not paused (matches
-/// every other "the engine isn't delivering anything right now"
-/// precedent in this codebase, e.g. `StatusDots`' pause handling).
+/// `watchdog_verdict` / `silence_should_flip`). Whether this tick should
+/// advance the Agent tab's viewed session automatically: the Agent tab must
+/// be selected, there must be 2+ sessions to cycle between, the app must
+/// not be hovered (cycling pauses on hover), and not paused (matching every
+/// other "the engine isn't delivering anything right now" surface, e.g.
+/// `StatusDots`' pause handling).
 ///
 /// Deliberately NOT `#[cfg(target_os = "macos")]`-gated — it takes plain
 /// values and has no OS dependency, so it stays unit-testable on every
@@ -2329,8 +2168,8 @@ fn should_auto_advance_session(
 }
 
 /// The ONE selection mutation both input paths funnel through — the click
-/// monitor calls the same sequence (click.rs); keeping them identical is
-/// what spec §9's "same toggle semantics a click would drive" means.
+/// monitor calls the same sequence (click.rs). A prefix key and a click
+/// must drive identical toggle semantics.
 pub(crate) fn apply_tab_select<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     tab_wire: &Arc<tabs::TabWire>,
@@ -2359,351 +2198,15 @@ pub(crate) fn apply_tab_select<R: tauri::Runtime>(
     );
 }
 
-fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>) {
-    // the mutation goes through Engine::apply_blocking (which
-    // keeps the off-tokio-runtime debug_assert, wakes the rotation loop —
-    // resume/pause may change the visible item's rotation
-    // deadline — and emits any slot-state change). The tray label stays
-    // at the caller, driven by the closure's return value: the Engine
-    // never touches menus.
-    let now_paused = engine.apply_blocking(|q, now| {
-        if q.is_paused() {
-            q.resume();
-            // v3.6 spec §4.5: resume promotes immediately, not on the next
-            // rotation-loop pass
-            q.tick(now);
-            false
-        } else {
-            q.pause();
-            true
-        }
-    });
-    let _ = pause_item.set_text(if now_paused { "Resume" } else { "Pause" });
-}
-
-/// Current wall-clock instant expressed the way `silence::SilenceController`
-/// needs it. The one (and only) place `chrono::Local::now()` is read for
-/// silence purposes — every other silence function in this file takes an
-/// `AbsoluteMinute` in, mirroring `silence.rs`'s own "the caller passes
-/// time in, nothing here reads the clock" discipline.
-fn now_abs_minute() -> silence::AbsoluteMinute {
-    silence::absolute_minute(chrono::Local::now().naive_local())
-}
-
-/// Pure decision: does the queue's `silenced` flag need to change to match
-/// the controller's verdict? `None` (the common case on most wakes/clicks —
-/// nothing actually flipped) means no-op. Mirrors `toggle_pause`'s "pure
-/// decision, thin apply wrapper" split, generalized to two apply wrappers
-/// here (blocking for tray handlers, async for the schedule task) instead
-/// of one, since this is called from both a main-thread context and a
-/// tokio task.
-fn silence_should_flip(queue_silenced: bool, verdict_silenced: bool) -> Option<bool> {
-    (queue_silenced != verdict_silenced).then_some(verdict_silenced)
-}
-
-/// The tray's Silenced indicator text — a disabled, unclickable menu item
-/// is the cheapest widget this tray idiom has for a status label (no
-/// separate "status text" concept), same "reuse a MenuItem, drive it with
-/// set_text" idiom `toggle_pause` already uses for Pause/Resume.
-fn silence_indicator_label(silenced: bool) -> &'static str {
-    if silenced {
-        "Silenced"
-    } else {
-        "Not Silenced"
-    }
-}
-
-/// The tray icon's title glyph while Silenced — spec story 14 wants the
-/// state glanceable from the menu bar itself, not only inside the opened
-/// menu (which is all the disabled-MenuItem indicator above can give).
-/// macOS renders a tray title as text beside the icon; `None` removes it
-/// entirely, so the un-Silenced menu bar looks exactly as before.
-fn silence_tray_title(silenced: bool) -> Option<&'static str> {
-    silenced.then_some("☾")
-}
-
-/// Pushes both Silenced indicators — the disabled menu item's text and
-/// the tray icon's title glyph — to match `verdict`. The tray handle is
-/// looked up by id from the menu item's own app handle so every caller
-/// (tray handlers and the schedule task) stays signature-stable.
-fn set_silence_indicators<R: tauri::Runtime>(indicator_item: &MenuItem<R>, verdict: bool) {
-    let _ = indicator_item.set_text(silence_indicator_label(verdict));
-    if let Some(tray) = indicator_item.app_handle().tray_by_id(TRAY_ID) {
-        let _ = tray.set_title(silence_tray_title(verdict));
-    }
-}
-
-/// The one tray icon's stable id — needed so the Silenced glyph updaters
-/// can find it again after `build_tray` hands the icon to tauri.
-const TRAY_ID: &str = "notchtap-tray";
-
-/// Main-thread apply wrapper (tray handlers, off the tokio runtime — same
-/// context `toggle_pause` runs in). Silences/unsilences the queue only on
-/// an actual flip, logs the change, and never logs event content (this
-/// path never touches an Event).
-fn apply_silence_verdict_blocking<R: tauri::Runtime>(engine: &Engine<R>, verdict_silenced: bool) {
-    engine.apply_blocking(|q, _now| {
-        if let Some(new_state) = silence_should_flip(q.is_silenced(), verdict_silenced) {
-            if new_state {
-                q.silence();
-            } else {
-                q.unsilence();
-            }
-            tracing::info!(silenced = new_state, "silence state changed (tray)");
-        }
-    });
-}
-
-/// The async twin of `apply_silence_verdict_blocking` — the schedule task
-/// (`spawn_silence_task`, below) lives on the tokio runtime, so it goes
-/// through `Engine::apply` instead of `apply_blocking`.
-async fn apply_silence_verdict<R: tauri::Runtime>(engine: &Engine<R>, verdict_silenced: bool) {
-    engine
-        .apply(|q, _now| {
-            if let Some(new_state) = silence_should_flip(q.is_silenced(), verdict_silenced) {
-                if new_state {
-                    q.silence();
-                } else {
-                    q.unsilence();
-                }
-                tracing::info!(silenced = new_state, "silence state changed (schedule)");
-            }
-        })
-        .await;
-}
-
-/// Recomputes the verdict from the current wall clock, applies it to the
-/// queue, and refreshes the tray label — the shared tail every tray
-/// mute/cancel/skip handler runs after mutating the `SilenceController`,
-/// so a click takes effect immediately rather than waiting for
-/// `spawn_silence_task`'s next scheduled wake.
-fn refresh_silence_indicator<R: tauri::Runtime>(
-    engine: &Engine<R>,
-    controller: &StdMutex<silence::SilenceController>,
-    indicator_item: &MenuItem<R>,
-) {
-    let now = now_abs_minute();
-    let verdict = controller
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_silenced(now);
-    apply_silence_verdict_blocking(engine, verdict);
-    set_silence_indicators(indicator_item, verdict);
-}
-
-/// Shared body for the three tray mute presets — only the duration
-/// differs.
-fn start_mute_from_tray<R: tauri::Runtime>(
-    engine: &Engine<R>,
-    controller: &StdMutex<silence::SilenceController>,
-    indicator_item: &MenuItem<R>,
-    duration_minutes: u64,
-) {
-    let now = now_abs_minute();
-    controller
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .start_mute(duration_minutes, now);
-    refresh_silence_indicator(engine, controller, indicator_item);
-}
-
-/// the Silenced schedule/mute timer. Computes the verdict from
-/// the CURRENT wall clock on every wake — never from a stored deadline —
-/// so a clock jump (system sleep, DST, a manual date change) self-heals on
-/// the very next iteration instead of needing dedicated handling; this is
-/// exactly the "sleep, recompute, sleep again" contract
-/// `SilenceController::next_boundary`'s own doc comment describes for its
-/// conservative-wake callers. Tray mute/skip clicks (`refresh_silence_indicator`,
-/// above) apply their own verdict immediately rather than waiting for this
-/// loop to wake — this task only needs to catch the schedule's own
-/// boundaries (window start/end) and a mute's natural expiry.
-fn spawn_silence_task<R: tauri::Runtime>(
-    engine: Engine<R>,
-    controller: Arc<StdMutex<silence::SilenceController>>,
-    indicator_item: MenuItem<R>,
-) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            let now = now_abs_minute();
-            let (verdict, boundary) = {
-                let c = controller.lock().unwrap_or_else(|e| e.into_inner());
-                (c.is_silenced(now), c.next_boundary(now))
-            };
-            apply_silence_verdict(&engine, verdict).await;
-            set_silence_indicators(&indicator_item, verdict);
-
-            // `next_boundary` is conservative — it may wake this loop at a
-            // boundary where the verdict doesn't actually flip (e.g. a
-            // schedule window ending while a longer mute is still
-            // running) — hence recomputing from scratch above rather than
-            // trusting the boundary to mean "flip now". `None` (schedule
-            // disabled, no mute running) falls back to an hourly
-            // re-check: nothing is expected to change the verdict in that
-            // state on its own, but re-evaluating from the wall clock
-            // periodically rather than sleeping forever means a tray mute
-            // started moments after this reaches the `None` arm is caught
-            // within the hour even in the pathological case where
-            // `refresh_silence_indicator`'s immediate apply somehow didn't
-            // run (e.g. a future caller that mutates the controller
-            // without going through the tray helpers).
-            let sleep_for = match boundary {
-                Some(b) => std::time::Duration::from_secs(b.saturating_sub(now).max(1) * 60),
-                None => std::time::Duration::from_secs(3600),
-            };
-            tokio::time::sleep(sleep_for).await;
-        }
-    });
-}
-
-/// v6: the tray is deliberately minimal — Pause/Resume, Settings…, Quit.
-/// It previously also carried "Pause Football Scores"/"Pause News" items,
-/// but those duplicated the `espn_enabled`/`rss_enabled` toggles already in
-/// Settings (which, since v6, also carry per-source priority and rotation
-/// order — richer than a toggle belongs there, per ARCHITECTURE.md §17's
-/// "everything richer than a toggle lives [in Settings], not in more tray
-/// items" rule, which this tray had not yet caught up to).
-///
-/// added the Silenced indicator and the mute/skip items beside
-/// Pause — still rust-side only (no new invoke commands, `CLAUDE.md`'s ipc
-/// & security section): every one of these mutates the session-only
-/// `SilenceController` and applies the result to the queue the exact same
-/// way `toggle_pause` above already does for Pause.
-fn build_tray<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    engine: Engine<R>,
-    start_paused: bool,
-    silence_controller: Arc<StdMutex<silence::SilenceController>>,
-) -> tauri::Result<(MenuItem<R>, MenuItem<R>)> {
-    // v5 kill switch: a start_paused boot renders the toggle as "Resume"
-    // from the first open — the label always names the *next* action.
-    let initial_pause_label = if start_paused { "Resume" } else { "Pause" };
-    let pause_item = MenuItem::with_id(app, "pause", initial_pause_label, true, None::<&str>)?;
-
-    let initial_silenced = {
-        let c = silence_controller.lock().unwrap_or_else(|e| e.into_inner());
-        c.is_silenced(now_abs_minute())
-    };
-    let silenced_indicator_item = MenuItem::with_id(
-        app,
-        "silenced_indicator",
-        silence_indicator_label(initial_silenced),
-        false,
-        None::<&str>,
-    )?;
-    let mute_30_item = MenuItem::with_id(app, "mute_30", "Mute 30 min", true, None::<&str>)?;
-    let mute_60_item = MenuItem::with_id(app, "mute_60", "Mute 1 hour", true, None::<&str>)?;
-    let mute_120_item = MenuItem::with_id(app, "mute_120", "Mute 2 hours", true, None::<&str>)?;
-    // Always enabled: `SilenceController::cancel_mute` is already a
-    // documented no-op when nothing is running, so a click while no mute
-    // is active is harmless — simpler than an enabled/disabled dance kept
-    // in sync with mute state across three separate handlers.
-    let cancel_mute_item =
-        MenuItem::with_id(app, "cancel_mute", "Cancel mute", true, None::<&str>)?;
-    let skip_item = MenuItem::with_id(
-        app,
-        "skip_silence",
-        "Skip today's silence",
-        true,
-        None::<&str>,
-    )?;
-    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let pause_item_for_handler = pause_item.clone();
-    let indicator_for_handler = silenced_indicator_item.clone();
-    let controller_for_handler = silence_controller;
-    let menu = Menu::new(app)?;
-    menu.append(&pause_item)?;
-    menu.append(&silenced_indicator_item)?;
-    menu.append(&mute_30_item)?;
-    menu.append(&mute_60_item)?;
-    menu.append(&mute_120_item)?;
-    menu.append(&cancel_mute_item)?;
-    menu.append(&skip_item)?;
-    menu.append(&settings_item)?;
-    menu.append(&quit_item)?;
-
-    let tray = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().expect("bundled icon").clone())
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| match event.id().as_ref() {
-            "pause" => toggle_pause(&engine, &pause_item_for_handler),
-            "mute_30" => {
-                start_mute_from_tray(&engine, &controller_for_handler, &indicator_for_handler, 30)
-            }
-            "mute_60" => {
-                start_mute_from_tray(&engine, &controller_for_handler, &indicator_for_handler, 60)
-            }
-            "mute_120" => start_mute_from_tray(
-                &engine,
-                &controller_for_handler,
-                &indicator_for_handler,
-                120,
-            ),
-            "cancel_mute" => {
-                controller_for_handler
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .cancel_mute();
-                refresh_silence_indicator(&engine, &controller_for_handler, &indicator_for_handler);
-            }
-            "skip_silence" => {
-                let now = now_abs_minute();
-                controller_for_handler
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .skip_current_window(now);
-                refresh_silence_indicator(&engine, &controller_for_handler, &indicator_for_handler);
-            }
-            "settings" => open_settings_window(app),
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .build(app)?;
-    // A Silenced boot (mid-window launch) shows the glyph from the first
-    // frame — the schedule task's first wake would set it anyway, but
-    // that races the menu bar's first paint.
-    let _ = tray.set_title(silence_tray_title(initial_silenced));
-
-    Ok((pause_item, silenced_indicator_item))
-}
-
-/// v5 spec §1: lazy creation, focus-if-open. A normal decorated window —
-/// everything the overlay is not (no nspanel, no always-on-top, no
-/// collection-behavior calls); closing it leaves the app running.
-fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.set_focus();
-        return;
-    }
-    match tauri::WebviewWindowBuilder::new(
-        app,
-        "settings",
-        tauri::WebviewUrl::App("settings.html".into()),
-    )
-    .title("notchtap settings")
-    .inner_size(480.0, 700.0)
-    .min_inner_size(420.0, 520.0)
-    .build()
-    {
-        Ok(window) => {
-            let _ = window.set_focus();
-        }
-        Err(e) => tracing::warn!("settings window failed to open: {e}"),
-    }
-}
-
-// v3.6 spec §7.1.1 + with expand-all, every promotion starts
-// expanded, so the hotkey always flips — a press on an auto-expanded card
-// collapses it (render-only, and disarms the auto-retract); a press on a
-// collapsed card expands it and extends its rotation window 3× (manual
-// expansion is the only kind that extends the turn). 's High
-// no-op guard is gone: there is no longer an "automatic for High" state
-// to protect, since automatic expansion is now universal.
+// Every promotion starts expanded, so the hotkey always flips — a press on
+// an auto-expanded card collapses it (render-only, and disarms the
+// auto-retract); a press on a collapsed card expands it and extends its
+// rotation window 3×. Manual expansion is the only kind that extends the
+// turn.
 #[cfg(target_os = "macos")]
 fn toggle_manual_expand<R: tauri::Runtime>(engine: &Engine<R>) {
-    // expanded changes the rotation window, so the rotation
-    // loop's next deadline must be recomputed — apply_blocking wakes it.
+    // expanded changes the rotation window, so the rotation loop's next
+    // deadline must be recomputed — apply_blocking wakes it.
     engine.apply_blocking(|q, _now| q.toggle_expanded());
 }
 
@@ -2770,28 +2273,16 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
     }
 }
 
-/// `should_auto_advance_session`'s own tests. Kept as a
-/// plain `#[cfg(test)]` module rather than folded into `mod tests` below —
-/// that module (and everything in it, e.g. `silence_should_flip`'s own
-/// tests) compiles out entirely on non-macOS, which is fine for CI (the
-/// `rust` job in `.github/workflows/ci.yml` runs on `macos-latest` only)
-/// but would silently skip these specific tests during local dev on a
-/// non-macOS box. `should_auto_advance_session` itself is deliberately NOT
-/// `target_os`-gated (see its own doc), so its tests shouldn't be either.
-/// Placed here, immediately before `mod tests`, rather than back near the
-/// function's own definition — clippy's `items_after_test_module` lint
-/// requires every non-test item in a scope to precede any test module in
-/// that same scope, so a second test module can only sit at the very end.
-/// `watchdog_verdict`'s own tests. A plain `#[cfg(test)]` module
-/// for the same reason `agent_session_advance_tests` below is one — `mod
-/// tests` compiles out entirely on non-macOS, and the function under test
-/// is deliberately not `target_os`-gated.
+/// `watchdog_verdict`'s own tests. A plain `#[cfg(test)]` module, not part
+/// of `mod tests` below: that module compiles out entirely on non-macOS,
+/// and the function under test is deliberately not `target_os`-gated, so
+/// its tests must not be either. It sits immediately before `mod tests`
+/// because clippy's `items_after_test_module` lint requires every non-test
+/// item in a scope to precede any test module in that scope.
 ///
-/// NOTE: the watchdog's async loop itself is deliberately left untested.
-/// All of its policy lives in the pure function exercised here, and the
-/// only way to test the loop would be a real-timer async test — an
-/// exception this repo grants to exactly two existing `engine.rs` tests
-/// and no more (`plans/README.md`'s rejected findings).
+/// The watchdog's async loop itself is deliberately untested: all of its
+/// policy lives in the pure function exercised here, and testing the loop
+/// would need a real-timer async test.
 #[cfg(test)]
 mod watchdog_verdict_tests {
     use super::*;
@@ -2813,9 +2304,9 @@ mod watchdog_verdict_tests {
         );
     }
 
-    /// The bug this plan fixes: arm at t0, let it lapse, re-arm at t0+4s.
-    /// The t0 watchdog wakes at t0+5s and must DEFER to the newer arm for
-    /// the 4s left in that arm's own budget, not force-release its grabs.
+    /// Arm at t0, let it lapse, re-arm at t0+4s. The t0 watchdog wakes at
+    /// t0+5s and must DEFER to the newer arm for the 4s left in that arm's
+    /// own budget, not force-release its grabs.
     #[test]
     fn reschedule_when_a_newer_arm_is_still_inside_its_budget() {
         let t0 = Instant::now();
@@ -2961,32 +2452,6 @@ mod tests {
         test_fixtures::with_priority(test_fixtures::event("t"), priority)
     }
 
-    // ---- silence_should_flip / silence_indicator_label ----
-
-    #[test]
-    fn silence_should_flip_is_none_when_already_matching() {
-        assert_eq!(silence_should_flip(false, false), None);
-        assert_eq!(silence_should_flip(true, true), None);
-    }
-
-    #[test]
-    fn silence_should_flip_reports_the_new_state_on_a_mismatch() {
-        assert_eq!(silence_should_flip(false, true), Some(true));
-        assert_eq!(silence_should_flip(true, false), Some(false));
-    }
-
-    #[test]
-    fn silence_indicator_label_names_the_current_state() {
-        assert_eq!(silence_indicator_label(true), "Silenced");
-        assert_eq!(silence_indicator_label(false), "Not Silenced");
-    }
-
-    #[test]
-    fn silence_tray_title_shows_a_glyph_only_while_silenced() {
-        assert_eq!(silence_tray_title(true), Some("☾"));
-        assert_eq!(silence_tray_title(false), None);
-    }
-
     #[test]
     fn cutout_width_js_value_renders_the_number_when_a_cutout_was_reported() {
         let cutout = presentation::CutoutGeometry {
@@ -3022,12 +2487,12 @@ mod tests {
         assert_eq!(cutout_height_js_value(-1.0), "null");
     }
 
-    // ---- animation audit 2026-08-02 (finding 2): the deferred
-    // board-shrink's generation guard. Only the pure decision is testable
-    // here — the `set_size`/`set_position`/`set_ignore_cursor_events`
-    // calls `collapse_board_if_expanded` wraps around it need a live
-    // AppKit window and stay manual-verification-only, exactly like every
-    // other window call in this file (`docs/TESTING_STRATEGY.md` §5). ----
+    // ---- the deferred board-shrink's generation guard. Only the pure
+    // decision is testable here — the `set_size`/`set_position`/
+    // `set_ignore_cursor_events` calls `collapse_board_if_expanded` wraps
+    // around it need a live AppKit window and stay
+    // manual-verification-only, like every other window call in this file
+    // (`docs/TESTING_STRATEGY.md` §5). ----
 
     #[test]
     fn board_shrink_runs_when_nothing_moved_since_the_timer_was_armed() {
@@ -3092,31 +2557,12 @@ mod tests {
         let state = BoardFrameState::default();
         assert!(!state.expanded);
         assert!(!board_shrink_should_run(state, state.generation));
-        // P0 fix: the default height is the real resting window height —
-        // never 0.0 (the derived-`Default` value f64 would otherwise get),
-        // which would have made the very first hover computation on a
-        // freshly-launched app wrong until the first expand/collapse cycle
-        // ever touched it.
+        // The default height is the real resting window height, never 0.0
+        // (what a derived `Default` would give an f64) — otherwise the very
+        // first hover computation on a freshly-launched app is wrong until
+        // an expand/collapse cycle touches it.
         assert_eq!(state.height, hover::WINDOW_HEIGHT);
     }
-
-    // CodeRabbit review fix (PR #13): the test that used to live here
-    // (`board_frame_state_expanded_and_height_move_together_by_
-    // construction`) asserted that two HAND-CONSTRUCTED `BoardFrameState`
-    // literals with deliberately different `height`/`expanded` values
-    // were... different — true by construction, regardless of whether
-    // `try_expand_board_for_hover`/`collapse_board_if_expanded` (the
-    // functions the invariant is actually about) work at all. Deleted
-    // rather than patched: introducing new `mark_expanded`/`mark_resting`
-    // encapsulating methods just to give this invariant a real target to
-    // test would be new production-code surface built solely to satisfy a
-    // test, and the impure `set_size`/AppKit mutation those two functions
-    // perform is already, deliberately, this file's own
-    // manual-verification-only territory (same posture as every other
-    // window call here) — the P0 fix's real correctness now lives in the
-    // two functions' own code (record height immediately after a
-    // successful `set_size`, only claim the resting height when the
-    // shrink actually lands), not in a struct-literal comparison.
 
     #[test]
     fn board_collapse_grace_clears_the_disclosure_springs_settle() {
@@ -3147,9 +2593,8 @@ mod tests {
         let engine = test_engine(&app);
         engine.apply_blocking(|q, now| q.enqueue(event(Priority::High), now).unwrap());
 
-        // every promotion auto-expands — confirm that baseline
-        // first, then prove the hotkey flips it: 's High no-op
-        // guard is deleted, so the press must collapse the card.
+        // every promotion auto-expands — confirm that baseline first, then
+        // prove the hotkey flips it: the press must collapse the card.
         match engine.read_blocking(|q| q.current_slot_state()) {
             SlotState::Showing { expanded, .. } => {
                 assert!(expanded, "High must auto-expand on promotion")
@@ -3258,30 +2703,6 @@ mod tests {
                 SlotState::Showing { id, .. } => assert_eq!(id, recurring_id),
                 SlotState::Empty => panic!("expected recurring item to return"),
             }
-        });
-    }
-
-    #[test]
-    fn toggle_pause_updates_label_and_promotes_on_resume() {
-        let app = tauri::test::mock_app();
-        let pause_item =
-            MenuItem::with_id(app.handle(), "pause", "Pause", true, None::<&str>).unwrap();
-        let engine = test_engine(&app);
-
-        toggle_pause(&engine, &pause_item);
-        assert_eq!(pause_item.text().unwrap(), "Resume");
-        engine.apply_blocking(|q, now| {
-            assert!(q.is_paused());
-            q.enqueue(event(Priority::Medium), now).unwrap();
-            assert_eq!(q.current_slot_state(), SlotState::Empty);
-        });
-
-        toggle_pause(&engine, &pause_item);
-        assert_eq!(pause_item.text().unwrap(), "Pause");
-        engine.read_blocking(|q| {
-            assert!(!q.is_paused());
-            assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
-            assert_eq!(q.total_waiting(), 0);
         });
     }
 

@@ -1,19 +1,14 @@
-//! (v7 ticket 2 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-//! §3): provider-neutral wire parsing of the schema-v1 `POST
-//! /agent/events` body into [`registry::AgentEvent`], and the ONE place
-//! spec §3.2's hard caps table lives.
-//!
-//! This module is pure — no HTTP, no registry mutation, no clock reads.
-//! [`parse_wire_event`] takes raw bytes and returns either a
-//! [`ParsedAgentEvent`] ready to hand to
+//! Provider-neutral wire parsing of the schema-v1 `POST /agent/events`
+//! body into [`registry::AgentEvent`], and the ONE place the hard caps
+//! table lives. Pure — no HTTP, no registry mutation, no clock reads.
+//! [`parse_wire_event`] returns either a [`ParsedAgentEvent`] ready for
 //! [`registry::AgentRegistry::apply_event`] (via `http.rs`'s
-//! `agent_events_handler`) or a typed [`AdapterError`] that `http.rs`
-//! maps to a `400` (spec §3.2 — every `AdapterError` variant is a `400`;
-//! `413` is the router's `DefaultBodyLimit` layer, which uses
+//! `agent_events_handler`) or a typed [`AdapterError`] — every variant a
+//! `400`. `413` is the router's `DefaultBodyLimit` layer, which uses
 //! [`MAX_BODY_BYTES`] from this same table so the body cap isn't a
-//! second, drifting magic number).
+//! second, drifting magic number.
 //!
-//! ## The caps table (spec §3.2)
+//! ## The caps table
 //!
 //! | field | cap | constant |
 //! |---|---:|---|
@@ -28,26 +23,21 @@
 //! | retained transitions per session | 50 | [`registry::MAX_TRANSITIONS_PER_SESSION`] (re-exported below) |
 //! | remembered event IDs (LRU) | 2,048 | [`registry::MAX_REMEMBERED_EVENT_IDS`] (re-exported below) |
 //!
-//! The last two rows are *defined* in `registry.rs` ( landed
-//! them there, since they bound the registry's own bookkeeping —
-//! `AgentSession::push_history`'s eviction and
-//! `AgentRegistry::remember_event_id`'s LRU — and moving them would be a
-//! larger, unrelated diff to that already-shipped module). They are
-//! re-exported here so this doc comment is the one place a reader finds
-//! the *complete* table, per spec's "hard caps are centralized in
-//! `agents/adapter.rs`" instruction.
+//! The last two rows are *defined* in `registry.rs`, where they bound
+//! the registry's own bookkeeping (`AgentSession::push_history`'s
+//! eviction and `AgentRegistry::remember_event_id`'s LRU); they are
+//! re-exported here so this table is complete in one place. Hard caps
+//! are centralized in this module.
 //!
 //! `subagents represented per event` ([`MAX_SUBAGENTS_PER_EVENT`]) is a
-//! forward-looking cap: schema v1 (spec §3.1) carries at most one
-//! `subagent` object per event, so this cap can never actually bind
-//! today — it exists so a future multi-subagent wire shape has an
-//! already-reviewed number to enforce against, and is asserted (not
-//! just declared) by this module's own tests.
+//! forward guard: schema v1 carries at most one `subagent` object per
+//! event, so this cap can never bind today. This module's own tests
+//! assert it rather than only declaring it.
 //!
-//! All string fields are trimmed and control characters (`char::is_control`)
-//! are stripped before any cap is applied or the value is stored —
-//! never the other way around, so a control character can't be used to
-//! hide otherwise-over-cap content from the trim.
+//! All string fields are trimmed and control characters
+//! (`char::is_control`) are stripped BEFORE any cap is applied or the
+//! value is stored — never the other way around, so a control character
+//! can't be used to hide otherwise-over-cap content from the trim.
 
 use thiserror::Error;
 
@@ -60,43 +50,40 @@ use super::registry::AgentEvent;
 // Re-exported so the caps table above is complete from this one module —
 // see this file's top doc comment for why these two stay defined in
 // `registry.rs`. Nothing outside this module's own tests reads the
-// re-export today (the values are consumed directly from `registry.rs`
-// by `registry.rs` itself); the `pub use` exists purely so a reader
-// following this file's doc table finds a real, resolvable path.
+// re-export; the `pub use` exists so a reader following this file's doc
+// table finds a real, resolvable path.
 #[allow(unused_imports)]
 pub use super::registry::{MAX_REMEMBERED_EVENT_IDS, MAX_TRANSITIONS_PER_SESSION};
 
-/// Body cap (spec §3.2). Also the router's `DefaultBodyLimit` value
+/// Body cap. Also the router's `DefaultBodyLimit` value
 /// (`http.rs::router`) — the ONE 64 KiB constant both `/notify` and
-/// `/agent/events` share, since both specs independently land on the
-/// same number for the same fixed-window-display reason.
+/// `/agent/events` share.
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
-/// event/session/native-event/Host IDs (spec §3.2), bytes not scalars —
-/// these are opaque provider identifiers, not display text.
+/// event/session/native-event/Host IDs, bytes not scalars — these are
+/// opaque provider identifiers, not display text.
 pub const MAX_ID_BYTES: usize = 256;
-/// `summary` (spec §3.2), Unicode scalar values.
+/// `summary`, in Unicode scalar values.
 pub const MAX_SUMMARY_SCALARS: usize = 500;
-/// project name / Host name / detail+subagent labels (spec §3.2),
-/// Unicode scalar values.
+/// project name / Host name / detail+subagent labels, in Unicode
+/// scalar values.
 pub const MAX_NAME_OR_LABEL_SCALARS: usize = 120;
-/// cwd / detail values (spec §3.2), Unicode scalar values.
+/// cwd / detail values, in Unicode scalar values.
 pub const MAX_VALUE_SCALARS: usize = 1024;
-/// `details` array length (spec §3.2).
+/// `details` array length.
 pub const MAX_DETAILS: usize = 12;
-/// `capabilities` array length (spec §3.2).
+/// `capabilities` array length.
 pub const MAX_CAPABILITIES: usize = 16;
-/// subagents represented per event (spec §3.2) — see this file's top doc
-/// comment for why schema v1 can never actually reach this cap.
+/// subagents represented per event — see this file's top doc comment for
+/// why schema v1 can never actually reach this cap.
 pub const MAX_SUBAGENTS_PER_EVENT: usize = 16;
 
-/// The only supported `schemaVersion` (spec §3.1). Any other value is a
-/// `400` (spec §3.2's "unknown schemaVersion" row).
+/// The only supported `schemaVersion`. Any other value is a `400`.
 const SUPPORTED_SCHEMA_VERSION: u64 = 1;
 
-/// Typed wire-parsing errors (repo rule, CLAUDE.md: `thiserror` +
-/// matchable variants for library/internal modules). `http.rs` maps
-/// every variant to `400` — see this module's top doc comment for why
-/// `413` is handled one layer up instead.
+/// Typed wire-parsing errors (CLAUDE.md's rule: `thiserror` + matchable
+/// variants for library/internal modules). `http.rs` maps every variant
+/// to `400` — see this module's top doc comment for why `413` is handled
+/// one layer up instead.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AdapterError {
     #[error("malformed json: {0}")]
@@ -111,7 +98,7 @@ pub enum AdapterError {
     MalformedEnum { field: &'static str, value: String },
 }
 
-/// The raw wire shape (spec §3.1). Every field is `Option` here — even
+/// The raw wire shape. Every field is `Option` here — even
 /// ones the schema treats as conceptually required — so this struct can
 /// never fail to deserialize on its own; [`parse_wire_event`] does its
 /// own presence/shape validation afterward and returns a precise
@@ -124,7 +111,7 @@ struct WireEvent {
     event_id: Option<String>,
     runtime: Option<String>,
     session_id: Option<String>,
-    #[allow(dead_code)] // spec: timestamps never override receive order — accepted, not used
+    #[allow(dead_code)] // timestamps never override receive order — accepted, not used
     occurred_at_ms: Option<i64>,
     sequence: Option<u64>,
     native_event: Option<String>,
@@ -167,23 +154,20 @@ struct WireSubagent {
 
 /// The parsed, normalized result of one `/agent/events` POST body:
 /// [`AgentEvent`] is what `AgentRegistry::apply_event` consumes;
-/// `native_event` is kept alongside it ONLY for the §10
+/// `native_event` is kept alongside it ONLY for the
 /// `agent.native_event` structured log field (`http.rs`'s handler) —
-/// the registry itself has no field for it ('s `AgentEvent`
-/// doesn't carry it, and doesn't need to: it's a diagnostics label, not
-/// registry state).
+/// the registry has no field for it and needs none: it's a diagnostics
+/// label, not registry state.
 #[derive(Debug, Clone)]
 pub struct ParsedAgentEvent {
     pub event: AgentEvent,
     pub native_event: String,
 }
 
-/// Strips control characters (spec §3.2: "control characters are
-/// removed before storage or rendering"), trimming outer whitespace
-/// FIRST — trimming after stripping would leave interior whitespace
-/// that used to be adjacent to a (now-removed) control character
-/// untrimmed at the edges in some inputs, so the order here is
-/// deliberate: trim, then strip.
+/// Strips control characters before storage or rendering, trimming outer
+/// whitespace FIRST. The order is load-bearing: stripping first would
+/// leave whitespace that sat next to a removed control character
+/// untrimmed at the edges. Trim, then strip.
 fn sanitize_trim(s: &str) -> String {
     s.trim().chars().filter(|c| !c.is_control()).collect()
 }
@@ -200,9 +184,8 @@ fn cap_scalars(s: &str, max: usize) -> String {
 }
 
 /// Truncates to at most `max_bytes` bytes without splitting a UTF-8
-/// codepoint. Used for the ID fields, whose cap is specified in bytes
-/// (spec §3.2: "256 bytes each") since they're opaque identifiers, not
-/// display text measured in scalars.
+/// codepoint. Used for the ID fields, whose cap is 256 bytes each —
+/// they're opaque identifiers, not display text measured in scalars.
 fn cap_bytes(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
@@ -264,10 +247,9 @@ fn sanitize_detail_value(s: &str) -> String {
     cap_scalars(&sanitize_trim(s), MAX_VALUE_SCALARS)
 }
 
-/// Runtime wire tokens (spec §4.1's `notchtap-agent hook <runtime>`
-/// examples pin the kebab-case form — `hook claude-code` — so the wire
-/// `runtime` string follows that same convention rather than
-/// `snake_case`).
+/// Runtime wire tokens. `notchtap-agent hook <runtime>` pins the
+/// kebab-case form (`hook claude-code`), so the wire `runtime` string
+/// follows that convention rather than `snake_case`.
 fn parse_runtime(s: &str) -> Result<AgentRuntime, AdapterError> {
     match s {
         "claude-code" => Ok(AgentRuntime::ClaudeCode),
@@ -293,8 +275,8 @@ fn parse_kind(s: &str) -> Result<AgentEventKind, AdapterError> {
 }
 
 /// Validated but NOT authoritative: the registry (`registry::next_state`)
-/// alone decides `AgentSession::state` from `kind` + `terminal` (spec
-/// §2.1). The wire `state` field is the adapter's own belief. It is
+/// alone decides `AgentSession::state` from `kind` + `terminal`. The
+/// wire `state` field is the adapter's own belief. It is
 /// carried onto `AgentEvent::declared_state` for one narrow job — telling
 /// a genuine session start apart from a mid-session informational event,
 /// which are otherwise byte-identical on the wire — and a malformed value
@@ -316,9 +298,9 @@ fn parse_state(s: &str) -> Result<AgentSessionState, AdapterError> {
 }
 
 /// Inverse of [`parse_runtime`] — the exact wire token an adapter itself
-/// would send for `runtime` (spec §3.1), NOT a display label (that's
+/// would send for `runtime`, NOT a display label (that's
 /// `agents::notification`'s own `runtime_display_name`, a Settings/card
-/// concern this parsing module has no business owning). 's
+/// concern this parsing module has no business owning).
 /// `AgentSignal.runtime` (`event.rs`) is this function's one caller
 /// outside this module's own round-trip test.
 pub fn runtime_wire_label(runtime: AgentRuntime) -> &'static str {
@@ -343,11 +325,11 @@ pub fn kind_wire_label(kind: AgentEventKind) -> &'static str {
 }
 
 /// Inverse of [`parse_state`] — the exact wire token an adapter would
-/// send for `state` (spec §3.1), same "wire token, not a display label"
-/// rule as [`runtime_wire_label`]/[`kind_wire_label`]. Ticket 136's
-/// `agents/board.rs` (`AgentSessionView.state`, the `agent-state` IPC) is
-/// this function's one live caller — the overlay's own `useAgentState.ts`
-/// validates against this exact string set.
+/// send for `state`, same "wire token, not a display label" rule as
+/// [`runtime_wire_label`]/[`kind_wire_label`]. `agents/board.rs`
+/// (`AgentSessionView.state`, the `agent-state` IPC) is this function's
+/// one live caller — the overlay's `useAgentState.ts` validates against
+/// this exact string set.
 pub fn state_wire_label(state: AgentSessionState) -> &'static str {
     match state {
         AgentSessionState::Starting => "starting",
@@ -361,8 +343,8 @@ pub fn state_wire_label(state: AgentSessionState) -> &'static str {
 }
 
 /// Inverse of [`parse_capability`] — same wire-token rule as
-/// [`state_wire_label`] above. Ticket 136's `agents/board.rs` is this
-/// function's one live caller (`AgentSessionView.capabilities`).
+/// [`state_wire_label`] above. `agents/board.rs` is this function's one
+/// live caller (`AgentSessionView.capabilities`).
 pub fn capability_wire_label(capability: AgentCapability) -> &'static str {
     match capability {
         AgentCapability::SessionLifecycle => "session_lifecycle",
@@ -393,7 +375,7 @@ fn parse_capability(s: &str) -> Result<AgentCapability, AdapterError> {
     }
 }
 
-/// Parses and validates one `/agent/events` POST body (spec §3.1/§3.2).
+/// Parses and validates one `/agent/events` POST body.
 /// Pure: no clock read, no registry access — the caller (`http.rs`'s
 /// `agent_events_handler`) is the one that calls
 /// `AgentRegistry::apply_event` with the result.
@@ -924,10 +906,10 @@ mod tests {
     }
 
     #[test]
-    fn max_subagents_per_event_cap_is_the_spec_value() {
-        // spec §3.2's row exists as a forward guard — schema v1 can only
-        // ever produce 0 or 1 subagents per event (see this module's top
-        // doc comment), so this test just pins the declared constant.
+    fn max_subagents_per_event_cap_is_sixteen() {
+        // The cap is a forward guard — schema v1 can only ever produce
+        // 0 or 1 subagents per event (see this module's top doc
+        // comment), so this test just pins the declared constant.
         assert_eq!(MAX_SUBAGENTS_PER_EVENT, 16);
     }
 
@@ -1011,8 +993,7 @@ mod tests {
     // --- `state_wire_label`/`capability_wire_label` round-trip
     // exactly against `parse_state`/`parse_capability` — used by
     // `agents::board`'s `agent-state` IPC snapshot, same "wire token, not
-    // a display label" discipline the two round-trip tests above already
-    // pin. ---
+    // a display label" discipline the two round-trip tests above pin. ---
 
     #[test]
     fn state_wire_label_round_trips_every_variant_through_parse_state() {

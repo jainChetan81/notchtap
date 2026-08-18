@@ -12,14 +12,11 @@
 // against the real stylesheet — the same technique
 // celebrationStacking.test.tsx and IdleHoverPeek.test.tsx use).
 //
-// this file used to be `LiveMatchScorecard.test.tsx`, direct-
-// rendering the now-deleted `LiveMatchScorecard` component. That
-// component's content moved into `FootballHeroCard` (this file's own
-// `NotificationBody.tsx`), rendered through the shared masthead/stamp/
-// accent-stripe template instead of a bespoke `.notif-block` layout — the
-// odometer/chip-morph CSS assertions below carry over unchanged (those
-// rules aren't moving, only which component renders the markup they
-// target).
+// The football hero content lives in `FootballHeroCard`
+// (`NotificationBody.tsx`), rendered through the shared masthead/stamp/
+// accent-stripe template rather than a bespoke `.notif-block` layout.
+// The odometer/chip-morph CSS assertions below target those shared
+// rules, not the component that renders them.
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
@@ -102,7 +99,7 @@ function rolls(container: HTMLElement): (Element | undefined)[] {
   return [rollsIn(container, 0)[0], rollsIn(container, 1)[0]];
 }
 
-describe("FootballHeroCard score odometer (plan 151 item B)", () => {
+describe("FootballHeroCard score odometer", () => {
   it("renders each side's score inside its own clip, reading the same as before", () => {
     const { container } = render(card());
     expect(container.querySelector(".score")?.textContent).toBe("1–1");
@@ -173,7 +170,7 @@ describe("FootballHeroCard score odometer (plan 151 item B)", () => {
   });
 });
 
-describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
+describe("FootballHeroCard match-state chip", () => {
   it("keeps the live dot mounted in every variant, final included", () => {
     for (const variant of ["live", "break", "final"] as const) {
       const { container, unmount } = render(
@@ -219,7 +216,7 @@ describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
 
 // the crossbar persistent
 // variant — a second, stacked score-block for a secondary live match.
-describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
+describe("FootballHeroCard crossbar variant", () => {
   const SECOND_ESPN: EspnMeta = {
     league: "EPL",
     homeAbbrev: "MCI",
@@ -367,7 +364,7 @@ describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
 // agent hero a toned pill in every state and a coloured tag on the two
 // alarm states; a generic (non-agent) card's pills stay neutral, which
 // is the contrast this block pins so the two can't silently converge.
-describe("fact pills: tags and tones (plan 169 fidelity pass)", () => {
+describe("fact pills: tags and tones", () => {
   function heroWith(facts: Fact[], factsTone: "accent" | "danger" | "safe") {
     return (
       <AgentHeroCard

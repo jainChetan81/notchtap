@@ -6,21 +6,18 @@
 //!
 //! ## Sanitization
 //!
-//! This parser is the one place that decides what payload content is
-//! safe to forward at all — the server-side caps in `agents::adapter`
-//! bound length/count, but can't undo a forwarding decision made here:
+//! What is safe to forward at all is decided at parse time — the
+//! server-side caps in `agents::adapter` bound length/count, but can't
+//! undo a forwarding decision made here. `super::wire`'s
+//! `safe_tool_name` and `safe_path_detail` cover tool names and paths;
+//! this parser's own arms add:
 //!
-//! - forwards `tool_name` (a short provider-defined identifier) —
-//!   never `tool_input`/`tool_result` wholesale;
-//! - extracts a `Path` detail ONLY from a known path-shaped key
-//!   (`file_path`/`path`/`notebook_path`), keeping just the basename —
-//!   never the full path, and never `tool_input.command` (the one place
-//!   a full shell command would live);
-//! - builds every `summary` from a fixed template plus already-sanitized
+//! - every `summary` is a fixed template plus already-sanitized
 //!   closed-enum fields — never `message`, `last_assistant_message`,
 //!   `error_message`, or any other free-text/model-authored field;
-//! - never inspects `tool_result` at all — the `tool_use_succeeded`
-//!   boolean plus the tool name is the whole PostToolUse(Failure) story.
+//! - `tool_result` is never inspected at all — the
+//!   `tool_use_succeeded` boolean plus the tool name is the whole
+//!   PostToolUse(Failure) story.
 //!
 //! `Notification`'s `notification_type` is a closed enum;
 //! [`classify_notification`] switches on that field, never on `message`
@@ -28,7 +25,10 @@
 
 use thiserror::Error;
 
-use super::wire::NormalizedEvent;
+use super::wire::{
+    basename, classify_notification, safe_path_detail, safe_tool_name, Mapped, NormalizedEvent,
+    RawHookPayload,
+};
 
 /// Claude Code's declared capability set (not `open_or_focus`, which
 /// is Host-dependent and not part of an event's own `capabilities`
@@ -54,105 +54,6 @@ pub enum ClaudeCodeParseError {
     MissingHookEventName,
     #[error("unsupported hook_event_name: {0}")]
     UnsupportedHookEvent(String),
-}
-
-/// The raw wire shape Claude Code hooks send — every field is `Option`
-/// so a payload missing a field this parser doesn't use for a given
-/// event still deserializes cleanly.
-#[derive(Debug, serde::Deserialize)]
-struct RawHookPayload {
-    session_id: Option<String>,
-    hook_event_name: Option<String>,
-    cwd: Option<String>,
-    // SessionStart
-    source: Option<String>,
-    // SessionEnd
-    end_reason: Option<String>,
-    // PermissionRequest / PostToolUse / PostToolUseFailure
-    tool_name: Option<String>,
-    tool_input: Option<serde_json::Value>,
-    // Notification
-    notification_type: Option<String>,
-    // StopFailure
-    error_type: Option<String>,
-    // SubagentStart / SubagentStop
-    agent_id: Option<String>,
-    agent_type: Option<String>,
-}
-
-/// One `(label, value)`-shaped intermediate the match arms below build
-/// before wrapping into a [`NormalizedEvent`].
-struct Mapped {
-    kind: &'static str,
-    state: &'static str,
-    terminal: bool,
-    summary: Option<String>,
-    details: Vec<(String, String)>,
-    subagent: Option<(String, Option<String>, Option<String>)>,
-}
-
-fn basename(path: &str) -> Option<String> {
-    std::path::Path::new(path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-}
-
-/// Never empty — a missing/blank `tool_name` becomes the generic
-/// `"a tool"` rather than an empty detail value.
-fn safe_tool_name(tool_name: Option<&str>) -> String {
-    tool_name
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("a tool")
-        .to_string()
-}
-
-/// Pulls a basename-only path detail out of `tool_input` — only from a
-/// small, known set of path-shaped keys, NEVER from `command` (where a
-/// full shell command line would live) or any other key. Returns
-/// `None` when `tool_input` is absent, not an object, or has none of
-/// the known keys as a string.
-fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, String)> {
-    let obj = tool_input?.as_object()?;
-    for key in ["file_path", "path", "notebook_path"] {
-        if let Some(raw) = obj.get(key).and_then(|v| v.as_str()) {
-            let value = basename(raw).unwrap_or_else(|| raw.to_string());
-            return Some(("Path".to_string(), value));
-        }
-    }
-    None
-}
-
-/// `Notification` maps by its closed `notification_type` enum only,
-/// never `message` — generic notifications become `Informational`;
-/// wording is never parsed to infer state.
-fn classify_notification(notification_type: Option<&str>) -> Mapped {
-    match notification_type {
-        Some("permission_prompt") => Mapped {
-            kind: "permission_requested",
-            state: "waiting_for_permission",
-            terminal: false,
-            summary: Some("Approval needed".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-        Some("idle_prompt") | Some("agent_needs_input") => Mapped {
-            kind: "input_required",
-            state: "waiting_for_input",
-            terminal: false,
-            summary: Some("Waiting for input".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-        _ => Mapped {
-            kind: "informational",
-            state: "working",
-            terminal: false,
-            summary: Some("Notification".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-    }
 }
 
 fn map_event(
@@ -640,7 +541,7 @@ mod tests {
     // --- declared capabilities vs. fixture suite must agree ------------
 
     #[test]
-    fn declared_capabilities_match_the_spec_1_claude_code_row() {
+    fn declared_capabilities_are_the_claude_code_capability_set() {
         let expected: std::collections::BTreeSet<&str> = [
             "session_lifecycle",
             "permission_requests",

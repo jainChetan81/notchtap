@@ -13,9 +13,9 @@ rather than repeating them.
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 1056 lib-crate tests + 3 integration-binary tests = 1059 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 953 lib-crate tests + 3 integration-binary tests = 956 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 859 tests across 42 test files | `npx vitest run` |
+| frontend | 748 tests across 39 test files | `npx vitest run` |
 | ci | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example surface listed in §4 has passing coverage. the recurring

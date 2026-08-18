@@ -1,36 +1,23 @@
-//! the tmux-style prefix keymap's
-//! ARM/DISARM state machine — pure, no AppKit types, no
-//! `tauri_plugin_global_shortcut` dependency, same discipline `tabs.rs`
-//! follows (`docs/TESTING_STRATEGY.md` §4.4). Spec
-//! `docs/superpowers/specs/2026-08-02-tab-notch-design.md` §9's table is
-//! the source of truth this module encodes.
+//! The tmux-style Prefix keymap's ARM/DISARM state machine, encoding
+//! `docs/superpowers/specs/2026-08-02-tab-notch-design.md`. Pure: no
+//! AppKit and no `tauri_plugin_global_shortcut` types, so the rules stay
+//! unit-testable off-device while the timing-sensitive grab side stays
+//! in `lib.rs` (`docs/TESTING_STRATEGY.md` §4.4).
 //!
-//! **What this module does NOT do**: register or release any actual OS
-//! key grab — that stays in `lib.rs`, and it is LIVE (shipped in
-//! `82a4598`). This module deliberately owns no `AppKit` or
-//! `tauri_plugin_global_shortcut` types so the ARM/DISARM rules stay
-//! unit-testable off-device; the grab side is inherently timing- and
-//! hardware-sensitive and is verified manually.
-//!
-//! The live wiring, for anyone tracing a key press end to end:
 //! `lib.rs`'s `PREFIX_FOLLOWUPS` table holds the bare (unmodified)
-//! follow-up grabs — see that constant for the authoritative key list
-//! and count; `enter`/`o` both mean ExpandToggle and `esc` disarms.
-//! They are registered ONLY while an armed window is live and released
-//! the moment a key is consumed, the prefix/esc disarms, or the window
-//! lapses — permanently-registered bare shortcuts for keys like "1" or
-//! "Return" would fire on every ordinary keystroke system-wide, which is
-//! exactly what the dynamic register/unregister dance avoids.
-//! `handle_prefix_fire` arms (or re-fires as disarm),
-//! `handle_prefix_followup` consumes one key, and a watchdog
-//! (`PREFIX_WATCHDOG_TIMEOUT`) force-releases the grabs if a release ever
-//! fails, so a partial failure cannot strand the bare keys registered.
+//! follow-up grabs — that constant is the authoritative key list. They
+//! are registered ONLY while an armed window is live and released the
+//! moment a key is consumed, the prefix/esc disarms, or the window
+//! lapses: permanently-registered bare shortcuts for keys like "1" or
+//! "Return" would fire on every keystroke system-wide. A watchdog
+//! (`PREFIX_WATCHDOG_TIMEOUT`) force-releases the grabs if a release
+//! ever fails, so a partial failure cannot strand them registered.
 
 use std::time::{Duration, Instant};
 
 use crate::tabs::Tab;
 
-/// Spec §12 open question 1's stated default.
+/// How long one arm stays live before it lapses on its own.
 pub const PREFIX_ARM_WINDOW: Duration = Duration::from_secs(2);
 
 /// Armed or not, and since when — `Default` is `Disarmed`, the app's own
@@ -44,12 +31,12 @@ pub enum PrefixState {
     },
 }
 
-/// The seven follow-up keys spec §9's table recognizes while armed, in
-/// already-abstracted form — mapping a raw NSEvent/tauri key code to one
-/// of these variants (e.g. both `Return` and `O` collapse to
-/// `ExpandToggle`) is the caller's job, deliberately kept out of this
-/// AppKit-free module. `Other` covers everything unmapped — spec §9's
-/// last row: "disarm silently — never beep, never flash an error."
+/// The follow-up keys recognized while armed, in already-abstracted
+/// form — mapping a raw NSEvent/tauri key code to one of these variants
+/// (e.g. both `Return` and `O` collapse to `ExpandToggle`) is the
+/// caller's job, deliberately kept out of this AppKit-free module.
+/// `Other` covers everything unmapped: disarm silently, never beep,
+/// never flash an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixKey {
     /// 1..3 — the caller passes the raw digit; out-of-range values are a
@@ -57,8 +44,7 @@ pub enum PrefixKey {
     Digit(u8),
     BracketLeft,
     BracketRight,
-    /// `enter` or `o` — spec §9: "the *only* expansion gesture that
-    /// exists anywhere in this feature."
+    /// `enter` or `o` — the *only* expansion gesture in this keymap.
     ExpandToggle,
     Pause,
     /// `esc`, or the prefix combo pressed again while already armed.
@@ -66,19 +52,18 @@ pub enum PrefixKey {
     Other,
 }
 
-/// What the caller should DO in response to a consumed key — this slice
-/// documents which EXISTING mechanism each maps to;
-/// the caller (lib.rs, once wired) is what actually calls it.
+/// What the caller should DO in response to a consumed key — each
+/// variant names the existing mechanism it maps to; `lib.rs` is what
+/// actually calls it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixAction {
     /// prefix+1..3: `TabSelection::select` (tabs.rs) with the tab
     /// `Tab::from_prefix_digit` resolves the digit to — same toggle
-    /// semantics a click would drive (spec §9: "same key again
-    /// deselects").
+    /// semantics a click drives, so the same key again deselects.
     Select(Tab),
-    /// prefix+`[` / prefix+`]`: previous/next agent session. Spec §9:
-    /// "ignored unless the agent tab is selected" — this state machine
-    /// doesn't hold the current selection, so it always emits these;
+    /// prefix+`[` / prefix+`]`: previous/next agent session, ignored
+    /// unless the agent Tab is selected. This state machine doesn't hold
+    /// the current selection, so it always emits these;
     /// the caller checks `TabSelection::selected() == Some(Tab::Agent)`
     /// before acting and no-ops otherwise, the same "caller holds the
     /// cross-cutting state, this machine only classifies the keystroke"
@@ -87,13 +72,9 @@ pub enum PrefixAction {
     NextSession,
     /// prefix+enter / prefix+o: reuses the EXISTING `⌃⇧N` expand-toggle
     /// mechanism — `EXPAND_TOGGLE_SHORTCUT` -> `toggle_manual_expand`
-    /// (`lib.rs`), which flips the queue's own manual-expand flag. CodeRabbit
-    /// review fix (PR #13): this doc originally named `try_expand_board_
-    /// for_hover`/`collapse_board_if_expanded` here — that pair is a
-    /// DIFFERENT, hover-driven (never keyboard-driven) mechanism specific
-    /// to the Agent Board's own session-list expansion, not what `⌃⇧N`
-    /// actually calls. Not a new toggle either way — the same one spec §9
-    /// calls out as the feature's only expansion gesture.
+    /// (`lib.rs`), which flips the queue's own manual-expand flag. Not a
+    /// new toggle: the same one that is this keymap's only expansion
+    /// gesture.
     ExpandToggle,
     /// prefix+p: reuses the EXISTING pause the tray item and `⌃⇧P`
     /// already drive.
@@ -111,10 +92,10 @@ impl PrefixState {
         matches!(*self, PrefixState::Armed { armed_at } if now.duration_since(armed_at) < PREFIX_ARM_WINDOW)
     }
 
-    /// The global prefix combo fired. Two distinct cases spec §9's table
-    /// draws out separately: if a PREVIOUS armed window is still live,
-    /// this press IS "the prefix again" (the table's explicit disarm
-    /// row) — not a re-arm, not an extension of the window. If disarmed,
+    /// The global prefix combo fired. Two distinct cases: if a PREVIOUS
+    /// armed window is still live, this press IS "the prefix again" — a
+    /// disarm, not a re-arm and not an extension of the window. If
+    /// disarmed,
     /// OR a previous window already timed out, this arms a fresh
     /// 2-second window starting now. Getting this distinction backwards
     /// (treating a stale Armed variant as still-toggleable) would leave
@@ -129,10 +110,10 @@ impl PrefixState {
         PrefixAction::NoOp
     }
 
-    /// Any other key seen while the temporary grab is active. Spec §9:
-    /// "the next keystroke does exactly one thing and disarms
-    /// immediately, whether or not it matched anything" — so this always
-    /// transitions to `Disarmed`, match or no match. Defensively also a
+    /// Any other key seen while the temporary grab is active. The next
+    /// keystroke does exactly one thing and disarms immediately, whether
+    /// or not it matched anything — so this always transitions to
+    /// `Disarmed`, match or no match. Defensively also a
     /// no-op (rather than acting on a stale key) if called while the
     /// window has already expired — the caller is expected to release
     /// its temporary grab the moment `is_armed` goes false, but a real

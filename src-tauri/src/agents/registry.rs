@@ -1,6 +1,5 @@
-//! the authoritative in-memory Agent Registry (spec §2's
-//! transition rules, §2.2's ordering, §2.3's dedup contract, §3.2's
-//! caps table).
+//! The authoritative in-memory Agent Registry: transition rules,
+//! ordering, the dedup contract, the caps table.
 //!
 //! Clock-agnostic like `queue.rs`: [`AgentRegistry::apply_event`] and
 //! [`AgentRegistry::tick`] both take `now: Instant` from the caller —
@@ -17,42 +16,39 @@ use super::model::{
     AgentSessionKey, AgentSessionState, AgentState, AgentSubagentSummary,
 };
 
-/// Retained transitions per session (spec §3.2 caps table).
+/// Retained transitions per session (caps table, `adapter.rs`).
 pub const MAX_TRANSITIONS_PER_SESSION: usize = 50;
-/// Remembered event ids, LRU (spec §3.2 caps table).
+/// Remembered event ids, LRU (caps table, `adapter.rs`).
 pub const MAX_REMEMBERED_EVENT_IDS: usize = 2048;
-/// Default `agents.terminal_retention_secs` (spec §2.1; 600 -> 60 by
-/// operator decision 2026-07-27 — see `AgentsConfig`'s field doc).
+/// Default `agents.terminal_retention_secs` — see `AgentsConfig`'s own
+/// field doc.
 pub const DEFAULT_TERMINAL_RETENTION: Duration = Duration::from_secs(60);
-/// Default `agents.stale_retention_secs` ( follow-up; 1800 -> 600
-/// with the 2026-07-27 stale-timing tighten — see `AgentsConfig`).
+/// Default `agents.stale_retention_secs` — see `AgentsConfig`.
 pub const DEFAULT_STALE_RETENTION: Duration = Duration::from_secs(600);
 
 /// The registry-internal normalized event — the input to
 /// [`AgentRegistry::apply_event`]. This is deliberately a superset of
 /// the wire-facing [`AgentEventKind`]'s five values: the wire `kind` +
 /// the sibling `terminal` flag together are enough to drive every
-/// §2.1 transition, including the ones (session start, generic
+/// transition, including the ones (session start, generic
 /// tool/work progress) that don't get a dedicated wire `kind` of their
-/// own — see [`next_state`]'s doc. Building this from an actual
-/// `/agent/events` POST body is ticket 134's `adapter.rs`; this ticket
-/// only needs the type to exist so the registry can be exercised
-/// directly from tests.
+/// own — see [`next_state`]'s doc. `adapter.rs` builds this from an
+/// actual `/agent/events` POST body; tests build it directly.
 #[derive(Debug, Clone)]
 pub struct AgentEvent {
     pub event_id: String,
     pub session_key: AgentSessionKey,
     pub sequence: Option<u64>,
     pub kind: AgentEventKind,
-    /// Mirrors spec §3.1's top-level `terminal` boolean. Authoritative
+    /// Mirrors the wire's top-level `terminal` boolean. Authoritative
     /// for terminality: kind `Failed` with `terminal` false is a
     /// non-terminal tool failure (session stays/becomes `Working`);
     /// kind `Informational` with `terminal` true is treated as a
     /// graceful `Completed` — see [`next_state`].
     pub terminal: bool,
-    /// The adapter's OWN belief about the session's state (spec §3.1's
-    /// `state`). NOT authoritative — [`next_state`] still decides every
-    /// transition (spec §2.1). It is carried for exactly one purpose:
+    /// The adapter's OWN belief about the session's state (the wire
+    /// `state`). NOT authoritative — [`next_state`] decides every
+    /// transition. It is carried for exactly one purpose:
     /// telling a real session start apart from a mid-session
     /// informational event, which are otherwise identical on the wire
     /// (both `kind: informational`, both non-terminal). See
@@ -68,8 +64,8 @@ pub struct AgentEvent {
 
 /// What happened when an event was fed to the registry. None of these
 /// are errors — duplicate/stale events are a valid, expected part of
-/// at-least-once delivery (spec §3.2: both map to an idempotent `202`
-/// at the HTTP layer, ticket 134).
+/// at-least-once delivery: both map to an idempotent `202` at the HTTP
+/// layer (`http.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyOutcome {
     /// A new or existing session accepted the event; its state may or
@@ -83,15 +79,15 @@ pub enum ApplyOutcome {
     StaleSequence,
 }
 
-/// Pure transition function (spec §2.1), unit-testable independent of
-/// the registry's bookkeeping. `current` is the session's state going
-/// into this event.
+/// Pure transition function, unit-testable independent of the
+/// registry's bookkeeping. `current` is the session's state going into
+/// this event.
 ///
 /// Note this function alone cannot implement "SessionStart → Starting,
-/// then a work/tool event → Working" (spec §2.1's first rule): the wire
-/// taxonomy has no dedicated `SessionStart` kind (spec §4.2 — a
-/// provider's generic/lifecycle notifications, including session start,
-/// arrive as `Informational`, same as ordinary tool progress), so an
+/// then a work/tool event → Working": the wire taxonomy has no dedicated
+/// `SessionStart` kind — a provider's generic/lifecycle notifications,
+/// including session start, arrive as `Informational`, same as ordinary
+/// tool progress — so an
 /// `Informational` event is ambiguous between "this session just
 /// started" and "this session is still working" from `kind` alone. The
 /// caller (`AgentRegistry::apply_event`) resolves that ambiguity using
@@ -102,8 +98,8 @@ pub enum ApplyOutcome {
 /// first event that's already e.g. `PermissionRequested`) always runs
 /// through `next_state` normally, first event or not.
 ///
-/// Terminal states never transition back to active (spec §2.1's last
-/// paragraph) — enforced here defensively (`current.is_terminal()`
+/// Terminal states never transition back to active — enforced here
+/// defensively (`current.is_terminal()`
 /// short-circuits to `current`) even though `AgentRegistry::apply_event`
 /// never calls this with a terminal `current` in practice (it redirects
 /// to a suffixed fallback key first).
@@ -122,13 +118,12 @@ pub fn next_state(
         // `Stop`, OpenCode `session.idle`) keeps the session live: the
         // turn finished and the agent awaits the user, so it lands in
         // `WaitingForInput` rather than the terminal `Completed` state.
-        // Only an explicit session-end event is terminal (spec §2.1,
-        // operator decision 2026-07-26).
+        // Only an explicit session-end event is terminal.
         AgentEventKind::Completed if terminal => AgentSessionState::Completed,
         AgentEventKind::Completed => AgentSessionState::WaitingForInput,
-        // Non-terminal tool failure: informational/failure Notification
-        // (ticket 135) while the session remains `Working` (spec §2.1).
-        // This also clears an existing waiting state, same as any other
+        // Non-terminal tool failure: an informational/failure
+        // Notification (`notification.rs`) while the session remains
+        // `Working`. This also clears an existing waiting state, like any other
         // tool/work event — a failed tool call is still evidence of
         // work happening.
         AgentEventKind::Failed if terminal => AgentSessionState::Failed,
@@ -141,13 +136,12 @@ pub fn next_state(
     }
 }
 
-/// The authoritative in-memory Agent Registry (spec §2).
+/// The authoritative in-memory Agent Registry.
 pub struct AgentRegistry {
     sessions: HashMap<AgentSessionKey, AgentSession>,
     /// Global (not per-session) LRU of accepted event ids — duplicate
-    /// detection is cross-session by design, matching spec §3.2's caps
-    /// table having a single "remembered event IDs" row, not one per
-    /// session.
+    /// detection is cross-session by design — the caps table has a
+    /// single "remembered event IDs" row, not one per session.
     seen_event_ids: HashSet<String>,
     seen_event_id_order: VecDeque<String>,
     /// How many times each original key has been reused after going
@@ -159,8 +153,7 @@ pub struct AgentRegistry {
     // `agent-state` publish path (`agents/board.rs`'s
     // `AgentBoardPublisher`) from real `[agents]` config at the
     // `lib.rs` construction site. `stale_retention` mirrors
-    // `terminal_retention`'s role for `Stale` sessions (
-    // follow-up) — see `tick`'s doc.
+    // `terminal_retention`'s role for `Stale` sessions — see `tick`.
     stale_after: Duration,
     terminal_retention: Duration,
     stale_retention: Duration,
@@ -170,8 +163,8 @@ impl AgentRegistry {
     /// `stale_after`, `terminal_retention`, and `stale_retention` are all
     /// injected constructor parameters, sourced from `agents.stale_after_secs`,
     /// `agents.terminal_retention_secs`, and `agents.stale_retention_secs`
-    /// respectively. Use [`DEFAULT_TERMINAL_RETENTION`] for the spec's
-    /// default terminal retention.
+    /// respectively. Use [`DEFAULT_TERMINAL_RETENTION`] for the default
+    /// terminal retention.
     pub fn new(
         stale_after: Duration,
         terminal_retention: Duration,
@@ -189,9 +182,8 @@ impl AgentRegistry {
     }
 
     // Only called from this module's tests and from
-    // `AgentRegistryHandle::session_count` (itself `#[cfg(test)]`) until
-    // a live caller (e.g. Settings' session count, or a future test
-    // hook) exists outside test builds.
+    // `AgentRegistryHandle::session_count` (itself `#[cfg(test)]`) —
+    // there is no live caller outside test builds.
     #[allow(dead_code)]
     pub fn session_count(&self) -> usize {
         self.sessions.len()
@@ -213,15 +205,13 @@ impl AgentRegistry {
         }
     }
 
-    /// Feeds one normalized event into the registry (spec §2.1). See
+    /// Feeds one normalized event into the registry. See
     /// [`ApplyOutcome`] for the three possible results.
     ///
-    /// Metadata merge policy (not spelled out verbatim by the spec, so
-    /// resolved here): `summary`/`details`/`subagent` are always
-    /// replaced with the incoming event's values (spec's own wording —
-    /// "latest sanitized summary and bounded detail cells" — implies
-    /// each event's payload is authoritative, even to clear a previous
-    /// value). `project`/`host`/`capabilities` instead merge-if-present
+    /// Metadata merge policy: `summary`/`details`/`subagent` are always
+    /// replaced with the incoming event's values — each event's payload
+    /// is authoritative for them, even to clear a previous value.
+    /// `project`/`host`/`capabilities` instead merge-if-present
     /// (an event that omits them doesn't erase what a previous event
     /// already established) since they read as persistent identity-
     /// adjacent facts rather than a point-in-time status line.
@@ -233,7 +223,7 @@ impl AgentRegistry {
         let mut target_key = event.session_key.clone();
         if let Some(existing) = self.sessions.get(&target_key) {
             if existing.is_terminal() {
-                // Terminal states never reactivate (spec §2.1). Treat
+                // Terminal states never reactivate. Treat
                 // this as a provider incorrectly reusing a terminal id:
                 // redirect to a suffixed fallback key so the original
                 // session's history is left completely untouched.
@@ -270,13 +260,13 @@ impl AgentRegistry {
         // an agent session is already running makes that session's next
         // ordinary event — a `PostToolUse`, say — the first one this
         // registry has ever seen, and it is `Informational` and
-        // non-terminal just like a real SessionStart. Keying only on
-        // novelty pinned every live session at `Starting` after every
-        // restart, with its elapsed timer ticking up beside a summary
-        // that plainly said work had happened. The adapters already
-        // distinguish the two (`state: "starting"` vs `state:
-        // "working"`, see `providers/claude_code.rs`); this reads that
-        // rather than guessing.
+        // non-terminal just like a real SessionStart. Keying on novelty
+        // alone would pin every live session at `Starting` across a
+        // restart, elapsed timer ticking beside a summary that says work
+        // happened. The adapters distinguish the two (`state:
+        // "starting"` vs `state: "working"`, see
+        // `providers/claude_code.rs`); this reads that rather than
+        // guessing.
         let is_session_start = is_new_session
             && event.kind == AgentEventKind::Informational
             && !event.terminal
@@ -314,14 +304,12 @@ impl AgentRegistry {
         ApplyOutcome::Applied
     }
 
-    /// Advances time-only state (spec §2.1): non-terminal, non-stale
-    /// sessions with no accepted event for `stale_after` become `Stale`
-    /// (including waiting sessions — spec: "waiting sessions ... can
-    /// become Stale only through the explicit stale threshold", i.e.
-    /// this same rule applies to them too, just not any TTL-style
-    /// rotation). Terminal sessions past `terminal_retention` since
-    /// going terminal are purged from the live registry entirely (spec:
-    /// "then leave the live registry view"), and — mirroring that —
+    /// Advances time-only state: non-terminal, non-stale sessions with
+    /// no accepted event for `stale_after` become `Stale`. Waiting
+    /// sessions included — they become `Stale` only through this
+    /// explicit threshold, never through any TTL-style rotation.
+    /// Terminal sessions past `terminal_retention` since going terminal
+    /// leave the live registry entirely, and — mirroring that —
     /// `Stale` sessions past `stale_retention` since entering `Stale`
     /// are purged too, using `state_entered_at` (reset the instant a
     /// session goes `Stale`, above) as the stale-entry timestamp. Without
@@ -329,9 +317,8 @@ impl AgentRegistry {
     /// suppressing the idle face.
     ///
     /// Driven by `agents::board::AgentBoardPublisher::spawn_tick`'s
-    /// periodic loop (ticket 136), mirroring the Engine's own rotation
-    /// loop shape but time-interval- rather than deadline/wake-driven —
-    /// see that method's doc.
+    /// periodic loop, mirroring the Engine's rotation loop shape but
+    /// time-interval- rather than deadline/wake-driven.
     pub fn tick(&mut self, now: Instant) {
         for session in self.sessions.values_mut() {
             if session.is_terminal() || session.state == AgentSessionState::Stale {
@@ -356,12 +343,12 @@ impl AgentRegistry {
         });
     }
 
-    /// The Agent Board ordering (spec §2.2): urgency class, then
-    /// state-entered oldest first, then first-seen oldest first, then
-    /// key lexical tie-break (`AgentSessionKey`'s derived `Ord`).
+    /// The Agent Board ordering: urgency class, then state-entered
+    /// oldest first, then first-seen oldest first, then key lexical
+    /// tie-break (`AgentSessionKey`'s derived `Ord`).
     ///
-    /// Called from `agents::board::AgentBoardPublisher::publish_if_changed`
-    /// (ticket 136), the live `agent-state` IPC publish path.
+    /// Called from `agents::board::AgentBoardPublisher::publish_if_changed`,
+    /// the live `agent-state` IPC publish path.
     pub fn ordered_states(&self, now: Instant) -> Vec<AgentState> {
         let mut sessions: Vec<&AgentSession> = self.sessions.values().collect();
         sessions.sort_by(|a, b| {
@@ -383,9 +370,9 @@ impl AgentRegistry {
 /// application-state boundary as `Engine` (`engine.rs`'s own
 /// `Arc<tokio::sync::Mutex<SingleSlotQueue>>` shape, mirrored here —
 /// see that type's doc for why: by-value construction once, then only
-/// clones of the handle cross module/task boundaries). Ticket 134 wires
-/// this into `http::AppState` and constructs it once in `lib.rs`'s
-/// `setup` closure, next to the Engine.
+/// clones of the handle cross module/task boundaries). `http::AppState`
+/// holds one, constructed in `lib.rs`'s `setup` closure next to the
+/// Engine.
 #[derive(Clone)]
 pub struct AgentRegistryHandle(Arc<tokio::sync::Mutex<AgentRegistry>>);
 
@@ -401,7 +388,7 @@ impl AgentRegistryHandle {
 
     /// The session's current state, if it still exists in the live
     /// registry — used by the `/agent/events` handler (`http.rs`) to
-    /// populate the §10 `agent.state` log field after `apply_event`.
+    /// populate the `agent.state` log field after `apply_event`.
     pub async fn state_for(
         &self,
         key: &AgentSessionKey,
@@ -481,7 +468,7 @@ mod tests {
         )
     }
 
-    // --- session-start disambiguation (2026-07-28 regression) --------
+    // --- session-start disambiguation ------------------------------
 
     #[test]
     fn a_mid_session_informational_on_an_unseen_session_becomes_working() {
@@ -490,8 +477,6 @@ mod tests {
         // registry has ever seen. It is `Informational` and non-terminal,
         // exactly like a real SessionStart — but the adapter declared
         // `working`, so it must NOT be mistaken for a session start.
-        // Before this fix every live session sat at `Starting` after
-        // every restart, elapsed timer ticking, summary saying otherwise.
         let mut registry = registry();
         let k = key(AgentRuntime::ClaudeCode, "restart-mid-session");
         let outcome = registry.apply_event(
@@ -510,8 +495,8 @@ mod tests {
     #[test]
     fn a_declared_session_start_keeps_the_starting_baseline() {
         // The other half of the same rule: a genuine SessionStart (the
-        // adapters send `state: "starting"`) still parks at `Starting`
-        // instead of jumping straight to `Working`.
+        // adapters send `state: "starting"`) parks at `Starting` instead
+        // of jumping straight to `Working`.
         let mut registry = registry();
         let k = key(AgentRuntime::ClaudeCode, "genuine-start");
         registry.apply_event(
@@ -526,7 +511,7 @@ mod tests {
         assert_eq!(registry.get(&k).unwrap().state, AgentSessionState::Starting);
     }
 
-    // --- §2.1 transition rules -------------------------------------
+    // --- transition rules ------------------------------------------
 
     #[test]
     fn session_start_then_work_event_reaches_working() {
@@ -621,10 +606,9 @@ mod tests {
 
     #[test]
     fn non_terminal_completed_event_stays_live_waiting_for_input() {
-        // Operator decision 2026-07-26 (spec §2.1): a per-turn provider
-        // `Stop`/OpenCode `session.idle` posts kind Completed with
-        // terminal:false. The session must NOT go terminal — it stays
-        // live, transitioning to WaitingForInput.
+        // A per-turn provider `Stop`/OpenCode `session.idle` posts kind
+        // Completed with terminal:false. The session must NOT go
+        // terminal — it stays live, transitioning to WaitingForInput.
         let mut reg = registry();
         let now = Instant::now();
         let k = key(AgentRuntime::Codex, "s1");
@@ -907,7 +891,7 @@ mod tests {
         assert!(reg.get(&k.suffixed(2)).is_some());
     }
 
-    // --- §2.2 ordering ------------------------------------------------
+    // --- ordering -----------------------------------------------------
 
     #[test]
     fn ordering_is_urgency_then_fifo_within_class() {
@@ -1205,7 +1189,7 @@ mod tests {
         assert_eq!(reg.get(&k).unwrap().summary, None);
     }
 
-    // --- AgentRegistryHandle (ticket 134) ----------------------------
+    // --- AgentRegistryHandle -----------------------------------------
 
     #[tokio::test]
     async fn handle_apply_event_and_state_for_round_trip() {

@@ -45,7 +45,7 @@ function keyframesBody(css: string, name: string): string {
 
 const newsCategoryCss = readCss("./overlay/news-category.css");
 
-describe("ambient drift shapes (plan 151 item D)", () => {
+describe("ambient drift shapes", () => {
   it("shade-drift wanders through intermediate stops, not along a single rail", () => {
     const body = keyframesBody(newsCategoryCss, "shade-drift");
     const stops = body.match(/translate3d\([^)]*\)/g) ?? [];

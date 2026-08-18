@@ -1,5 +1,5 @@
-//! v5 settings window backend (`docs/V5_TECHNICAL_SPEC.md`). Owns the
-//! app's only invoke commands — all four are settings-window-scoped:
+//! Settings window backend. Owns the
+//! app's only invoke commands — every one is settings-window-scoped:
 //! gated declaratively by the `build.rs` `AppManifest::commands` opt-in +
 //! `capabilities/settings.json`, and defensively by [`ensure_settings_window`]
 //! (the tauri acl does not protect against scope bugs in handlers, so the
@@ -26,10 +26,10 @@ use crate::event::{
 use tauri::Manager;
 
 // ---------------------------------------------------------------------------
-// validation (pure, unit-tested — spec §3)
+// validation (pure, unit-tested)
 // ---------------------------------------------------------------------------
 
-/// Normalized match key for a feed url ( — mirrors the frontend's
+/// Normalized match key for a feed url (mirrors the frontend's
 /// `feedKey` in `SettingsApp.tsx`): clear the fragment and trim a single
 /// trailing slash so a cosmetic variant (trailing "/", a `#anchor`) is
 /// recognized as the same feed for duplicate rejection. Falls back to the
@@ -46,7 +46,7 @@ fn feed_key(url: &str) -> String {
     }
 }
 
-/// M2 SSRF guard: true for a literal loopback/link-local/private-network
+/// SSRF guard: true for a literal loopback/link-local/private-network
 /// ip, `localhost`, or any `.local` domain. Literal-ip checks use std's
 /// own `is_loopback`/`is_link_local`/`is_private` (the latter is exactly
 /// RFC 1918: 10/8, 172.16/12, 192.168/16) rather than hand-rolled range
@@ -56,7 +56,7 @@ fn feed_key(url: &str) -> String {
 /// via DNS rebinding; this is a best-effort save-time guard, not a
 /// runtime fetch-time sandbox.
 fn feed_host_is_internal(url: &reqwest::Url) -> bool {
-    // `host_str()` over `host()` deliberately (2026-07-25): the typed
+    // `host_str()` over `host()` deliberately: the typed
     // `url::Host` enum isn't nameable here — `url` is only a transitive
     // dependency via reqwest, which re-exports `Url` but not `Host` — so
     // this works off the string form instead. An IPv6 literal comes back
@@ -150,7 +150,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for league in &c.espn_leagues {
-        // L-sec4: leagues feed straight into an ESPN scoreboard url path
+        // leagues feed straight into an ESPN scoreboard url path
         // segment (poller.rs) — beyond "non-empty, no whitespace", reject
         // anything outside `^[A-Za-z0-9._-]+$` so a slug can't smuggle a
         // path traversal (`../`) or a query/fragment break-out (`?`, `#`,
@@ -189,7 +189,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for feed in &c.rss_feeds {
-        // full parse, not a prefix check (2026-07-17 review): "https://"
+        // full parse, not a prefix check: "https://"
         // alone or a host-less url would pass a starts_with test and then
         // fail on every poll. whitespace is rejected explicitly because
         // the url parser is lenient enough to percent-encode some of it.
@@ -326,7 +326,7 @@ pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
 // write paths (atomic; integration-tested against temp dirs, never $HOME)
 // ---------------------------------------------------------------------------
 
-/// A fresh, never-before-existing temp path in `dir` (2026-07-17 review):
+/// A fresh, never-before-existing temp path in `dir`:
 /// a *fixed* temp name could pre-exist with permissive permissions, and
 /// `OpenOptions::mode` only applies at creation — writing 0600 content
 /// into a stale world-readable temp file would void the guarantee. Unique
@@ -364,11 +364,11 @@ fn write_then_rename(
 }
 
 /// Create `dir` (config/history share `Config::dir_from_home`)
-/// and pin it to `0700` (L-sec1): `create_dir_all` only applies the
+/// and pin it to `0700`: `create_dir_all` only applies the
 /// umask-derived default, which on a stock macOS install is world-
 /// readable+executable — mirrors `history.rs`'s `HistoryStore::with_limits`
-/// posture exactly, except that store only ever ran (and only ever locked
-/// the dir down) when `history_enabled` was set. Calling this from both
+/// posture exactly, except that store only runs (and so only locks the
+/// dir down) when `history_enabled` is set. Calling this from both
 /// the write path below means the dir is locked down the first time
 /// config.toml is written, not conditionally on history ever having been
 /// turned on.
@@ -382,9 +382,9 @@ fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
 /// Serialize the whole config and atomically replace `config.toml` in
 /// `dir`. Same-dir temp file + rename — rename across filesystems isn't
 /// atomic, and a torn `config.toml` is a bricked boot. Known, accepted
-/// loss (spec §3): hand-written comments in the file don't survive.
+/// loss: hand-written comments in the file don't survive.
 ///
-/// L-sec1: written `0600` — config.toml can carry feed urls,
+/// Written `0600` — config.toml can carry feed urls,
 /// coordinates, etc; there's no reason to leave it world-readable.
 pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
     ensure_config_dir(dir)?;
@@ -408,9 +408,9 @@ fn notchtap_config_dir() -> Result<PathBuf, String> {
 // they call is tested above, `TESTING_STRATEGY.md` §4.11)
 // ---------------------------------------------------------------------------
 
-/// Defense-in-depth behind the acl (spec §2): app commands would be
-/// window-agnostic without the `build.rs` opt-in, and a future
-/// `generate_handler` edit that forgets that list must fail closed here.
+/// Defense-in-depth behind the acl: app commands are window-agnostic
+/// without the `build.rs` `AppManifest::commands` opt-in, so a
+/// `generate_handler` edit that forgets that list fails closed here.
 fn ensure_settings_window<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
 ) -> Result<(), String> {
@@ -524,16 +524,13 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
         },
-        // the flat `agent_priority`/`agent_ttl_secs`
-        // config now exists (the one-release migration target for the
-        // former `cmux_priority`/`cmux_ttl_secs`) — this preview arm reads
-        // them directly, same role the removed `Cmux` arm's
-        // `config.cmux_priority`/`config.cmux_ttl_secs` reads used to
-        // play. A REAL `PermissionRequested`/`InputRequired`/terminal
-        // `Failed` mapping instead reads `[agents]`'s four kind-specific
-        // priorities via `NotificationPolicy` (`agents/notification.rs`) —
-        // this settings preview has no kind of its own to pick one of
-        // those four, so it stays on the flat field, same as before.
+        // this preview arm reads the flat
+        // `agent_priority`/`agent_ttl_secs` config directly. A REAL
+        // `PermissionRequested`/`InputRequired`/terminal `Failed` mapping
+        // instead reads `[agents]`'s four kind-specific priorities via
+        // `NotificationPolicy` (`agents/notification.rs`) — this settings
+        // preview has no kind of its own to pick one of those four, so it
+        // stays on the flat field.
         SourceKind::Agent => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::AgentEvent,
@@ -595,11 +592,10 @@ pub fn get_default_config<R: tauri::Runtime>(
 }
 
 /// The panel never edits `detect_path` (ARCHITECTURE.md §17: file-only) —
-/// but the ui not *showing* a field is not a boundary (2026-07-17 review:
-/// it's an executed subprocess path, the one config field with code-exec
-/// consequences). Pin it server-side to the booted value so the ipc
-/// surface enforces what the spec states, regardless of what the webview
-/// submits.
+/// but the ui not *showing* a field is not a boundary: it's an executed
+/// subprocess path, the one config field with code-exec consequences.
+/// Pin it server-side to the booted value so the ipc surface enforces
+/// that rule regardless of what the webview submits.
 pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted.detect_path = booted.detect_path.clone();
     submitted
@@ -676,9 +672,9 @@ pub async fn send_test_notification(
         .clone();
     let event = build_test_event(&config, source);
     // Engine::accept performs the enqueue with the one
-    // mutate→wake→emit protocol (a test notification pushed from the
-    // Settings window rotates out on schedule — 's review
-    // follow-up — by construction now, not convention).
+    // mutate→wake→emit protocol, so a test notification pushed from the
+    // Settings window rotates out on schedule by construction, not by
+    // convention.
     engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
@@ -809,14 +805,13 @@ pub fn set_appearance(
 // Both commands below prefer `engine.history_store()` — the SAME
 // `Arc<HistoryStore>` the accept path appends through (see that method's
 // doc comment in engine.rs) — over opening a fresh `HistoryStore` for
-// this one call. That fresh-instance-per-call shape used to be the only
-// path here, and it is a real race: `HistoryStore`'s serialization is an
-// instance-level `Mutex`, so a second instance over the same file shares
-// no lock with the engine's, and a `clear_history` call could interleave
-// with an in-flight accept-path append with no mutual exclusion at all.
-// The `None` fallback (history disabled) stays on the old per-call
-// construction — with no engine-held store there is no second writer to
-// race against, so it is exactly as safe as it always was.
+// this one call. A fresh instance per call is a real race:
+// `HistoryStore`'s serialization is an instance-level `Mutex`, so a
+// second instance over the same file shares no lock with the engine's,
+// and a `clear_history` call could interleave with an in-flight
+// accept-path append with no mutual exclusion at all. The `None`
+// fallback (history disabled) does construct per call — with no
+// engine-held store there is no second writer to race against.
 #[tauri::command]
 pub async fn get_history(
     window: tauri::WebviewWindow,
@@ -889,8 +884,8 @@ pub async fn skip_current(
     Ok(())
 }
 
-/// System/build info for the settings window's About section
-/// (`docs/V5_TECHNICAL_SPEC.md` §2). Data gathering itself (bundle-root
+/// System/build info for the settings window's About section. Data
+/// gathering itself (bundle-root
 /// derivation, the recursive size walk, the `sw_vers` shell-out, sysinfo
 /// reads) lives in `about.rs` as pure/near-pure functions so it's
 /// unit-testable without a live window — this wrapper only adds the
@@ -939,19 +934,16 @@ pub fn get_agent_health(
         .collect())
 }
 
-/// (spec §4.6's "a test event" adapter-card action; mirrors
-/// `notchtap-agent test <runtime>`, `src/bin/notchtap_agent.rs`, exactly
-/// — same synthetic non-terminal `completed` schema-v1 event, "turn
-/// completed, agent awaiting input" (spec §2.1's per-turn-Stop rule), not
-/// a fabricated `informational` event that the default policy would
-/// silently suppress). Deliberately does NOT loop back over HTTP the way
-/// a real hook does: this command already runs inside the same process
-/// that owns the Agent Registry/Notification Engine, so it drives them
-/// directly through the identical wire-parse -> apply -> publish ->
-/// notify path `http.rs`'s `agent_events_handler` uses for a real
-/// `/agent/events` POST — the "simpler, honest" option (CLAUDE.md ipc
-/// rule's own instruction for this ticket) over adding a loopback POST
-/// dependency from inside the app on itself.
+/// The adapter card's "send a test event" action; mirrors
+/// `notchtap-agent test <runtime>` (`src/bin/notchtap_agent.rs`) exactly
+/// — the same synthetic terminal `completed` schema-v1 event, not a
+/// fabricated `informational` one that the default policy suppresses.
+/// Deliberately does NOT loop back over HTTP the way a real hook does:
+/// this command already runs inside the same process that owns the Agent
+/// Registry/Notification Engine, so it drives them directly through the
+/// identical wire-parse -> apply -> publish -> notify path `http.rs`'s
+/// `agent_events_handler` uses for a real `/agent/events` POST, rather
+/// than making the app POST to itself.
 #[tauri::command]
 pub async fn send_agent_test_event(
     window: tauri::WebviewWindow,
@@ -986,12 +978,11 @@ pub async fn send_agent_test_event(
         "state": "completed",
         "summary": format!("Test event from Settings — {runtime} session completed"),
         "capabilities": ["session_lifecycle", "completion"],
-        // Deliberately TERMINAL (changed 2026-08-02 alongside the
-        // `Completed` terminal split in `agents::notification`): the whole
-        // point of this button is "click it, see a card", and only a
-        // terminal `Completed` is carded under the default policy — a
-        // non-terminal one is a per-turn stop, which is now quiet unless
-        // `informational_notifications` is on. Terminal also means the
+        // Deliberately TERMINAL: the whole point of this button is
+        // "click it, see a card", and only a terminal `Completed` is
+        // carded under the default policy — a non-terminal one is a
+        // per-turn stop, quiet unless `informational_notifications` is
+        // on (`agents::notification`). Terminal also means the
         // throwaway test session retires on `terminal_retention_secs`
         // instead of lingering on the Agent Board as a live session.
         "terminal": true,
@@ -1102,16 +1093,16 @@ mod tests {
     // whether the config actually saves. A disagreement shows up as a
     // field that reads "valid" and a save that quietly refuses it.
     //
-    // They did disagree until rust's `char::is_whitespace` is
-    // Unicode `White_Space`, while JavaScript's `\s` misses U+0085 (NEL)
-    // and adds U+FEFF (ZWNBSP). Both of those are in the table below.
+    // The two languages disagree by default: rust's `char::is_whitespace`
+    // is Unicode `White_Space`, while JavaScript's `\s` misses U+0085
+    // (NEL) and adds U+FEFF (ZWNBSP). Both are in the table below.
     // Change either validator and you must run BOTH tables.
     #[test]
     fn prefix_shortcut_whitespace_table_matches_the_ts_mirror() {
         // --- accept ---
         // a single glyph, the shape the shipped seven shortcuts use
         assert!(is_valid_prefix_shortcut("⌃⇧K"));
-        // a spelled-out key name, the spec's chosen default
+        // a spelled-out key name, the shipped default
         assert!(is_valid_prefix_shortcut("⌃⇧Space"));
         // U+FEFF is NOT Unicode White_Space — both sides accept it
         assert!(is_valid_prefix_shortcut("⌃⇧K\u{FEFF}"));
@@ -1121,7 +1112,7 @@ mod tests {
         // --- reject ---
         // an ordinary space inside the key name
         assert!(!is_valid_prefix_shortcut("⌃⇧K L"));
-        // U+0085 (NEL) IS White_Space — the bug this table caught
+        // U+0085 (NEL) IS White_Space — rejected by both validators
         assert!(!is_valid_prefix_shortcut("⌃⇧K\u{0085}"));
         // the prefix with no key name at all
         assert!(!is_valid_prefix_shortcut("⌃⇧"));
@@ -1334,7 +1325,7 @@ mod tests {
 
     #[test]
     fn league_entries_must_match_the_allowed_character_set() {
-        // L-sec4: leagues feed straight into an ESPN scoreboard url path
+        // leagues feed straight into an ESPN scoreboard url path
         // segment — reject anything that could smuggle a path traversal
         // or break out of the path into a query/fragment.
         for junk in ["../etc/passwd", "eng.1/../../x", "eng?1", "eng#1"] {
@@ -1445,7 +1436,7 @@ mod tests {
         assert_eq!(json["resting_state"], serde_json::json!("notch"));
     }
 
-    // --- rss rules (v5 news backend, folded into the panel 2026-07-17) ---
+    // --- rss rules ---
 
     #[test]
     fn rss_poll_interval_boundaries() {
@@ -1505,8 +1496,8 @@ mod tests {
 
     #[test]
     fn rss_feeds_require_a_real_parsed_host_not_just_a_prefix() {
-        // 2026-07-17 review: a prefix check let "https://" and host-less
-        // urls through to fail on every poll instead of at save time.
+        // a prefix check would let "https://" and host-less urls through
+        // to fail on every poll instead of at save time.
         // note "https:///x" is NOT a rejectable case: the whatwg parser
         // skips extra slashes after a special scheme and yields host "x".
         for junk in ["https://", "notaurl", "http://["] {
@@ -1662,7 +1653,7 @@ mod tests {
         let reparsed = Config::parse(&on_disk).unwrap();
         assert_eq!(reparsed.port, 4242);
 
-        // L-sec1: config.toml is 0600, and the shared
+        // config.toml is 0600, and the shared
         // config dir is 0700 like history.rs's HistoryStore — locked down
         // the first time config.toml is written, not only when history is
         // enabled.
@@ -1688,7 +1679,7 @@ mod tests {
             .unwrap_or(true)
     }
 
-    // --- 2026-07-17 review round: detect_path pinning, label gate ---
+    // --- detect_path pinning, label gate ---
 
     #[test]
     fn detect_path_is_pinned_to_the_booted_value() {

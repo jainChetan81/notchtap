@@ -7,16 +7,12 @@ import { TtlBar } from "./TtlBar";
 // without this, DOM from one test's render leaks into the next.
 afterEach(cleanup);
 
-// 2026-07-23 review fix (Performance finding): TtlBar.tsx now animates
-// `.ttl-fill` via `transform: scaleX(<fraction>)` instead of mutating
-// `style.width` every frame (see that file's own doc for the "why" — a
-// layout property under `.card-assembly`'s `filter: drop-shadow` was
-// forcing a re-layout/re-rasterize every frame). This helper reads the
-// scaleX fraction back out and reports it on the SAME 0-100 percentage
-// scale every existing assertion below already expects, so the
-// assertions' MEANING (a percentage of remaining time) is unchanged —
-// only the DOM property being read moved from `style.width` to
-// `style.transform`.
+// TtlBar.tsx animates `.ttl-fill` via `transform: scaleX(<fraction>)`,
+// never by mutating `style.width` every frame — a layout property under
+// `.card-assembly`'s `filter: drop-shadow` forces a re-layout and
+// re-rasterize on every frame. This helper reads the scaleX fraction
+// back out and reports it on the 0-100 percentage scale the assertions
+// below expect, so each one reads as a percentage of remaining time.
 function fillScalePercent(container: HTMLElement): number {
   // SAFETY: nullable cast because querySelector may miss; the very next
   // line's `not.toBeNull()` guards it before `fill` is dereferenced.
@@ -30,7 +26,7 @@ function fillScalePercent(container: HTMLElement): number {
   return Number(match?.[1]) * 100;
 }
 
-describe("TtlBar (plan 081)", () => {
+describe("TtlBar", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
   });
@@ -120,23 +116,20 @@ describe("TtlBar (plan 081)", () => {
     // test's fake-timers instance (a fresh one per `beforeEach` above)
     // then calls through a spy still wrapping the TORN-DOWN previous
     // instance's fake `cancelAnimationFrame`, so a later mount's cleanup
-    // silently fails to cancel its rAF loop. Harmless on its own, but a
-    // real, previously-latent bug: any later test in this file that
-    // mounts/unmounts TtlBar more than once accumulates orphaned tick()
-    // loops from every prior mount, which compounds into a genuine
-    // `RangeError: Maximum call stack size exceeded` under
-    // `vi.advanceTimersByTime` (found while adding the hoverPaused tests
-    // below, which are exactly that shape — multiple renders/rerenders in
-    // one test).
+    // silently fails to cancel its rAF loop. Harmless on its own, but
+    // any later test in this file that mounts/unmounts TtlBar more than
+    // once accumulates orphaned tick() loops from every prior mount,
+    // which compounds into a genuine `RangeError: Maximum call stack
+    // size exceeded` under `vi.advanceTimersByTime` — exactly the shape
+    // of the hoverPaused tests below (multiple renders/rerenders in one
+    // test).
     cancelSpy.mockRestore();
   });
 
-  // 081's deferred hover-pause half.
-  describe("hoverPaused (plan 093)", () => {
-    // O13 (visual-consistency sweep, finding "TTL hover-pause affordance"):
-    // freezing the fill alone read as indistinguishable from a stall — no
-    // visual change at all marked the pause. `.paused` is the CSS hook
-    // (ttl-bar.css) for the subtle dim/tint that now marks it; pinned here
+  describe("hoverPaused", () => {
+    // Freezing the fill alone reads as indistinguishable from a stall —
+    // nothing visual marks the pause. `.paused` is the CSS hook
+    // (ttl-bar.css) for the subtle dim/tint that marks it; pinned here
     // at the class-presence level since jsdom can't compute the resulting
     // computed style.
     it("marks the fill .paused exactly while hoverPaused is true", () => {
@@ -234,9 +227,8 @@ describe("TtlBar (plan 081)", () => {
       expect(fillScalePercent(container)).toBeCloseTo(before, 0);
     });
 
-    // 2026-07-23 review fix (Performance finding): the actual bail-out
-    // behavior FIX B adds — no new `requestAnimationFrame` calls while
-    // hoverPaused, not merely a frozen visual value. Distinct from
+    // The bail-out behaviour itself — no new `requestAnimationFrame`
+    // calls while hoverPaused, not merely a frozen visual value. Distinct from
     // "freezes the fill" above, which only pins the OUTPUT; this pins the
     // MECHANISM (spy on rAF itself) so a regression that keeps looping
     // but happens to keep painting the same number would still be
@@ -273,11 +265,10 @@ describe("TtlBar (plan 081)", () => {
     });
   });
 
-  // stories merge (2026-07-24): Track.tsx's queue slider absorbed
-  // into this bar — `total`/`done` now drive a segmented floor instead of
-  // a separate `.track` row. Segment-count/proportional-mapping math is
-  // ported straight from Track.test.tsx (deleted alongside Track.tsx),
-  // rephrased against `.ttl-seg`/`.ttl-fill` instead of `.track span`.
+  // The queue slider lives in this bar: `total`/`done` drive a segmented
+  // floor, never a separate `.track` row. These cover the
+  // segment-count/proportional-mapping math against
+  // `.ttl-seg`/`.ttl-fill`.
   describe("queue segments (stories merge)", () => {
     function segs(container: HTMLElement) {
       return Array.from(container.querySelectorAll(".ttl-bar .ttl-seg"));

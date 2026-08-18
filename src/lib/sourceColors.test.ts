@@ -1,4 +1,4 @@
-// Plan 147: string-level parity pin between sourceColors.ts (the
+// String-level parity pin between sourceColors.ts (the
 // Settings-window swatch table) and the CSS that actually paints the
 // overlay — same "cheap but effective" register as
 // src/overlayCardMirror.test.ts's selector scanner, not a CSS parser.

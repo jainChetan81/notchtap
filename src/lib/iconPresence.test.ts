@@ -14,7 +14,7 @@ const QUIET: StatusState = {
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
 };
 
-describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () => {
+describe("iconPresenceFor — the presence/liveness table", () => {
   it("hides agent and football when nothing is running", () => {
     const presence = iconPresenceFor(QUIET);
     expect(presence.agent).toBe("hidden");

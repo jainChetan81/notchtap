@@ -2,11 +2,11 @@
 // each window's own residue, at both real entry points, so context-only
 // declarations win any specificity tie by source order (same discipline
 // the old single-file styles.css/preview-overlay.css pair relied on
-// implicitly). CSS `@import` was deliberately not used (plan's own
-// instruction) — the ordering lives in these two TypeScript entry files
-// instead, so it's pinned here by reading their literal source text: a
-// jsdom/vitest run doesn't otherwise observe CSS load order at all.
-// @types/node is now a devDependency (Step 1), so these two
+// implicitly). The ordering lives in these two TypeScript entry files
+// rather than in a CSS `@import`, so it's pinned here by reading their
+// literal source text: a jsdom/vitest run doesn't otherwise observe CSS
+// load order at all.
+// @types/node is a devDependency, so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -29,7 +29,7 @@ function importOrderIndex(source: string, specifier: string): number {
   return idx;
 }
 
-describe("entry-file CSS import order (plan 111)", () => {
+describe("entry-file CSS import order", () => {
   it("main.tsx imports overlay-card.css before styles.css", () => {
     const source = readSource("./main.tsx");
     const overlayIdx = importOrderIndex(source, "./overlay-card.css");
@@ -76,17 +76,17 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(baseIdx).toBeLessThan(overlayIdx);
   });
 
-  it("settings/main.tsx no longer imports settings.css (deleted; base.css owns its rules)", () => {
+  it("settings/main.tsx does not import settings.css — base.css owns its rules", () => {
     const source = readSource("./settings/main.tsx");
     expect(source.includes("settings.css")).toBe(false);
   });
 
-  it("App.tsx no longer imports styles.css directly (main.tsx owns both CSS imports)", () => {
+  it("App.tsx does not import styles.css directly — main.tsx owns both CSS imports", () => {
     const source = readSource("./App.tsx");
     expect(source.includes('"./styles.css"')).toBe(false);
   });
 
-  it("SettingsApp.tsx no longer imports preview-overlay.css (deleted; settings/main.tsx owns the shared import)", () => {
+  it("SettingsApp.tsx does not import preview-overlay.css — settings/main.tsx owns the shared import", () => {
     const source = readSource("./settings/SettingsApp.tsx");
     expect(source.includes("preview-overlay.css")).toBe(false);
   });

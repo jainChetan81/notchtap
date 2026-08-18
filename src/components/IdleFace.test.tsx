@@ -15,7 +15,7 @@ afterEach(cleanup);
 
 const REVEAL_DELAY_MS = 4500;
 
-describe("IdleFace (plan 125)", () => {
+describe("IdleFace", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -97,8 +97,8 @@ describe("IdleFace (plan 125)", () => {
     });
   });
 
-  describe("reveal on the house curve (character finding #11)", () => {
-    it("mounts at the house entrance scale (0.92), not the old 0.85", () => {
+  describe("reveal on the house curve", () => {
+    it("mounts at the house entrance scale (0.92)", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
 

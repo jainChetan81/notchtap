@@ -158,7 +158,7 @@ describe("useSlotState", () => {
     expect(result.current.state).toBe("showing");
     // live event payloads must run through the same validator the global
     // path uses — an incomplete object falls back to empty, not undefined
-    // fields (regression guard for the previously-unvalidated live path).
+    // fields.
     // SAFETY: this payload is intentionally incomplete (missing every field
     // beyond id) so the live-path validator must reject it — the cast only
     // satisfies the compile-time SlotState shape; no field is ever read.
@@ -180,7 +180,7 @@ describe("useSlotState", () => {
     expect(() => unmount()).not.toThrow();
   });
 
-  // --- startup race shield (2026-07-17 review, mirrors the mode-delivery hook removed in (see git history)) ---
+  // --- startup race shield ---
 
   it("reads the eval-planted global as initial state (late-mount side of the race shield)", () => {
     window.__NOTCHTAP_SLOT_STATE__ = SHOWING_N1;

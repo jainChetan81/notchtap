@@ -1,4 +1,4 @@
-// @types/node is now a devDependency (Step 1), so these two
+// @types/node is a devDependency, so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -20,12 +20,9 @@ afterEach(cleanup);
 // present. Cross-referenced by name (`celebrationStacking.test.tsx`) from
 // the contract comment on `.card-assembly::after`.
 //
-// this used to pin the SAME contract twice — once in styles.css,
-// once in its hand-maintained mirror (src/settings/preview-overlay.css,
-// now deleted). Both entry points now import ONE shared stylesheet
-// (src/overlay-card.css, `.card-root`-scoped) — there is only one rule
-// pair to pin, and mirrorInvariant.test.ts is what stops a scoped copy
-// from ever coming back.
+// Both entry points import ONE shared stylesheet (src/overlay-card.css,
+// `.card-root`-scoped), so there is a single rule pair to pin;
+// mirrorInvariant.test.ts is what stops a scoped copy appearing.
 //
 // Read via `node:fs`, not a `?raw`/`?inline` Vite import: under vitest's
 // SSR-consumer transform, Vite's own css plugin intercepts anything
@@ -33,11 +30,10 @@ afterEach(cleanup);
 // confirmed empirically (`?raw` and `?inline` both resolved to a 0-length
 // string here), so a real filesystem read is the only reliable path to
 // the literal source text.
-// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
-// back together via plain `@import "./relative.css";` lines — inlined here
-// so this still returns the full literal stylesheet text callers expect,
-// unchanged from before the split (imports are one level deep; no chunk
-// file itself contains an @import).
+// overlay-card.css is split into src/overlay/*.css chunks pulled back
+// together via plain `@import "./relative.css";` lines — inlined here so
+// this returns the full literal stylesheet text callers expect (imports
+// are one level deep; no chunk file itself contains an @import).
 function readSourceCss(relativePath: string): string {
   const url = new NodeURL(relativePath, import.meta.url);
   const raw = readFileSync(fileURLToPath(url), "utf-8");
@@ -62,7 +58,7 @@ function ruleBody(css: string, selector: string): string {
   return css.slice(braceStart + 1, braceEnd);
 }
 
-describe("celebration stacking — CSS string pins (plan 107)", () => {
+describe("celebration stacking — CSS string pins", () => {
   it("overlay-card.css: .card-root .card-content is `position: relative; z-index: 1` — the decisive declaration against the burst's `z-index: 0`", () => {
     const body = ruleBody(overlayCardCss, ".card-root .card-content");
     expect(body).toContain("position: relative");
@@ -74,12 +70,9 @@ describe("celebration stacking — CSS string pins (plan 107)", () => {
     expect(body).toContain("z-index: 0");
   });
 
-  // 's 2x celebration pacing is explicitly out of scope for this
-  // plan (Step A spends none of that timing budget) — pin the durations
-  // byte-unchanged, matching the plan's own baseline counts.
-  // was 2x these counts pre-unification (once per mirrored file) — now
-  // 1x, since there is exactly one copy of this CSS.
-  it("plan-100 celebration durations are byte-unchanged", () => {
+  // Celebration pacing is pinned byte-exact. The counts are 1x, not 2x,
+  // because exactly one copy of this CSS exists.
+  it("celebration durations are byte-unchanged", () => {
     expect((overlayCardCss.match(/1240ms/g) ?? []).length).toBe(3);
     expect((overlayCardCss.match(/1440ms/g) ?? []).length).toBe(1);
     expect((overlayCardCss.match(/920ms/g) ?? []).length).toBe(1);
@@ -109,7 +102,7 @@ const GOAL: SlotState = {
   remainingMs: 8000,
 };
 
-describe("celebration stacking — DOM (plan 107)", () => {
+describe("celebration stacking — DOM", () => {
   it(".card-content mounts alongside the pulse-goal burst during a goal celebration", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
     expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();

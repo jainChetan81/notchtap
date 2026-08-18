@@ -33,7 +33,7 @@ export function tabBelowBlockHandles(selected: Tab | null): selected is TabBelow
 
 // No wire source exists for news story CONTENT. `StatusState.news`
 // carries the charge cycle only (`chargeFraction`/`chargeCount`/
-// `isCharged` — slice B's `NewsCharge`, wired through in slice A), never
+// `isCharged`, from `NewsCharge`), never
 // the stories themselves; `NewsBelowBlock`'s own `NewsStoryView` doc
 // already flags this as "built to be correct once a real caller supplies
 // these fields; until then nothing populates it". So the graceful
@@ -68,22 +68,22 @@ export function TabBelowBlock({
   /// without spying on the global, matching `agentHeroPropsFor`'s own
   /// `nowMs` parameter (AgentBoard.tsx).
   nowMs?: number;
-  /// `prefix-[`/`prefix-]` cycles this (spec section 9), and
+  /// `prefix-[`/`prefix-]` cycles this, and
   /// `AgentBelowBlock.cycleSessionIndex` is the pure wraparound that
-  /// moves it. Live end to end as of rust owns the cursor and
+  /// moves it. Live end to end: rust owns the cursor and
   /// emits `agent-viewed-session-changed` (written by both the prefix
   /// follow-ups and the auto-advance timer), `useAgentViewedSession`
   /// listens for it in App.tsx, and `StatusRailCard` threads the value
   /// down to here. Still optional so callers with no wire at all (tests,
   /// the settings preview) render against the first session.
   viewedSessionIndex?: number;
-  /// `prefix+enter`/`o` (spec section 9's only expansion gesture). Unlike
+  /// `prefix+enter`/`o`, the only expansion gesture. Unlike
   /// `viewedSessionIndex` above, nothing threads this one during a pull —
   /// the prefix's ExpandToggle routes to `toggle_manual_expand`, which
   /// drives the notification card's own manual expand, not this prop — so
-  /// it defaults to the compact form, which spec section 2 decision 6
-  /// makes the correct default regardless ("hover always shows the
-  /// selected tab's card in COMPACT form. Never auto-expands").
+  /// it defaults to the compact form, the correct default regardless:
+  /// hover always shows the selected tab's card in COMPACT form, and
+  /// never auto-expands.
   expanded?: boolean;
 }) {
   if (!tabBelowBlockHandles(selected)) {
@@ -94,9 +94,9 @@ export function TabBelowBlock({
     case "agent":
       // `AgentBelowBlock` renders nothing for an empty session list, so a
       // selection whose source has gone quiet degrades to the "none" page
-      // on its own — spec section 7's "a selection whose source stops
-      // being live is cleared", handled here as a render-time floor even
-      // before rust's own clearing lands.
+      // on its own — a selection whose source stops being live is
+      // cleared, handled here as a render-time floor even before rust's
+      // own clearing lands.
       return (
         <AgentBelowBlock
           sessions={agentSessions}

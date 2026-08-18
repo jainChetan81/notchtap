@@ -121,14 +121,12 @@ describe("IconStrip", () => {
     expect(underFill.style.transform).toBe("scaleY(0)");
   });
 
-  // CodeRabbit review fix (PR #13): the charge rect used to be drawn at
-  // y="15.5", entirely below the clipPath's own y=[2.5, 15.5] bounds —
-  // the fill never overlapped the clip at ANY scaleY value, so it
-  // rendered invisible at every charge level despite `scaleY` itself
-  // computing correctly (which is why the test above never caught this —
-  // it only asserts the transform value, never where the rect actually
-  // sits). Pinning the geometry directly so a future edit can't
-  // reintroduce the same silent-invisibility bug.
+  // The charge rect must sit INSIDE the clipPath's y=[2.5, 15.5] bounds.
+  // Drawn at y="15.5" it never overlaps the clip at ANY scaleY value, so
+  // it renders invisible at every charge level even though `scaleY`
+  // computes correctly — which the transform assertion above cannot
+  // catch, since it never checks where the rect actually sits. Pin the
+  // geometry directly.
   it("the charge rect's own y coordinate matches the page outline's top (2.5), so scaleY(1) fills it exactly", () => {
     const { container } = render(<IconStrip {...BASE} />);
     // SAFETY: the `.charge` rect always renders inside the news glyph in the
@@ -161,7 +159,7 @@ describe("IconStrip", () => {
     }
   });
 
-  it("includes the pending count in the news tab's accessible name, since an aria-label overrides the visible badge for assistive tech (CodeRabbit review fix, PR #13)", () => {
+  it("includes the pending count in the news tab's accessible name, since an aria-label overrides the visible badge for assistive tech", () => {
     render(<IconStrip {...BASE} news="present" newsCount={3} />);
     expect(screen.getByRole("button", { name: "News, 3 new" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "News" })).toBeNull();

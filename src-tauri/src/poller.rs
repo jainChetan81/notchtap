@@ -1222,8 +1222,8 @@ async fn poll_rich_events(
 /// Ingest goes through `Engine::accept` — the one shared path that
 /// enqueues with the mutate→wake→emit protocol and then fans accepted
 /// events out to every connector (exception: rss/news events are
-/// overlay-only and never offered, `IMPLEMENTATION_PLAN.md` §4.6 — a rule
-/// `accept` encodes via the origin gate, so no per-caller flag here).
+/// overlay-only and never offered — a rule `accept` encodes via the
+/// origin gate, so no per-caller flag here).
 #[allow(clippy::too_many_arguments)] // untested outer wiring, same reasoning as CardTopic's bundling for the pure/tested side
 pub fn spawn_espn_poller(
     engine: Engine,
@@ -1874,7 +1874,7 @@ mod tests {
         let snap = view(&sb.events[0]).snap;
         // the mutated card is dropped, not misattributed to either side —
         // total_cards() is exactly one less than baseline (the mutated
-        // detail no longer counts for anyone), not equal to baseline
+        // detail counts for no side), not equal to baseline
         // (which would mean it landed somewhere by accident)
         assert_eq!(snap.total_cards(), baseline_total - 1);
     }
@@ -2363,7 +2363,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_rich_seen_does_not_wipe_other_leagues_h1_regression() {
+    fn evict_rich_seen_does_not_wipe_other_leagues() {
         // eviction runs once per TICK, over the union of every league's
         // snapshot — per-league eviction would wipe other leagues'
         // entries (their match ids never appear in this league's
@@ -2412,7 +2412,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_rich_seen_still_evicts_matches_no_longer_tracked_anywhere() {
+    fn evict_rich_seen_evicts_matches_absent_from_every_snapshot() {
         // eviction must still fire when a match is genuinely gone from
         // every league's snapshot — the cross-league fix must not turn
         // into "never evict anything".

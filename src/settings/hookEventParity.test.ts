@@ -1,4 +1,4 @@
-// Plan 152: string-level parity pin between `doctor.rs`'s expected hook
+// String-level parity pin between `doctor.rs`'s expected hook
 // event consts (what `notchtap-agent doctor` counts as "wired") and the
 // setup snippets AgentsSection.tsx tells the user to paste. The two lists
 // are hand-synced, so without this pin a runtime could gain or lose a hook

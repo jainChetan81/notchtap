@@ -1,56 +1,11 @@
-//! Pure, clock-free scheduling for **Silenced** (; `CONTEXT.md`'s
-//! Silenced/Silent Period/Timed Mute/Skip glossary entries).
-//!
-//! This module never reads the system clock — every function here takes
-//! "now" as a plain value and returns a plain value, mirroring
-//! `presentation::presentation_mode`'s "pure decision function, subprocess
-//! call lives elsewhere" split (`docs/TESTING_STRATEGY.md` §4.4). The
-//! engine-side wiring (a live `SilenceController` driven by
-//! `chrono::Local::now()`, a tokio timer sleeping until `next_boundary`,
-//! and the tray menu calling `start_mute`/`cancel_mute`/
-//! `skip_current_window`) is a different executor's file surface
-//! (`lib.rs`) — this module only has to make that wiring easy.
-//!
-//! ## Time representation
-//!
-//! Two units, both plain integers:
-//!
-//! - [`Minute`] (`u16`, `0..1440`) — a minute-of-day, local wall-clock
-//!   time-of-day only (no date). This is what a [`Window`] is expressed
-//!   and compared in.
-//! - [`AbsoluteMinute`] (`u64`) — an ever-increasing minute counter the
-//!   caller supplies for "now" and for mute/skip deadlines. The one
-//!   contract: `absolute_minute % 1440` MUST equal the actual local
-//!   minute-of-day (`local_hour * 60 + local_minute`), and it must
-//!   increase by exactly `1440` every local midnight — i.e. it behaves
-//!   like "days-since-some-fixed-point * 1440 + minute-of-day", not a
-//!   UTC epoch counter (UTC epoch minutes modulo 1440 do not line up with
-//!   *local* midnight for any timezone offset that isn't a whole number
-//!   of days). [`absolute_minute`] below does this conversion from a
-//!   `chrono::NaiveDateTime` (feed it `chrono::Local::now().naive_local()`)
-//!   so callers don't have to hand-roll the arithmetic.
-//!
-//! ## Intended call pattern
-//!
-//! ```ignore
-//! // once, at startup, from Config:
-//! let mut controller = SilenceController::new(config.silence.enabled, config.silence.window);
-//!
-//! // on every tick / promotion decision:
-//! let now = silence::absolute_minute(chrono::Local::now().naive_local());
-//! if controller.is_silenced(now) { /* gate Medium/Low, still promote High */ }
-//!
-//! // to sleep instead of poll:
-//! if let Some(boundary) = controller.next_boundary(now) {
-//! let wake_in_minutes = boundary.saturating_sub(now);
-//! // schedule a timer for `wake_in_minutes` out, then re-evaluate
-//! }
-//!
-//! // tray actions:
-//! controller.start_mute(30, now); // "Mute 30m"
-//! controller.cancel_mute(); // "Cancel mute"
-//! controller.skip_current_window(now); // "Skip today"
-//! ```
+//! Pure, clock-free scheduling for **Silenced** — the Silent Period,
+//! Timed Mute and Skip entries in `CLAUDE.md`'s glossary. No function
+//! here reads the system clock: each takes "now" as a plain value and
+//! returns a plain value, the same pure-decision split
+//! `presentation::presentation_mode` uses. The live wiring — a
+//! `SilenceController` driven by `chrono::Local::now()`, a tokio timer
+//! sleeping until `next_boundary`, and the tray menu calling
+//! `start_mute`/`cancel_mute`/`skip_current_window` — lives in `lib.rs`.
 
 use std::fmt;
 
@@ -63,9 +18,15 @@ pub type Minute = u16;
 /// Minutes in a day — the modulus every minute-of-day computation wraps on.
 const MINUTES_PER_DAY: u16 = 1440;
 
-/// An ever-increasing minute counter (`days * 1440 + minute_of_day`) the
-/// caller supplies as "now" and that mute/skip deadlines are stored in. See
-/// the module doc for the contract this must satisfy.
+/// An ever-increasing minute counter the caller supplies as "now" and
+/// that mute/skip deadlines are stored in. The contract: `value % 1440`
+/// MUST equal the actual local minute-of-day (`local_hour * 60 +
+/// local_minute`), and the value MUST increase by exactly `1440` at every
+/// local midnight — i.e. "days-since-a-fixed-point * 1440 +
+/// minute-of-day", NOT a UTC epoch counter (UTC epoch minutes modulo 1440
+/// do not line up with *local* midnight for any timezone offset that
+/// isn't a whole number of days). [`absolute_minute`] does the conversion
+/// from a `chrono::NaiveDateTime` so callers never hand-roll it.
 pub type AbsoluteMinute = u64;
 
 /// Converts a local wall-clock date+time into an [`AbsoluteMinute`]. Pure —
@@ -267,7 +228,7 @@ impl SilenceController {
     }
 
     /// The union of "the Silent Period is active and not skipped" and "a
-    /// Timed Mute is running" — Silenced per `CONTEXT.md`'s definition.
+    /// Timed Mute is running" — Silenced per `CLAUDE.md`'s glossary.
     pub fn is_silenced(&self, now: AbsoluteMinute) -> bool {
         self.mute_active(now) || self.schedule_active(now)
     }
@@ -286,8 +247,8 @@ impl SilenceController {
     }
 
     /// Ends today's Silent Period early. Session-only: it re-arms
-    /// automatically at the window's next start (per `CONTEXT.md`'s Skip
-    /// entry), which is exactly the boundary this records. Skipping while
+    /// automatically at the window's next start, which is exactly the
+    /// boundary this records. Skipping while
     /// not in the window (or with the schedule disabled) is harmless — it
     /// just pre-arms a no-op suppression that expires at the next start
     /// with nothing having changed.

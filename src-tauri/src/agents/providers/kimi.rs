@@ -25,14 +25,17 @@
 //!
 //! ## Sanitization
 //!
-//! Identical discipline to `claude_code.rs`: `tool_name` forwarded as
-//! a short identifier; `tool_input`/`tool_result` never forwarded
-//! wholesale (`command` is never read); `Path` detail only from a known
-//! path-shaped key, basename only; free-text fields never forwarded.
+//! `super::wire`'s `safe_tool_name` and `safe_path_detail` carry the
+//! shared discipline for tool names and paths. On top of that this
+//! parser never inspects `tool_result`, and every `summary` is a fixed
+//! template — free text is never forwarded.
 
 use thiserror::Error;
 
-use super::wire::NormalizedEvent;
+use super::wire::{
+    basename, classify_notification, safe_path_detail, safe_tool_name, Mapped, NormalizedEvent,
+    RawHookPayload,
+};
 
 /// Kimi's declared capability set — the full Claude-Code-equivalent
 /// set. Sent unchanged on every event this parser produces.
@@ -57,103 +60,6 @@ pub enum KimiParseError {
     MissingHookEventName,
     #[error("unsupported hook_event_name: {0}")]
     UnsupportedHookEvent(String),
-}
-
-/// The raw wire shape ASSUMED for Kimi Code hooks — see the module doc.
-/// Every field is `Option` so a payload missing a field this parser
-/// doesn't use for a given event still deserializes cleanly.
-#[derive(Debug, serde::Deserialize)]
-struct RawHookPayload {
-    session_id: Option<String>,
-    hook_event_name: Option<String>,
-    cwd: Option<String>,
-    // SessionStart
-    source: Option<String>,
-    // SessionEnd
-    end_reason: Option<String>,
-    // PermissionRequest / PostToolUse / PostToolUseFailure
-    tool_name: Option<String>,
-    tool_input: Option<serde_json::Value>,
-    // Notification
-    notification_type: Option<String>,
-    // StopFailure
-    error_type: Option<String>,
-    // SubagentStart / SubagentStop
-    agent_id: Option<String>,
-    agent_type: Option<String>,
-}
-
-/// One `(label, value)`-shaped intermediate the match arms below build
-/// before wrapping into a [`NormalizedEvent`].
-struct Mapped {
-    kind: &'static str,
-    state: &'static str,
-    terminal: bool,
-    summary: Option<String>,
-    details: Vec<(String, String)>,
-    subagent: Option<(String, Option<String>, Option<String>)>,
-}
-
-fn basename(path: &str) -> Option<String> {
-    std::path::Path::new(path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-}
-
-/// Never empty — a missing/blank `tool_name` becomes the generic
-/// `"a tool"` rather than an empty detail value. Mirrors
-/// `claude_code::safe_tool_name`.
-fn safe_tool_name(tool_name: Option<&str>) -> String {
-    tool_name
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("a tool")
-        .to_string()
-}
-
-/// Pulls a basename-only path detail out of `tool_input` — only from a
-/// small, known set of path-shaped keys, NEVER from `command`. Mirrors
-/// `claude_code::safe_path_detail`.
-fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, String)> {
-    let obj = tool_input?.as_object()?;
-    for key in ["file_path", "path", "notebook_path"] {
-        if let Some(raw) = obj.get(key).and_then(|v| v.as_str()) {
-            let value = basename(raw).unwrap_or_else(|| raw.to_string());
-            return Some(("Path".to_string(), value));
-        }
-    }
-    None
-}
-
-/// Switches on the closed `notification_type` enum only, never `message`
-/// — see this module's top doc for the assumed-values caveat.
-fn classify_notification(notification_type: Option<&str>) -> Mapped {
-    match notification_type {
-        Some("permission_prompt") => Mapped {
-            kind: "permission_requested",
-            state: "waiting_for_permission",
-            terminal: false,
-            summary: Some("Approval needed".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-        Some("idle_prompt") | Some("agent_needs_input") => Mapped {
-            kind: "input_required",
-            state: "waiting_for_input",
-            terminal: false,
-            summary: Some("Waiting for input".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-        _ => Mapped {
-            kind: "informational",
-            state: "working",
-            terminal: false,
-            summary: Some("Notification".to_string()),
-            details: Vec::new(),
-            subagent: None,
-        },
-    }
 }
 
 fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, KimiParseError> {
@@ -618,7 +524,7 @@ mod tests {
     // --- declared capabilities vs. fixture suite must agree ------------
 
     #[test]
-    fn declared_capabilities_match_the_spec_1_kimi_row() {
+    fn declared_capabilities_are_the_kimi_capability_set() {
         let expected: std::collections::BTreeSet<&str> = [
             "session_lifecycle",
             "permission_requests",

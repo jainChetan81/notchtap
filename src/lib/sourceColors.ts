@@ -1,4 +1,4 @@
-// Plan 147: the TS twin of the overlay's colour system
+// The TS twin of the overlay's colour system
 // (src/overlay/source-identity.css + src/overlay/news-category.css) —
 // consumed by the Settings window's Appearance swatches, which render
 // outside `.card-root` and so can't just apply the CSS class and read

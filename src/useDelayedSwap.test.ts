@@ -76,7 +76,7 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "A", exiting: false });
 
     // same-key update: passes through live, no state write, no timer —
-    // this is exactly the update that used to get lost.
+    // this is exactly the update that must not get lost.
     rerender({ value: "B", key: "k1" });
     expect(result.current).toEqual({ value: "B", exiting: false });
 

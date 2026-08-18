@@ -1,21 +1,17 @@
-// the "pulled-view position
-// indicator" spec section 8 defines — a floor strip with no drain,
-// shared verbatim between the agent tab's session bar (slice F) and the
-// news tab's batch position strip (slice I, spec's own explicit default:
-// "implement news's floor strip identically to agent's"). One component,
-// two callers, per this plan's own "coordinate the exact shape, don't
-// invent a second one" discipline (§0).
+// The pulled-view position indicator — a floor strip with no drain,
+// shared between the agent tab's session bar and the news tab's batch
+// position strip. One component, two callers: news's floor strip is
+// implemented identically to agent's, never as a second invented shape.
 //
-// Reuses `card-chrome.css`'s existing `.ttl-bar`/`.ttl-seg`/`.ttl-seg
-// .done`/`.ttl-fill` classes verbatim — spec section 8: "no new CSS
-// needed". Unlike `TtlBar.tsx` (which overlays a SEPARATE `.ttl-fill` div
-// via an inline `grid-column` on top of an underlying `.ttl-seg` span, so
-// a JS rAF loop can drain it), this bar has no drain and needs no
-// overlay: the viewed segment's own `<span>` simply carries the
-// `ttl-fill` class directly in place of `ttl-seg` — one span per item,
-// never an N+1th overlay node — which is what spec section 8 means by
-// "a component that never mounts a `.ttl-fill` [as a draining overlay]
-// at all". `.ttl-fill`'s CSS (grid-row 1, 100%/100%, `background:
+// Reuses `card-chrome.css`'s `.ttl-bar`/`.ttl-seg`/`.ttl-seg .done`/
+// `.ttl-fill` classes verbatim — no new CSS. Unlike `TtlBar.tsx` (which
+// overlays a SEPARATE `.ttl-fill` div via an inline `grid-column` on top
+// of an underlying `.ttl-seg` span, so a JS rAF loop can drain it), this
+// bar has no drain and needs no overlay: the viewed segment's own
+// `<span>` simply carries the `ttl-fill` class directly in place of
+// `ttl-seg` — one span per item, never an N+1th overlay node, and never
+// a `.ttl-fill` mounted as a draining overlay.
+// `.ttl-fill`'s CSS (grid-row 1, 100%/100%, `background:
 // var(--accent)`) paints correctly as a plain grid item with no inline
 // `transform`/`grid-column` override needed — it simply sits in its own
 // natural document-order column, motionless.

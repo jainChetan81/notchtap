@@ -12,10 +12,10 @@ pub struct Event {
     #[serde(default)]
     pub meta: EventMeta,
     pub signal: EventSignal,
-    /// Which source produced this event (v6: rotation-order tie-break) —
-    /// orthogonal to `Priority`, which still decides cross-tier order
-    /// first. Always server-assigned, never accepted from the `/notify`
-    /// wire (same rule as `rotation`/`topic`).
+    /// Which source produced this event (rotation-order tie-break) —
+    /// orthogonal to `Priority`, which decides cross-tier order first.
+    /// Always server-assigned, never accepted from the `/notify` wire
+    /// (same rule as `rotation`/`topic`).
     pub origin: SourceKind,
 }
 
@@ -35,7 +35,7 @@ impl Event {
 
 pub const EXPANDED_MULTIPLIER: u64 = 3;
 
-/// Event type on the `/notify` wire, snake_case per the v1 spec §7.
+/// Event type on the `/notify` wire, snake_case.
 /// Unknown types are rejected at deserialization — never silently
 /// coerced to [`EventType::Generic`]:
 ///
@@ -54,8 +54,8 @@ pub enum EventType {
     ScoreUpdate,
     MatchState,
     NewsItem,
-    /// v7: a noteworthy Agent Event promoted into the
-    /// existing Notification Slot. Always paired with `origin:
+    /// A noteworthy Agent Event promoted into the Notification
+    /// Slot. Always paired with `origin:
     /// SourceKind::Agent` and a populated `EventMeta.agent` — see
     /// `agents::notification::build_notification`, the one constructor.
     AgentEvent,
@@ -69,7 +69,7 @@ pub enum Priority {
     High,
 }
 
-/// The source that produced an [`Event`] (v6: `Config.rotation_order`
+/// The source that produced an [`Event`] (`Config.rotation_order`
 /// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
 /// unknown values are rejected at deserialization, never silently coerced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,18 +78,14 @@ pub enum SourceKind {
     Football,
     News,
     Manual,
-    /// The provider-neutral Agent Adapter origin, the sole successor to
-    /// the removed `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
-    /// migration path spec §7 requires ("legacy `"cmux"` deserializes as
-    /// `Agent` for one release"): it accepts the old wire/TOML/history
-    /// literal `"cmux"` as an alternate spelling of this variant on
-    /// deserialization only — serialization always writes `"agent"`, never
-    /// `"cmux"` (serde aliases are deserialize-only, so this is automatic,
-    /// not something the `Serialize` impl has to special-case). Covers
-    /// `config.toml`'s `rotation_order` entries, persisted
-    /// `history.jsonl` `Origin` values, and any other spot a `SourceKind`
-    /// is deserialized — all share this one enum, so one alias covers all
-    /// three per spec §7's bullet list.
+    /// The provider-neutral Agent Adapter origin. `#[serde(alias =
+    /// "cmux")]` accepts the legacy literal `"cmux"` as an alternate
+    /// spelling on deserialization only — serialization always writes
+    /// `"agent"`, never `"cmux"` (serde aliases are deserialize-only, so
+    /// the `Serialize` impl needs no special case). One alias covers
+    /// every spot a `SourceKind` is deserialized: `config.toml`'s
+    /// `rotation_order` entries, persisted `history.jsonl` `Origin`
+    /// values, and the `/notify` wire.
     #[serde(alias = "cmux")]
     Agent,
 }
@@ -130,10 +126,9 @@ pub enum EventSignal {
     Kickoff,
     Halftime,
     Fulltime,
-    /// workstream c (079 item 6a) — the four locked richer
-    /// event kinds, sourced from ESPN's `summary`/`plays` fallback chain
-    /// rather than the scoreboard feed. Presentation-only, same rigor as
-    /// every other variant here.
+    /// Richer event kinds, sourced from ESPN's `summary`/`plays` fallback
+    /// chain rather than the scoreboard feed. Presentation-only, same
+    /// rigor as every other variant here.
     Foul,
     Offside,
     VarCheck,
@@ -157,10 +152,9 @@ pub struct DetailItem {
     pub value: String,
 }
 
-/// Presentation metadata for a noteworthy Agent Event's Notification
-/// ("the generated existing-domain `Event` uses
-/// `EventType::AgentEvent` and an `AgentSignal` carrying runtime, session
-/// key, kind, and sanitized summary"). Built exactly once, by
+/// Presentation metadata for a noteworthy Agent Event's Notification:
+/// runtime, session hash, kind, and sanitized summary, carried on an
+/// `EventType::AgentEvent` `Event`. Built exactly once, by
 /// `agents::notification::build_notification`.
 ///
 /// `runtime`/`kind` are the same wire tokens an adapter itself would send
@@ -168,13 +162,13 @@ pub struct DetailItem {
 /// of `parse_runtime`/`parse_kind`), not a display label; a display label
 /// is a frontend/Settings concern, not this backend struct's job.
 ///
-/// `session_key` is deliberately NOT the raw `AgentSessionKey` — spec §9
-/// forbids persisting raw provider identity, and this struct rides on
+/// `session_key` is deliberately NOT the raw `AgentSessionKey`: raw
+/// provider identity must never be persisted, and this struct rides on
 /// `Event`, which `history.rs` serializes to disk verbatim when
 /// `history_enabled`. `session_hash` is the same stable, non-reversible,
-/// per-process hash already used for the §10 `agent.session_hash` log
-/// field (`agents::model::session_hash_hex`) — safe to persist/display
-/// because it never round-trips back to the provider's own session id.
+/// per-process hash used for the `agent.session_hash` log field
+/// (`agents::model::session_hash_hex`) — safe to persist/display because
+/// it never round-trips back to the provider's own session id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSignal {
@@ -186,8 +180,8 @@ pub struct AgentSignal {
     pub summary: Option<String>,
 }
 
-/// News-source metadata (v5) plus the rich-relay fields (
-/// `subtitle`/`details`): the rss poller populates source/category/
+/// News-source metadata plus the rich-relay fields
+/// (`subtitle`/`details`): the rss poller populates source/category/
 /// published/link, and `/notify` callers populate subtitle/details;
 /// every other source leaves them default. Presentation-only — never
 /// consulted by queue/rotation/priority logic.
@@ -198,29 +192,27 @@ pub struct EventMeta {
     pub category: Option<String>,
     pub published_at_ms: Option<i64>,
     pub link: Option<String>,
-    /// A first-class optional subtitle: the CLI's `--subtitle`
-    /// used to fold into the body CLI-side; it is now its own wire field.
+    /// A first-class optional subtitle, carrying the CLI's `--subtitle`
+    /// as its own wire field.
     pub subtitle: Option<String>,
     /// Label/value detail pairs, capped server-side.
     pub details: Vec<DetailItem>,
-    /// Structured live-match fields ( item 4 — decided STRUCTURED,
-    /// not pre-joined into `matchup()`'s display string). Populated by the
-    /// espn poller only when `espn_live_card` is on (the same gate as the
-    /// `details` Clock/Cards cells above); every other source, and espn
-    /// itself with the flag off, leaves this `None`. `skip_serializing_if`
-    /// is deliberate here (unlike every other `Option` field above, which
-    /// serializes explicit `null`): without it, EVERY payload — manual,
-    /// agent (superseded cmux relay, ), news, flag-off espn —
-    /// would gain a literal `"espn": null` key
-    /// on the wire, breaking the flag-off byte-identical pin at the JSON
-    /// level (see `espn_field_is_omitted_from_wire_when_absent` below).
+    /// Structured live-match fields, not pre-joined into `matchup()`'s
+    /// display string. Populated by the espn poller only when
+    /// `espn_live_card` is on (the same gate as the `details` Clock/Cards
+    /// cells above); every other source, and espn itself with the flag
+    /// off, leaves this `None`. `skip_serializing_if` is deliberate here
+    /// (unlike every other `Option` field above, which serializes explicit
+    /// `null`): without it, EVERY payload — manual, agent, news, flag-off
+    /// espn — would gain a literal `"espn": null` key on the wire,
+    /// breaking the flag-off byte-identical pin at the JSON level (see
+    /// `espn_field_is_omitted_from_wire_when_absent` below).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub espn: Option<EspnMeta>,
-    /// v7: populated only on an Agent-originated Notification's
-    /// `Event` (see [`AgentSignal`]'s own doc). `skip_serializing_if` for
-    /// the same reason as `espn` above — every non-agent payload (and an
-    /// agent payload built before this ticket's own tests were written)
-    /// must keep an identical wire shape, no literal `"agent": null` key.
+    /// Populated only on an Agent-originated Notification's `Event` (see
+    /// [`AgentSignal`]'s own doc). `skip_serializing_if` for the same
+    /// reason as `espn` above — every non-agent payload must keep an
+    /// identical wire shape, no literal `"agent": null` key.
     /// Mirrored onto `SlotState::Showing.agent_runtime` so the
     /// overlay can style/label agent-originated cards by runtime; see that
     /// field's doc for the wire shape.
@@ -228,22 +220,21 @@ pub struct EventMeta {
     pub agent: Option<AgentSignal>,
 }
 
-/// structured live-match fields (079 item 4 — decided
-/// STRUCTURED, not pre-joined). Present only on Football events when
+/// Structured live-match fields, not pre-joined into a display
+/// string. Present only on Football events when
 /// the live-card flag is on; everything else leaves it `None` and the
 /// wire is unchanged. Display-only, like the rest of `EventMeta` — never
 /// consulted by queue/rotation/priority logic.
 ///
-/// `home_crest`/`away_crest` (workstream a) are the raw absolute
-/// filesystem path to a cached crest PNG under the crest cache dir
+/// `home_crest`/`away_crest` are the raw absolute filesystem path to a
+/// cached crest PNG under the crest cache dir
 /// (`~/.config/notchtap/crests/`), present only on a cache hit; `None`
 /// means no crest cached yet (first sighting, still fetching, or the
 /// fetch failed) — the frontend renders the text-abbrev fallback. This
-/// is deliberately NOT yet a servable `asset://`/`crest://` URL: the
-/// frontend converts the raw path via tauri's `convertFileSrc` (route
-/// (i), see `poller.rs`'s crest-serving doc), keeping this struct
-/// serving-route-agnostic — a future route (ii) migration would not
-/// need to change this field's shape.
+/// is deliberately NOT a servable `asset://`/`crest://` URL: the
+/// frontend converts the raw path via tauri's `convertFileSrc` (see
+/// `poller.rs`'s crest-serving doc), keeping this struct
+/// serving-route-agnostic.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EspnMeta {
@@ -274,8 +265,7 @@ pub struct EspnMeta {
 // `Empty` is a trivial sentinel — the asymmetry clippy's large_enum_variant
 // flags is by design. Boxing wouldn't help honestly here: this enum is
 // short-lived (built per emit, serialized, dropped), never stored in bulk,
-// and boxing a field would only muddy the serde wire shape. Since
-// added subtitle/details it crossed the 200-byte threshold, so allow it.
+// and boxing a field would only muddy the serde wire shape.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -289,11 +279,10 @@ pub enum SlotState {
         event_type: EventType,
         priority: Priority,
         signal: EventSignal,
-        /// Which source produced this item — mirrors
-        /// `Event.origin` (v6, rotation-order tie-break) onto the wire so
-        /// the frontend can style/label cards by their origin; today's only
-        /// consumer is the agent accent in `StatusRailCard.tsx` (
-        /// this superseded the earlier cmux accent), but any future
+        /// Which source produced this item — mirrors `Event.origin`
+        /// (rotation-order tie-break) onto the wire so the frontend can
+        /// style/label cards by their origin; its one consumer is the
+        /// agent accent in `StatusRailCard.tsx`, but any future
         /// per-source presentation can key off this without another wire
         /// change. Time-invariant: it's assigned once when the event
         /// is accepted and never changes for that item's lifetime, so
@@ -340,13 +329,11 @@ pub enum SlotState {
         /// honest shape. Deliberately EXCLUDED from the dedup comparison
         /// (`dedup_eq`) — it's a pure function of wall-clock time and so
         /// never matches between two calls even microseconds apart, which
-        /// would defeat deduping entirely ( attempt 1 measured 2
-        /// emissions per 1 `accept()` before this exclusion existed).
+        /// would defeat deduping entirely (two emissions per `accept()`).
         remaining_ms: u64,
         /// The agent runtime wire token ("claude-code"|"codex"|"kimi"|
         /// "opencode") for an Agent-originated item, mirrored from
-        /// `Event.meta.agent.runtime`; `None` for every
-        /// non-agent origin. Serializes plainly like `source`/`category`
+        /// `Event.meta.agent.runtime`; `None` for every non-agent origin. Serializes plainly like `source`/`category`
         /// above (explicit `null` when absent, no `skip_serializing_if`) —
         /// unlike `espn`/`agent` on `EventMeta`, this field is cheap and
         /// common enough on agent payloads that an omitted-key special case
@@ -381,17 +368,17 @@ impl SlotState {
     /// if it ever could) for zero benefit (there is no re-emit storm to
     /// prevent, since it never ticks like `remaining_ms` does).
     ///
-    /// `agent_runtime` stays IN the comparison for the same
-    /// reason as `origin`: it is set once at `build_notification` time and
+    /// `agent_runtime` stays IN the comparison for the same reason as
+    /// `origin`: it is set once at `build_notification` time and
     /// never ticks for that item's lifetime, so — unlike `remaining_ms` —
     /// there is no re-emit storm to guard against by normalizing it away.
     ///
     /// This does NOT replace the derived `PartialEq`, which stays intact
     /// and honest — several tests assert full `SlotState` equality
     /// (`assert_eq!`), and a hand-rolled `PartialEq` that quietly ignored a
-    /// field would make those assertions silently meaningless. Any future
-    /// continuously-varying wire field (see the module doc's "maintenance
-    /// notes" pointer) must extend this method, not `PartialEq`.
+    /// field would make those assertions silently meaningless. Any
+    /// continuously-varying wire field must extend this method, never
+    /// rely on the derived `PartialEq`.
     ///
     /// The `Showing` pattern below names every field explicitly — no `..`
     /// wildcard. That is a deliberate compile-time guard, not tidiness: a
@@ -441,8 +428,8 @@ impl SlotState {
 /// exactly this string (`src/useSlotState.ts`). Change both together.
 pub const SLOT_STATE_EVENT: &str = "slot-state";
 
-/// The single emit path (spec §5.1): one `slot-state` event whenever the
-/// displayed slot changes. Emit failure is logged, never propagated — by
+/// The single emit path: one `slot-state` event whenever the displayed
+/// slot changes. Emit failure is logged, never propagated — by
 /// this point the queue state has already changed, so failing the caller
 /// would report a notification as lost when it may still display.
 pub fn emit_slot_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: SlotState) {
@@ -468,7 +455,7 @@ mod tests {
 
     #[test]
     fn unknown_type_string_is_rejected_at_deserialization() {
-        // score_update and match_state are real variants now; pick something
+        // score_update and match_state are real variants; pick something
         // that is not a variant to exercise the unknown-type path.
         let result: Result<EventType, _> = serde_json::from_str(r#""posture_alert""#);
         assert!(result.is_err());
@@ -522,9 +509,9 @@ mod tests {
         assert!(serde_json::from_str::<SourceKind>(r#""pigeon""#).is_err());
     }
 
-    // the legacy `"cmux"` literal is a one-release
-    // deserialize-only alias for `Agent` — it must parse successfully but
-    // must never come back out of `Serialize`.
+    // the legacy `"cmux"` literal is a deserialize-only alias for `Agent`
+    // — it must parse successfully but must never come back out of
+    // `Serialize`.
     #[test]
     fn legacy_cmux_string_deserializes_as_agent_but_never_serializes_back() {
         let parsed: SourceKind = serde_json::from_str(r#""cmux""#).unwrap();
@@ -759,12 +746,13 @@ mod tests {
 
     #[test]
     fn event_meta_default_has_no_subtitle_and_empty_details() {
-        // back-compat: every non-relay source leaves the plan-035 fields at
-        // their default (None / empty), covered by EventMeta's derived Default.
+        // back-compat: every non-relay source leaves the rich-relay fields
+        // at their default (None / empty), covered by EventMeta's derived
+        // Default.
         let meta = EventMeta::default();
         assert_eq!(meta.subtitle, None);
         assert!(meta.details.is_empty());
-        // same back-compat rule for the new structured block —
+        // same back-compat rule for the structured block —
         // every non-football source, and football itself with
         // `espn_live_card` off, leaves this `None`.
         assert_eq!(meta.espn, None);
@@ -846,9 +834,8 @@ mod tests {
 
     // `origin` is time-invariant (constant per queued item), so
     // — unlike `remaining_ms` — it must stay IN `dedup_eq`'s comparison.
-    // This is the tripwire the plan calls out by name: if two SlotStates
-    // differing ONLY in origin ever dedup_eq as equal, the field is not
-    // behaving as assumed.
+    // Tripwire: if two SlotStates differing ONLY in origin ever dedup_eq
+    // as equal, the field is not behaving as assumed.
     #[test]
     fn dedup_eq_treats_a_changed_origin_as_a_real_change() {
         fn showing_with_origin(origin: SourceKind) -> SlotState {
@@ -970,8 +957,8 @@ mod tests {
     }
 }
 
-/// Shared test fixture builder: the ONE place tests build
-/// `Event`s, so a new field is a one-file test change. Production code
+/// Shared test fixture builder: the ONE place tests build `Event`s, so a
+/// new field is a one-file test change. Production code
 /// must never use this — `#[cfg(test)]` enforces it.
 #[cfg(test)]
 pub(crate) mod test_fixtures {

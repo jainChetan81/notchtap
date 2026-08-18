@@ -908,7 +908,7 @@ export function StatusRailCard({
                 {showing && (
                   <motion.div
                     key={swapKey}
-                    // item 3 (rotation de-noise): `rotation-swap` (only on a
+                    // rotation de-noise: `rotation-swap` (only on a
                     // ordinary same-slot rotation, never a promotion OR an
                     // interrupt) gates off the news chips' own `pill-enter`
                     // replay (news-category.css) — see that rule's own doc

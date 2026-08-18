@@ -34,7 +34,7 @@ import { applyAnimationTiming } from "./applyAnimationTiming";
 // (which steps fake timers against this same value); the assertion's
 // MEANING (the constant is pinned to a known literal, not a symbol) is
 // unchanged, only the literal itself.
-describe("animationTiming (plan 117)", () => {
+describe("animationTiming", () => {
   it("SWAP_EXIT_MS matches useDelayedSwap's 175ms exit window", () => {
     expect(SWAP_EXIT_MS).toBe(175);
   });
@@ -71,21 +71,12 @@ describe("animationTiming (plan 117)", () => {
     expect(Object.keys(DISCLOSURE_SPRING).sort()).toEqual(["damping", "stiffness", "type"]);
   });
 
-  // 2026-07-23 review fix (wave C, CSS custom-property injection): the
-  // two regex-parsing guards that used to live here (CONTENT_EXIT_MS ↔
-  // overlay-card.css's flank-round `border-radius` duration, SWAP_EXIT_MS
-  // ↔ `.card-assembly.exiting`'s own `width` duration) are gone. They
-  // existed only because the CSS carried its OWN copy of each number,
-  // which could drift from the JS constant without either side erroring
-  // — so a test had to parse the stylesheet and compare by hand. That
-  // duplication is gone: overlay-card.css now reads these values via
-  // `var(--content-exit-ms, ...)`/`var(--swap-exit-ms, ...)`, set on the
-  // document root by `applyAnimationTiming` (below) directly from these
-  // same constants. There is exactly one place either number is written
-  // as a literal now, so there is nothing left for a parsing guard to
-  // catch — the coverage that matters is "does applyAnimationTiming
-  // actually set the properties it claims to", which the test below
-  // pins instead.
+  // Each timing number is written as a literal in exactly one place:
+  // these constants. The CSS reads them via `var(--content-exit-ms,
+  // ...)`/`var(--swap-exit-ms, ...)`, set on the document root by
+  // `applyAnimationTiming` — so the coverage that matters is "does
+  // applyAnimationTiming actually set the properties it claims to",
+  // which this test pins.
   it("applyAnimationTiming sets the expected custom properties on the given root", () => {
     const setProperty = vi.fn();
     applyAnimationTiming({ setProperty });
@@ -112,13 +103,11 @@ describe("animationTiming (plan 117)", () => {
     expect(setProperty).toHaveBeenCalledTimes(10);
   });
 
-  // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the
-  // JS twin of shared-ui's `--ease-notchtap` cubic-bezier token. Parse the
-  // vendored token and compare numerically so the pair can't drift. Kept
-  // (not folded into the custom-property injection above): motion needs
-  // the real JS array for its own consumers (this is not a CSS-only
-  // duration), so this pair is a real cross-file lockstep, unlike the two
-  // guards removed above.
+  // NOTCHTAP_EASE is the JS twin of shared-ui's `--ease-notchtap`
+  // cubic-bezier token. Parse the vendored token and compare numerically
+  // so the pair can't drift. It stays a separate constant rather than a
+  // custom-property injection because motion needs the real JS array for
+  // its own consumers — this pair is a real cross-file lockstep.
   it("NOTCHTAP_EASE numerically matches the vendored --ease-notchtap token", () => {
     const tokens = readFileSync(
       fileURLToPath(new NodeURL("../vendor/shared-ui/design/tokens.css", import.meta.url)),
@@ -153,7 +142,7 @@ describe("animationTiming (plan 117)", () => {
   });
 });
 
-// item 6 (timing-parity enforcement): a scanner over every `src/overlay/*.css`
+// Timing-parity enforcement: a scanner over every `src/overlay/*.css`
 // source, string-level like `overlayCardMirror.test.ts`'s own selector
 // scanner (no CSS parser — "cheap but effective", same register that file's
 // own doc calls out). The invariant: every `transition:` declaration's

@@ -33,7 +33,7 @@ describe("segmentFor", () => {
   });
 });
 
-describe("PositionBar (plan 171, spec section 8)", () => {
+describe("PositionBar", () => {
   it("renders nothing when total is zero", () => {
     const { container } = render(<PositionBar total={0} current={0} />);
     expect(container.querySelector(".ttl-bar")).toBeNull();

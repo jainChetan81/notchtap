@@ -11,12 +11,12 @@
 include!("src/settings_commands.rs");
 
 fn main() {
-    // v5 (V5_TECHNICAL_SPEC.md §2): tauri allows app-defined commands to
-    // EVERY window by default — this opt-in flips them to deny-by-default
-    // so capabilities/settings.json can grant them to the settings window
-    // alone, keeping the overlay (`main`) receive-only. never add a
-    // #[tauri::command] to generate_handler without also listing it in
-    // SETTINGS_COMMANDS above.
+    // tauri allows app-defined commands to EVERY window by default — this
+    // opt-in flips them to deny-by-default so capabilities/settings.json
+    // can grant them to the settings window alone, keeping the overlay
+    // (`main`) receive-only. NEVER add a #[tauri::command] to
+    // generate_handler without also listing it in SETTINGS_COMMANDS
+    // above, or it silently becomes callable from the overlay window.
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(SETTINGS_COMMANDS)),

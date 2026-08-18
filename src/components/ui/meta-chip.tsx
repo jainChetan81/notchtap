@@ -61,7 +61,7 @@ export function MetaChip({
    *  planned column) read as uppercase; free-form content chips
    *  (a history entry's source, a tech-stack name) don't. */
   uppercase?: boolean;
-  /** Plan 147: leading colour swatch — a source/runtime/category
+  /** Leading colour swatch — a source/runtime/category
    *  identity dot pulled from `src/lib/sourceColors.ts`. Omitted by
    *  default (no swatch, no layout change). Independent of `tone`: a
    *  runtime-identity dot and a status tone answer different questions

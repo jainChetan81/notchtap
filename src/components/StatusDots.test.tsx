@@ -90,7 +90,7 @@ describe("StatusDots", () => {
   // the paused indicator — every dot forces `dim`
   // (never `active`) while paused, even for sources that are otherwise
   // enabled, plus a static two-bar glyph renders beside the dot row.
-  describe("paused (plan 092)", () => {
+  describe("paused", () => {
     it("forces every dot dim, even for otherwise-enabled sources, while paused", () => {
       const { container } = render(
         <StatusDots
@@ -131,7 +131,7 @@ describe("StatusDots", () => {
 
   // each dot is `role="img"` + a truthful `aria-label`,
   // and carries a non-color shape class independent of active/dim.
-  describe("accessible names + non-color shapes (plan 110)", () => {
+  describe("accessible names + non-color shapes", () => {
     it("names every dot 'enabled' and shapes it filled when every source is enabled", () => {
       render(<StatusDots status={ALL_ON} />);
       const football = screen.getByRole("img", { name: "Football — enabled" });
@@ -216,12 +216,12 @@ describe("StatusDots", () => {
   // single-line-selector variant of it; StatusRailCard.test.tsx's own
   // copy additionally tolerates multi-line/wrapped selectors, not needed
   // here).
-  describe("overlay-card.css string pins (plan 129 C2/T6)", () => {
-    // css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
-    // back together via plain `@import "./relative.css";` lines — inlined
-    // here so this still returns the full literal stylesheet text callers
-    // expect, unchanged from before the split (imports are one level deep;
-    // no chunk file itself contains an @import).
+  describe("overlay-card.css string pins", () => {
+    // overlay-card.css is split into src/overlay/*.css chunks pulled back
+    // together via plain `@import "./relative.css";` lines — inlined here
+    // so this returns the full literal stylesheet text callers expect
+    // (imports are one level deep; no chunk file itself contains an
+    // @import).
     function readSourceCss(relativePath: string): string {
       const url = new NodeURL(relativePath, import.meta.url);
       const raw = readFileSync(fileURLToPath(url), "utf-8");

@@ -1,27 +1,9 @@
 //! club crest fetch + on-disk cache.
 //!
 //! **Legal/scope rule (hard, not a style preference)**: crest PNGs are
-//! runtime-cached by rust, NEVER committed to git — trademarked club
-//! artwork, materially lower-risk as a fetched-at-runtime cache of a
-//! feed-provided URL than as a vendored asset
-//! (`docs/ARCHITECTURE.md`'s config/logging paths section documents this
-//! cache dir's location and lifecycle). `.gitignore` has no rule for this
-//! dir specifically because the dir is never created inside the repo
-//! tree — it lives under `~/.config/notchtap/crests/`, alongside
-//! `config.toml`/`secrets.toml` (`Config::dir_from_home`).
-//!
-//! Cache policy (deliberately v1-minimal, per
-//! - fetch on cache miss only; a cache hit (on-disk PNG, which persists
-//!   across restarts) never re-fetches.
-//! - one fetch ATTEMPT per team per process lifetime — `should_fetch`
-//!   marks a team "attempted" the first time it's asked about, whether
-//!   the fetch that follows succeeds or fails, so a failing team isn't
-//!   retried every poll; a restart clears the attempted-set and tries
-//!   again.
-//! - failures are silent-with-fallback (the caller sees `None` and the
-//!   frontend renders the text-abbrev fallback) — never poller-fatal.
-//! - no eviction: ESPN's watched leagues bound the team count to a
-//!   couple dozen, trivial by any cache's standard.
+//! trademarked club artwork — runtime-cached under
+//! `~/.config/notchtap/crests/` (never inside the repo tree, so
+//! `.gitignore` needs no rule), NEVER committed as a vendored asset.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -138,9 +120,9 @@ impl CrestCache {
         // deliberately unused for the actual request below — see
         // `crest_client`'s doc comment for why a crest fetch needs its
         // own client rather than the shared poll client passed in here.
-        // The parameter stays so `fetch_and_store`'s signature (and thus
+        // The parameter keeps `fetch_and_store`'s signature aligned with
         // `poller.rs`'s call site, which shares one client across every
-        // fetch it makes) doesn't need to change.
+        // fetch it makes.
         _client: &reqwest::Client,
         team_id: &str,
         url: &str,
@@ -303,7 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_to_a_non_espncdn_host_is_rejected_and_leaves_no_cache_entry() {
-        // M2: crest_client's redirect policy must enforce crest_url_allowed
+        // crest_client's redirect policy must enforce crest_url_allowed
         // on every hop, not just the pre-fetch URL — a 302 off espncdn
         // (here, simulated by a mock 302 pointing anywhere non-espncdn)
         // must never be followed.

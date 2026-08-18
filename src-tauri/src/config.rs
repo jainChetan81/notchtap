@@ -12,17 +12,17 @@ pub struct Config {
     pub default_ttl: u64,
     pub max_queued_per_tier: usize,
     pub detect_path: PathBuf,
-    /// v5 master kill switch: launch with promotion paused (tray reads
+    /// Master kill switch: launch with promotion paused (tray reads
     /// "Resume"). the tray toggle itself stays session-only.
     pub start_paused: bool,
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
     pub espn_poll_secs: u64,
-    /// v6: was hardcoded `Priority::High` in `poller.rs`; now configurable
-    /// per source (`docs/CONTEXT.md`'s Origin/Rotation Order glossary).
+    /// Priority every football push carries (`CLAUDE.md`'s Origin and
+    /// Rotation Order glossary entries).
     pub espn_priority: Priority,
-    /// v6: previously football silently reused `default_ttl` — now has its
-    /// own rotation window like `rss_ttl_secs` already does for news.
+    /// Football's own rotation window, independent of `default_ttl` — the
+    /// counterpart to `rss_ttl_secs` for news.
     pub espn_ttl_secs: u64,
     /// opt-in live-match card. default false — today's
     /// burst-of-one-shot-cards stays the default; when on, one live match
@@ -53,52 +53,46 @@ pub struct Config {
     /// entry expands to a Google News query-feed URL
     /// (`rss_poller::expand_topic_url`) and rides the exact same
     /// SeenStore/TTL/priority/max-per-poll/News-tier path as a
-    /// configured feed. Default empty — an install with no topics
-    /// behaves exactly as before this field existed.
+    /// configured feed. Default empty — an install with no topics polls
+    /// `rss_feeds` alone.
     #[serde(default)]
     pub rss_topics: Vec<String>,
     pub rss_poll_secs: u64,
-    /// v6: was hardcoded `Priority::Low` in `rss_poller.rs`.
+    /// Priority every news push carries.
     pub rss_priority: Priority,
     pub rss_ttl_secs: u64,
     pub rss_max_per_poll: usize,
-    /// v6: the `/notify` fallback when a request omits its own `priority`
-    /// (was the hardcoded `Priority::Medium` in `http.rs`). A request that
-    /// sets `priority` explicitly still overrides this.
+    /// The `/notify` fallback when a request omits its own `priority`. A
+    /// request that sets `priority` explicitly still overrides this.
     pub manual_default_priority: Priority,
-    /// renamed from v6.1's `cmux_priority` — the cmux
-    /// relay and its `/notify` self-declared `source: "cmux"` are gone
-    /// (superseded by the v7 Agent Adapter layer), but the flat field
-    /// itself survives as the one-release migration target: `cmux_priority`
-    /// aliases onto this field when the file has no `agent_priority` key of
+    /// Migration target for a config file's `cmux_priority` key: that key
+    /// aliases onto this field when the file has no `agent_priority` of
     /// its own (`Config::parse`'s heal step, mirroring the
     /// `default_ttl`→`espn_ttl_secs`/`agent_ttl_secs` inheritance pattern
-    /// already below). `[agents]`'s four kind-specific priorities
+    /// below). `[agents]`'s four kind-specific priorities
     /// (`permission_priority`/`input_priority`/`failure_priority`/
     /// `completion_priority`) take precedence for every adapter-generated
-    /// Notification — this flat field has no direct consumer of its own
-    /// today, it exists purely so an upgrading install's customized
-    /// `cmux_priority` value is never silently dropped on the floor.
+    /// Notification, so this flat field has no direct consumer of its own
+    /// — it exists so an upgrading install's customized value is never
+    /// silently dropped on the floor.
     pub agent_priority: Priority,
-    /// renamed from v6.1's `cmux_ttl_secs` — same
-    /// migration story as `agent_priority` above, but this one DOES have a
-    /// live consumer: it's the one-shot rotation window `http.rs`'s
-    /// `agent_events_handler` passes to
+    /// Same `cmux_ttl_secs` alias story as `agent_priority` above, but
+    /// this one DOES have a live consumer: it's the one-shot rotation
+    /// window `http.rs`'s `agent_events_handler` passes to
     /// `agents::notification::build_notification` for every noteworthy
-    /// Agent Notification, exactly the role `cmux_ttl_secs` played for a
-    /// cmux-originated `/notify` push.
+    /// Agent Notification.
     pub agent_ttl_secs: u64,
-    /// the v7 `[agents]` config block — global
+    /// the `[agents]` config block — global
     /// enable, registry retention/staleness, the informational-card
     /// toggle, four per-kind Notification priorities, and four
     /// per-runtime enable flags. See [`AgentsConfig`].
     #[serde(default)]
     pub agents: AgentsConfig,
-    /// v6/v6.1: same-tier promotion tie-break, checked before arrival
+    /// Same-tier promotion tie-break, checked before arrival
     /// order. Must be a permutation of all four `SourceKind` variants —
     /// enforced by `settings::validate`. Deserialized leniently
-    /// (`lenient_rotation_order`): entries naming a REMOVED origin (an
-    /// on-disk config written while e.g. `weather` still existed) are
+    /// (`lenient_rotation_order`): entries naming an origin this build
+    /// has no `SourceKind` for (e.g. `weather`) are
     /// silently dropped rather than failing the whole file, and the
     /// parse-time heal below then re-appends anything missing — boot
     /// must never crash on a stale rotation_order.
@@ -108,12 +102,11 @@ pub struct Config {
     )]
     pub rotation_order: Vec<SourceKind>,
     pub appearance: Appearance,
-    /// the overlay's RESTING (idle) render choice — the cheap
-    /// half of item 17. `Rail` (default) is today's time+dots
-    /// idle rail, zero behavior change. `Notch` renders nothing while
-    /// idle (the bare native notch) — a render choice only, no hover
-    /// detection; every `showing` path (promotions, rotation, expand,
-    /// TTL) is unaffected either way.
+    /// the overlay's RESTING (idle) render choice. `Rail` (default) is
+    /// the time+dots idle rail. `Notch` renders nothing while idle (the
+    /// bare native notch) — a render choice only, no hover detection;
+    /// every `showing` path (promotions, rotation, expand, TTL) is
+    /// unaffected either way.
     #[serde(default = "default_resting_state")]
     pub resting_state: RestingState,
     /// persist accepted
@@ -121,32 +114,30 @@ pub struct Config {
     /// later browsing. Defaults to `false` like every other opt-in surface
     /// here (`rss_enabled`, `espn_live_card`,
     /// `espn_rich_events`) — this one writes notification CONTENT to disk,
-    /// including agent-originated payloads (formerly cmux relay ones), so
-    /// off-by-default is load-bearing, not stylistic.
+    /// including agent-originated payloads, so off-by-default is
+    /// load-bearing, not stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
     /// the `[silence]` block — the daily Silent Period
-    /// (`CONTEXT.md`'s Silenced/Silent Period entries). Queue-level gate,
+    /// (`CLAUDE.md`'s Silenced/Silent Period entries). Queue-level gate,
     /// evaluated beside `start_paused`/the tray Pause toggle (Paused wins
     /// unconditionally over Silenced). See [`SilenceConfig`].
     #[serde(default)]
     pub silence: SilenceConfig,
-    ///
     /// the configurable tmux-style prefix that arms `prefix.rs`'s
     /// `PrefixState` 2-second follow-up window. Format mirrors this app's
     /// own shipped `⌃⇧`-combo family (`ShortcutsSection.tsx`'s
     /// `⌃⇧N`/`⌃⇧O`/etc. display table) rather than inventing a new
     /// keybinding grammar: the literal `⌃⇧` (Control, Shift) followed by
     /// one more key name with no whitespace — a single glyph for most of
-    /// the existing seven, or a spelled-out name for a non-printable key,
-    /// which is exactly what the spec's own default (`⌃⇧Space`) is. Plain
-    /// `String`, not a parsed wrapper type like [`SilenceConfig::window`]
-    /// — validated at settings-save time instead
-    /// (`settings::is_valid_prefix_shortcut`), the same treatment
-    /// `espn_leagues`/rss feed urls already get as plain strings. This
-    /// slice is data-only: nothing yet parses this string into an actual
+    /// the seven, or a spelled-out name for a non-printable key, which is
+    /// what the default `⌃⇧Space` is. Plain `String`, not a parsed
+    /// wrapper type like [`SilenceConfig::window`] — validated at
+    /// settings-save time instead (`settings::is_valid_prefix_shortcut`),
+    /// the same treatment `espn_leagues`/rss feed urls get as plain
+    /// strings. Data-only: nothing parses this string into a
     /// `tauri_plugin_global_shortcut` registration — see `prefix.rs`'s own
-    /// module doc for why that wiring is deferred to real-device work.
+    /// module doc for why that wiring waits on real-device work.
     #[serde(default = "default_prefix_shortcut")]
     pub prefix_shortcut: String,
 }
@@ -184,7 +175,7 @@ impl Default for Appearance {
     }
 }
 
-/// `[agents]` — v7's Agent Adapter config surface (spec §7). Global
+/// `[agents]` — the Agent Adapter config surface. Global
 /// enable/retention/staleness plus the two per-kind on/off gates
 /// (`informational_notifications`, `completion_notifications`), the
 /// Agent Board's own presence gate (`board_show_working`), and the four
@@ -199,10 +190,10 @@ impl Default for Appearance {
 #[serde(default)]
 pub struct AgentsConfig {
     pub enabled: bool,
-    /// Operator decision 2026-07-27: 60, down from the spec's original
-    /// 600 — a finished session lingering ten minutes on the board reads
-    /// as a stuck notification; board exit should feel close to a card's
-    /// own dismissal, not an order of magnitude slower.
+    /// How long a terminal session stays on the Agent Board. Kept short
+    /// (60s) — a finished session lingering minutes on the board reads as
+    /// a stuck notification; board exit should feel close to a card's own
+    /// dismissal.
     pub terminal_retention_secs: u64,
     pub stale_after_secs: u64,
     /// How long a `Stale` session sits on the Agent Board before the
@@ -211,17 +202,17 @@ pub struct AgentsConfig {
     /// the idle face forever — see `agents::registry::AgentRegistry::tick`).
     pub stale_retention_secs: u64,
     pub informational_notifications: bool,
-    /// Operator decision 2026-08-02: gates a TERMINAL `Completed` — a
-    /// real session end — only. Every runtime also fires a `Completed`
+    /// Gates a TERMINAL `Completed` — a real session end — only. Every
+    /// runtime also fires a `Completed`
     /// per response/turn (`terminal: false`); that shape is NOT covered
     /// by this key, it rides `informational_notifications` instead (see
     /// `agents::notification`'s top doc), which is what keeps per-turn
     /// cards quiet by default. Defaults `true` so session ends card out
     /// of the box; the struct-level `#[serde(default)]` above means a
-    /// config written before this key existed still loads as `true`.
+    /// `config.toml` omitting this key still loads as `true`.
     pub completion_notifications: bool,
-    /// Operator decision 2026-08-02: whether a session that is merely
-    /// WORKING may summon the Agent Board at all. Default `false` — the
+    /// Whether a session that is merely WORKING may summon the Agent
+    /// Board at all. Default `false` — the
     /// Board's job is ATTENTION, so it becomes present only while at
     /// least one session is in an attention state
     /// (`AgentSessionState::summons_board`: waiting-for-permission,
@@ -235,12 +226,11 @@ pub struct AgentsConfig {
     /// publish_if_changed` publishes the whole ordered slice or nothing
     /// at all — it never filters rows out of a published snapshot).
     ///
-    /// BEHAVIOR CHANGE for existing installs, deliberately: the
-    /// struct-level `#[serde(default)]` means a `config.toml` written
-    /// before this key existed loads as `false` and therefore stops
-    /// summoning the Board for working-only sessions, which is the point
-    /// of the default. Set `board_show_working = true` to restore the
-    /// pre-2026-08-02 behavior (any live session shows the Board).
+    /// The struct-level `#[serde(default)]` means a `config.toml`
+    /// omitting this key loads as `false` and therefore does not summon
+    /// the Board for working-only sessions, which is the point of the
+    /// default. Set `board_show_working = true` to have any live session
+    /// show the Board.
     pub board_show_working: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
@@ -250,15 +240,12 @@ pub struct AgentsConfig {
 }
 
 impl Default for AgentsConfig {
-    /// Spec §7's toml block, verbatim.
     fn default() -> Self {
         Self {
             enabled: true,
             terminal_retention_secs: 60,
-            // 900/1800 originally; tightened 2026-07-27 (operator feedback,
-            // same session as terminal_retention_secs above) — a dead
-            // session that missed its SessionEnd hook should be gone in
-            // ~15 minutes total, not 45.
+            // a dead session that missed its SessionEnd hook is gone in
+            // ~15 minutes total (stale_after + stale_retention).
             stale_after_secs: 300,
             stale_retention_secs: 600,
             informational_notifications: false,
@@ -273,9 +260,9 @@ impl Default for AgentsConfig {
     }
 }
 
-/// `[agents.runtimes.*]` — one enable flag per supported runtime (spec
-/// §7). All four default to `true`: installing v7 doesn't silently
-/// disable a runtime a user hasn't touched.
+/// `[agents.runtimes.*]` — one enable flag per supported runtime. All
+/// four default to `true`: a runtime the user hasn't touched is never
+/// silently disabled.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AgentRuntimesConfig {
@@ -372,8 +359,8 @@ fn default_espn_priority() -> Priority {
 }
 
 fn default_espn_ttl_secs() -> u64 {
-    // operator decision 2026-07-21: a scoreline needs longer on screen
-    // than a generic alert; still configurable via espn_ttl_secs.
+    // a scoreline needs longer on screen than a generic alert; still
+    // configurable via espn_ttl_secs.
     15
 }
 
@@ -409,8 +396,8 @@ fn default_resting_state() -> RestingState {
     RestingState::Rail
 }
 
-/// Spec §9: "`⌃⇧Space` is chosen as the default prefix specifically
-/// because it's the one combo in that family nobody's already using."
+/// `⌃⇧Space` is the default prefix because it's the one combo in that
+/// family no shipped hotkey already claims.
 fn default_prefix_shortcut() -> String {
     "⌃⇧Space".to_string()
 }
@@ -421,8 +408,8 @@ fn default_history_enabled() -> bool {
 
 /// See [`Config::rotation_order`]: parse each entry through
 /// `SourceKind`'s own serde impl (so the `"cmux"` alias keeps working)
-/// and DROP anything it rejects — a rotation_order entry naming a
-/// removed origin (e.g. `"weather"`) must degrade, never brick boot.
+/// and DROP anything it rejects — a rotation_order entry naming an
+/// unknown origin (e.g. `"weather"`) must degrade, never brick boot.
 /// The parse-time heal in [`Config::parse`] appends any missing
 /// variants afterwards, so the surviving array still validates as a
 /// permutation.
@@ -444,10 +431,8 @@ fn default_rotation_order() -> Vec<SourceKind> {
     // Manual ranks ahead of Agent — at default priorities
     // (Football/Agent both High, Manual Medium, News Low) this never
     // actually breaks a tie, since Agent and Manual don't share a tier
-    // unless the user manually equalizes their priorities. Still, an
-    // install already running both should see the pre-existing, more
-    // established Manual path win any such tie by default, not the
-    // Agent origin (formerly Cmux).
+    // unless the user manually equalizes their priorities. When they do,
+    // the deliberate Manual push wins over the Agent origin.
     vec![
         SourceKind::Football,
         SourceKind::Manual,
@@ -532,12 +517,12 @@ impl Default for Config {
     }
 }
 
-/// `[silence]` — 's daily Silent Period schedule
-/// (`CONTEXT.md`'s Silenced/Silent Period glossary entries).
+/// `[silence]` — the daily Silent Period schedule (`CLAUDE.md`'s
+/// Silenced/Silent Period glossary entries).
 /// `enabled`/`window` feed `silence::SilenceController::new` at boot
 /// (`lib.rs`'s wiring); Skip and Timed Mutes are session-only tray state,
 /// never persisted here. Default on, `00:00`-`10:00` local — quiet
-/// overnight from first launch with no setup (spec user story #17).
+/// overnight from first launch with no setup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SilenceConfig {
@@ -559,7 +544,7 @@ impl Default for SilenceConfig {
 
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
-        // spec §9 pins ~/.config/notchtap/config.toml. dirs::config_dir()
+        // config lives at ~/.config/notchtap/config.toml. dirs::config_dir()
         // is wrong here: on macOS it resolves to ~/Library/Application Support.
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -576,44 +561,38 @@ impl Config {
     }
 
     /// `~/.config/notchtap/` — the one directory config and secrets share
-    /// (v5 settings write paths need it as a value, not a hardcode).
+    /// (settings write paths need it as a value, not a hardcode).
     pub fn dir_from_home(home: &std::path::Path) -> PathBuf {
         home.join(".config").join("notchtap")
     }
 
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
         let mut config: Config = toml::from_str(content)?;
-        // v6.1 review fix: espn_ttl_secs/agent_ttl_secs (formerly
-        // cmux_ttl_secs) were split out of the one shared default_ttl.
+        // `espn_ttl_secs`/`agent_ttl_secs` inherit a file's customized
+        // `default_ttl` when the file itself sets no value of their own.
         // serde's whole-struct #[serde(default)] can't express "inherit
         // sibling field X when absent" — only "use Config::default()'s
-        // value" — so an install that had already customized default_ttl
-        // before this split would otherwise see football/agent silently
-        // revert to the new fields' own hardcoded default instead of
-        // keeping the value it actually configured. Re-parsing as a raw
-        // table to see which keys the file itself set (not what serde
-        // defaulted them to) lets us inherit the file's effective
-        // default_ttl exactly where the old shared-field behavior would
-        // have applied it.
+        // value" — so a config that customized `default_ttl` alone would
+        // otherwise see football/agent silently take the new fields'
+        // hardcoded defaults. Re-parsing as a raw table is what tells us
+        // which keys the file itself set, as opposed to which ones serde
+        // defaulted.
         //
         // the espn arm is conditional on the file ALSO having
-        // customized default_ttl — the inherit exists only for configs
-        // that customized the old shared default_ttl; a config that never
-        // touched it gets espn's own default (15) instead of silently
-        // re-inheriting the generic default. The agent arm stays
-        // unconditional (its default intentionally tracks default_ttl),
-        // same as the cmux arm it replaces.
+        // customized default_ttl: a config that never touched it gets
+        // espn's own default (15) rather than re-inheriting the generic
+        // one. The agent arm stays unconditional — its default
+        // deliberately tracks default_ttl.
         //
-        // `cmux_priority`/`cmux_ttl_secs` are the
-        // one-release migration aliases for `agent_priority`/
-        // `agent_ttl_secs` — consulted ONLY when the new key is absent
-        // from the file (a config carrying both, however unlikely, lets
-        // the new key win outright: the raw legacy read is skipped
-        // entirely once the new key is present, so there's no
+        // `cmux_priority`/`cmux_ttl_secs` are the migration aliases for
+        // `agent_priority`/`agent_ttl_secs` — consulted ONLY when the new
+        // key is absent from the file (a config carrying both, however
+        // unlikely, lets the new key win outright: the raw legacy read is
+        // skipped entirely once the new key is present, so there's no
         // "duplicate field" ambiguity the way a `#[serde(alias)]` on a
         // struct field would raise). Serialization never re-emits either
         // legacy key — only `Serialize`'s own field names
-        // (`agent_priority`/`agent_ttl_secs`) ever reach the file again.
+        // (`agent_priority`/`agent_ttl_secs`) ever reach the file.
         if let Ok(raw) = content.parse::<toml::Table>() {
             if !raw.contains_key("espn_ttl_secs") && raw.contains_key("default_ttl") {
                 config.espn_ttl_secs = config.default_ttl;
@@ -637,9 +616,9 @@ impl Config {
                 }
             }
         }
-        // heal a `rotation_order` written before a `SourceKind` variant
-        // existed (or after one was REMOVED — `lenient_rotation_order`
-        // above drops unknown names, which can leave the array short):
+        // heal a `rotation_order` that doesn't name all four `SourceKind`
+        // variants (`lenient_rotation_order` above drops names this build
+        // doesn't know, which can leave the array short):
         // `settings::validate` requires a permutation of all four
         // variants, but the settings UI's rotation-order list is a
         // fixed reorder-only widget (it just renders whatever's already in
@@ -791,7 +770,7 @@ mod tests {
 
     #[test]
     fn prefix_shortcut_absent_from_file_falls_back_to_the_shipped_default() {
-        // Guards a config written before this key existed: the struct's
+        // Guards a config file that omits this key: the struct's
         // `#[serde(default = "default_prefix_shortcut")]` must supply
         // "⌃⇧Space" rather than an empty string or a deserialize error.
         let c = Config::parse("port = 4321\n").unwrap();
@@ -801,9 +780,9 @@ mod tests {
 
     #[test]
     fn completion_notifications_defaults_to_true_for_a_config_predating_the_key() {
-        // Operator decision 2026-08-02: an `[agents]` block written before
-        // `completion_notifications` existed must keep the shipped
-        // behaviour (a card per Completed event), not silently go quiet —
+        // an `[agents]` block that omits `completion_notifications` must
+        // keep the shipped behaviour (a card per Completed event), not
+        // silently go quiet —
         // `AgentsConfig`'s struct-level `#[serde(default)]` supplies
         // `true` for the absent key while every sibling key it DOES set
         // still lands.
@@ -820,12 +799,10 @@ mod tests {
 
     #[test]
     fn board_show_working_defaults_to_false_including_for_a_config_predating_the_key() {
-        // Operator decision 2026-08-02, and DELIBERATELY a behaviour
-        // change for existing installs (unlike `completion_notifications`
-        // above, whose absent-key default preserves the old behaviour):
-        // an `[agents]` block written before this key existed must stop
-        // summoning the Agent Board for working-only sessions, because
-        // quiet-by-default is the whole point of the knob.
+        // an `[agents]` block that omits this key must NOT summon the
+        // Agent Board for working-only sessions (unlike
+        // `completion_notifications` above, whose absent-key default is
+        // the permissive one) — quiet-by-default is the point of the knob.
         let legacy = Config::parse(
             "[agents]\nenabled = true\nstale_after_secs = 120\ncompletion_priority = \"low\"\n",
         )
@@ -851,8 +828,7 @@ mod tests {
 
     #[test]
     fn resting_state_defaults_to_rail_and_is_overridable() {
-        // a config file predating this field (or one that simply
-        // never sets it) heals to `rail` — zero behavior change by default.
+        // a config file that never sets this field heals to `rail`.
         let healed = Config::parse("").unwrap();
         assert_eq!(healed.resting_state, RestingState::Rail);
 
@@ -865,10 +841,9 @@ mod tests {
 
     #[test]
     fn history_enabled_defaults_to_false_and_is_overridable() {
-        // a config file predating this field (or one that simply
-        // never sets it) heals to `false` — off-by-default, matching every
-        // other opt-in surface, since this one writes notification CONTENT
-        // to disk.
+        // a config file that never sets this field heals to `false` —
+        // off-by-default, matching every other opt-in surface, since this
+        // one writes notification CONTENT to disk.
         let healed = Config::parse("").unwrap();
         assert!(!healed.history_enabled);
 
@@ -957,13 +932,11 @@ url = "https://example.com/without-meta"
     }
 
     #[test]
-    fn leftover_connectors_telegram_table_is_ignored_not_a_parse_error() {
-        // the telegram connector (and the `[connectors]` field) was
-        // removed, but an operator's existing config.toml on disk may
-        // still have a `[connectors.telegram]` table left over from
-        // before — serde's default (no `deny_unknown_fields`) must keep
-        // ignoring it rather than fail to load the rest of the file.
-        let c = Config::parse("port = 1234\n[connectors.telegram]\nenabled = true\n").unwrap();
+    fn unknown_top_level_table_is_ignored_not_a_parse_error() {
+        // a hand-edited config.toml can carry a table this build knows
+        // nothing about — serde's default (no `deny_unknown_fields`) must
+        // ignore it rather than fail to load the rest of the file.
+        let c = Config::parse("port = 1234\n[unknown_section.nested]\nenabled = true\n").unwrap();
         assert_eq!(c.port, 1234);
     }
 
@@ -985,7 +958,7 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn start_paused_defaults_to_false() {
-        // v5 kill switch is opt-in: absent field means normal launch
+        // the kill switch is opt-in: absent field means normal launch
         let c = Config::parse("").unwrap();
         assert!(!c.start_paused);
     }
@@ -1017,10 +990,9 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn espn_and_agent_ttl_inherit_a_customized_default_ttl_when_absent() {
-        // v6.1 review fix: an install that already had `default_ttl = 20`
-        // before espn_ttl_secs/agent_ttl_secs (formerly cmux_ttl_secs)
-        // existed must not silently revert football/agent to the new
-        // fields' own hardcoded default.
+        // a config that customizes `default_ttl` alone must not leave
+        // football/agent on the per-source fields' own hardcoded
+        // defaults.
         let c = Config::parse("default_ttl = 20\n").unwrap();
         assert_eq!(c.default_ttl, 20);
         assert_eq!(c.espn_ttl_secs, 20);
@@ -1038,10 +1010,9 @@ url = "https://example.com/without-meta"
     #[test]
     fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
         // no default_ttl in the file at all: default_ttl resolves to its
-        // own default (8), and agent inherits that same resolved value —
-        // identical to today's fresh-install behavior. espn no
-        // longer inherits here — with default_ttl untouched, espn gets
-        // its own default (15) instead.
+        // own default (8), and agent inherits that same resolved value.
+        // espn doesn't inherit here — with default_ttl untouched, espn
+        // gets its own default (15) instead.
         let c = Config::parse("").unwrap();
         assert_eq!(c.default_ttl, 8);
         assert_eq!(c.espn_ttl_secs, 15);
@@ -1059,9 +1030,9 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn new_agent_keys_win_over_legacy_cmux_keys_when_both_present() {
-        // spec §7 / "aliases to the new keys only when the new
-        // key is absent" — both present in the same file must never error
-        // and must resolve to the NEW key's value, not the legacy one.
+        // a legacy key aliases onto the new one only when the new key is
+        // absent — both present in the same file must never error and
+        // must resolve to the NEW key's value, not the legacy one.
         let c = Config::parse(
             "cmux_priority = \"low\"\nagent_priority = \"high\"\ncmux_ttl_secs = 5\nagent_ttl_secs = 30\n",
         )
@@ -1091,8 +1062,8 @@ url = "https://example.com/without-meta"
         let c = Config::parse(legacy).unwrap();
         assert_eq!(c.agent_priority, Priority::Low);
         assert_eq!(c.agent_ttl_secs, 42);
-        // "weather" (a removed origin) is dropped by the lenient
-        // deserializer; "cmux" still aliases to Agent.
+        // "weather" (an unknown origin) is dropped by the lenient
+        // deserializer; "cmux" aliases to Agent.
         assert_eq!(
             c.rotation_order,
             [
@@ -1131,8 +1102,7 @@ url = "https://example.com/without-meta"
     #[test]
     fn espn_ttl_defaults_to_15_when_default_ttl_untouched() {
         // espn's own default (15) applies when the file never
-        // customized default_ttl — the generic default itself must not
-        // have moved.
+        // customized default_ttl, which keeps its own generic default.
         let c = Config::parse("").unwrap();
         assert_eq!(c.espn_ttl_secs, 15);
         assert_eq!(c.default_ttl, default_ttl());
@@ -1223,14 +1193,14 @@ url = "https://example.com/without-meta"
         assert_eq!(c.rotation_order[1], SourceKind::Manual);
     }
 
-    // --- removed-origin compat (the weather vertical was removed) ---
+    // --- unknown-origin compat ---
 
     #[test]
     fn rotation_order_containing_removed_weather_origin_boots_instead_of_crashing() {
-        // an existing on-disk config.toml may still carry "weather" in
-        // rotation_order from before the vertical was removed. Boot must
-        // NOT crash: the lenient deserializer drops the unknown name and
-        // the heal re-validates the remaining four as a permutation.
+        // an on-disk config.toml can name an origin this build has no
+        // `SourceKind` for (e.g. "weather"). Boot must NOT crash: the
+        // lenient deserializer drops the unknown name and the heal
+        // re-validates the remaining four as a permutation.
         let c = Config::parse(
             "rotation_order = [\"football\", \"manual\", \"weather\", \"agent\", \"news\"]\n",
         )
@@ -1257,7 +1227,7 @@ url = "https://example.com/without-meta"
     fn unknown_priority_string_is_a_parse_error() {
         assert!(Config::parse("espn_priority = \"urgent\"").is_err());
         // rotation_order is deliberately NOT a parse error for unknown
-        // names — see the removed-origin compat tests above.
+        // names — see the unknown-origin compat tests above.
     }
 
     // `validate_appearance` (settings.rs) only guards the

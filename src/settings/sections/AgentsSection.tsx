@@ -31,11 +31,10 @@ import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 //
 // Sourced from the committed `adapters/*/README.md` setup snippets (and
 // the OpenCode plugin's own header comment) — inlined as constants so
-// the section works with no extra IPC round trip, per this ticket's
-// "keep it simple and truthful" instruction. Each snippet is the EXACT
-// text a user copies into the EXACT target file named alongside it;
-// notchtap never writes these itself (spec §4.6: "v7 does not silently
-// edit a user's global provider configuration").
+// the section works with no extra IPC round trip. Each snippet is the
+// EXACT text a user copies into the EXACT target file named alongside
+// it; notchtap never writes these itself — it never silently edits a
+// user's global provider configuration.
 
 type AdapterConfigKey = keyof AgentRuntimesConfig;
 
@@ -265,8 +264,7 @@ function AdapterCard({
             and the enable switch below are siblings, not children, of
             this button — deliberately, so they stay visible and
             independently clickable while the card is collapsed (the
-            switch is a primary control, not detail, per the ticket's
-            Handy-modeled "Models" reference). A native <details> can't
+            switch is a primary control, not detail). A native <details> can't
             express that split (everything but <summary> hides when
             closed), so this is a plain controlled disclosure
             (aria-expanded/aria-controls) instead of this file's sibling

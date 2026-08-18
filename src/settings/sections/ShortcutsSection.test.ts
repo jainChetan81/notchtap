@@ -37,7 +37,7 @@ const REJECTED: [string, string][] = [
   [`${PREFIX}${"K".repeat(25)}`, "25 chars — one past the upper bound"],
 ];
 
-describe("isValidPrefixShortcut (plan 180's shared fixture table)", () => {
+describe("isValidPrefixShortcut", () => {
   for (const [value, why] of ACCEPTED) {
     it(`accepts ${JSON.stringify(value)} — ${why}`, () => {
       expect(isValidPrefixShortcut(value)).toBe(true);
@@ -53,20 +53,20 @@ describe("isValidPrefixShortcut (plan 180's shared fixture table)", () => {
   // The two code points that motivated the change, called out by name so
   // a future "simplify this back to \s" reads as the regression it is.
   it("splits on exactly the two code points where \\s and White_Space disagree", () => {
-    // `\s` does not match NEL, so the pre-plan-180 mirror accepted this
-    // and rust then rejected it at save time.
+    // `\s` does not match NEL, so an `\s`-based mirror would accept this
+    // while rust rejects it at save time.
     expect(/\s/.test("\u{0085}")).toBe(false);
     expect(isValidPrefixShortcut(`${PREFIX}K\u{0085}`)).toBe(false);
 
-    // `\s` DOES match ZWNBSP, so the pre-plan-180 mirror rejected a value
-    // rust considered perfectly fine.
+    // `\s` DOES match ZWNBSP, so an `\s`-based mirror would reject a
+    // value rust considers perfectly fine.
     expect(/\s/.test("\u{FEFF}")).toBe(true);
     expect(isValidPrefixShortcut(`${PREFIX}K\u{FEFF}`)).toBe(true);
   });
 
-  // The plan's own reviewer note asks for the 25-code-point class to be
-  // verified against Unicode rather than eyeballed. This does it by
-  // machine, through the public validator, over the whole BMP (Unicode
+  // The 25-code-point class is verified against Unicode by machine
+  // rather than eyeballed: this sweeps the public validator over the
+  // whole BMP (Unicode
   // has no White_Space code point above U+3000, so the BMP is the whole
   // set). The rust side runs the identical sweep against
   // `char::is_whitespace` — see settings.rs.

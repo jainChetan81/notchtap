@@ -42,7 +42,7 @@ fn log_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Read the last `n` lines of the active log file (`{log_dir}/notchtap.log`;
-/// rotated backups stay out of scope, ). Full-file read plus a
+/// rotated backups stay out of scope). Full-file read plus a
 /// tail-slice — the 10MB rotation cap already bounds the worst-case file
 /// size, so a seek-from-end tail reader would be complexity without payoff
 /// at this size. A file that doesn't exist yet (fresh install, nothing
@@ -105,9 +105,9 @@ impl SizeRotatingAppender {
         let file = open_options.open(&path)?;
         // `.mode()` on `OpenOptions` only governs the permissions a *new*
         // file is created with — a no-op against a file that already
-        // existed (e.g. one written before this hardening landed, umask
-        // 0644). Force 0600 unconditionally so a pre-existing permissive
-        // file gets fixed rather than staying world-readable forever
+        // exists (e.g. one an earlier umask left at 0644). Force 0600
+        // unconditionally so a pre-existing permissive file gets fixed
+        // rather than staying world-readable forever
         // (same reasoning as `history.rs`'s `HistoryStore::append`).
         #[cfg(unix)]
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
@@ -185,7 +185,7 @@ mod tests {
         std::env::temp_dir().join(format!("notchtap-logtest-{}", Uuid::new_v4()))
     }
 
-    // --- L-sec2: log dir/file must not be world-readable ---
+    // --- log dir/file must not be world-readable ---
 
     #[cfg(unix)]
     #[test]
@@ -211,7 +211,7 @@ mod tests {
         let dir = temp_dir();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("notchtap.log");
-        // simulate a file written before this hardening landed (umask 0644)
+        // simulate a pre-existing permissive file (umask 0644)
         fs::write(&path, "").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 

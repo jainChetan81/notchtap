@@ -83,10 +83,9 @@ pub fn detect_mode(config: &Config) -> (Mode, f64, Option<CutoutGeometry>) {
 
 /// The probe runs synchronously during boot, before the event loop, so a
 /// wedged one (e.g. blocked on a WindowServer call at login) would hang
-/// the whole app forever — the exact failure MEMORY.md recorded. Bound
-/// the wait: on timeout, kill the child and return Err, which
-/// `detect_mode`'s Err arm turns into the HUD fallback, same as a
-/// missing/failing binary.
+/// the whole app forever. Bound the wait: on timeout, kill the child and
+/// return Err, which `detect_mode`'s Err arm turns into the HUD fallback,
+/// same as a missing/failing binary.
 const DETECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn run_detect(detect_path: &Path) -> anyhow::Result<DetectOutput> {
@@ -152,8 +151,7 @@ mod tests {
     #[cfg(unix)]
     fn run_detect_times_out_on_a_hanging_probe_instead_of_blocking() {
         // a probe that spawns but never exits must return Err promptly,
-        // not hang boot (the MEMORY.md startup-hang) — detect_mode then
-        // falls back to HUD.
+        // not hang boot — detect_mode then falls back to HUD.
         use std::io::Write;
         use std::os::unix::fs::PermissionsExt;
 

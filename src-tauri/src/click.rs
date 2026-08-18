@@ -1,29 +1,17 @@
-//! the click-detection
-//! mechanism, resolved on real hardware 2026-08-03 as **mechanism (a), a
-//! native `NSEvent` LOCAL monitor** — and not merely by preference:
-//! mechanism (b) (a plain webview `onClick`) can never satisfy the
-//! architecture on its own, because the overlay is receive-only
-//! (`capabilities/default.json` grants event listen/unlisten and nothing
-//! else — no invoke, no emit), so even a click the webview DOES see has
-//! no channel back to the rust side that owns `TabSelection` (spec §10:
-//! "it is the rust side, not the frontend, that decides"). The monitor
-//! observes the `mouseDown` as AppKit dispatches it to this app, decides
-//! which icon (if any) it landed on, updates the one shared selection,
-//! and emits `tab-selection-changed` — the same
-//! rust-decides/frontend-renders shape `hover-changed` established.
-//!
-//! Local (app-scoped) monitors observe events for windows of THIS app
-//! only, and only when the window server actually dispatches the event
-//! to us — which requires `set_ignore_cursor_events(false)`, toggled by
-//! `lib.rs`'s hover transition handler exactly while the icon strip is
-//! the live hover target (spec §10's narrow click-through carve-out).
-//! The shipped board-expand scroll path already proved
-//! NSEvents reach this NonactivatingPanel while it is never key.
-//!
-//! Split per the house rule (`CLAUDE.md`, `presentation_mode`): the
-//! decision — [`click_target`] — is pure and unit-tested; the AppKit
-//! monitor installation is the thin impure shell, manual-only like every
-//! other native boundary here (`docs/TESTING_STRATEGY.md` §4.4).
+//! The Icon Strip's click path. A native `NSEvent` local monitor
+//! observes the `mouseDown` rust-side, resolves which icon it landed on,
+//! updates the one shared Tab Selection, and emits
+//! `tab-selection-changed` — the same rust-decides/frontend-renders
+//! shape as `hover-changed`. A webview `onClick` cannot do this job: the
+//! overlay is receive-only (`capabilities/default.json` grants event
+//! listen/unlisten and nothing else — no invoke, no emit), so a click
+//! the webview sees has no channel back to the rust side that owns the
+//! selection. Local (app-scoped) monitors only see events the window
+//! server actually dispatches to this app, which requires
+//! `set_ignore_cursor_events(false)` — `lib.rs`'s hover transition
+//! handler sets that exactly while the strip is the live hover target.
+//! [`click_target`] is the pure, unit-tested decision; installing the
+//! monitor is the impure shell (`docs/TESTING_STRATEGY.md` §4.4).
 
 use crate::hover::{point_in_rect, Rect};
 use crate::tabs::Tab;
@@ -70,9 +58,8 @@ pub struct ClickMonitorParams<R: tauri::Runtime> {
     /// genuinely resizes this window taller while the Slot is idle,
     /// which is exactly when the strip is up, so a resting-constant
     /// y-transform would put every icon rect in the wrong place. Same
-    /// parameter, same reason, as `hover::board_rect`'s own
-    /// `window_height` (the P0 fix) and `icon_strip_rects`' own
-    /// CodeRabbit-flagged addition.
+    /// parameter, same reason, as `hover::board_rect`'s and
+    /// `icon_strip_rects`' own `window_height`.
     pub board_frame: std::sync::Arc<std::sync::Mutex<crate::BoardFrameState>>,
 }
 
@@ -83,7 +70,7 @@ pub struct ClickMonitorParams<R: tauri::Runtime> {
 ///
 /// The handler NEVER swallows the event (always returns it unchanged):
 /// selection is a side effect, and the webview under the strip still
-/// gets its own mousedown for `:active` press feedback (spec §6).
+/// gets its own mousedown for `:active` press feedback.
 #[cfg(target_os = "macos")]
 pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
     use block2::RcBlock;
@@ -108,9 +95,9 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
             return pass_through;
         }
         // The strip is on screen exactly when the shell is hovered
-        // AND no pushed card occupies the Slot (spec §5/§7) — the
-        // same two gates the frontend renders it under. Clicks in
-        // any other state pass through untouched.
+        // AND no pushed card occupies the Slot — the same two gates
+        // the frontend renders it under. Clicks in any other state
+        // pass through untouched.
         if !*was_hovered.lock().unwrap_or_else(|e| e.into_inner()) {
             return pass_through;
         }
@@ -148,8 +135,8 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
         if let Some(tab) = click_target(loc.x, loc.y, &present, &rects) {
             tracing::debug!(?tab, "icon strip click");
             // The ONE shared mutation path — identical semantics for a
-            // click and a prefix+digit (spec §9), including the
-            // news-visit charge clear and the transitions-only emit.
+            // click and a prefix+digit, including the news-visit charge
+            // clear and the transitions-only emit.
             crate::apply_tab_select(&app, &tab_wire, tab);
         }
         pass_through

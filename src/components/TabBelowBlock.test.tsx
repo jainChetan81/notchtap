@@ -51,15 +51,14 @@ function renderTab(
   );
 }
 
-describe("tabBelowBlockHandles (plan 171, slice K)", () => {
+describe("tabBelowBlockHandles", () => {
   it("claims exactly the tabs with their own below-block component", () => {
     expect(tabBelowBlockHandles("agent")).toBe(true);
     expect(tabBelowBlockHandles("news")).toBe(true);
   });
 
   // football is served by IdleHoverPeek's own shipped rendering instead
-  // (spec §11's untouched-mechanism rule) — see TabBelowBlock.tsx's
-  // header comment for the full split.
+  // — see TabBelowBlock.tsx's header comment for the full split.
   it("does not claim football, which reuses the shipped hover peek", () => {
     expect(tabBelowBlockHandles("football")).toBe(false);
   });
@@ -69,9 +68,9 @@ describe("tabBelowBlockHandles (plan 171, slice K)", () => {
   });
 });
 
-describe("TabBelowBlock (plan 171, slice K)", () => {
-  // spec §7's "none" page: this must fall out of the conditional, not be
-  // a case built for it.
+describe("TabBelowBlock", () => {
+  // the "none" page must fall out of the conditional, not be a case
+  // built for it.
   it("renders nothing with no selection", () => {
     const { container } = renderTab(null);
     expect(container.firstChild).toBeNull();
@@ -128,7 +127,7 @@ describe("TabBelowBlock (plan 171, slice K)", () => {
     // only — no story content exists on the wire at this commit, so
     // NewsBelowBlock's own "zero stories renders nothing" floor is what
     // mounts. The charge itself is still visible, on the news GLYPH.
-    it("renders nothing today, because no story wire exists yet", () => {
+    it("renders nothing while no story content exists on the wire", () => {
       const { container } = renderTab("news", {
         ...QUIET,
         news: { enabled: true, chargeFraction: 1, chargeCount: 4, isCharged: true },

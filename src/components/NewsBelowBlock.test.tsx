@@ -18,7 +18,7 @@ function story(overrides: Partial<NewsStoryView> = {}): NewsStoryView {
   };
 }
 
-describe("NewsBelowBlock (plan 171, slice I)", () => {
+describe("NewsBelowBlock", () => {
   it("renders nothing when there are zero stories", () => {
     const { container } = render(
       <NewsBelowBlock

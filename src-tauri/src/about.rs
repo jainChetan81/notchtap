@@ -1,5 +1,5 @@
 //! Data gathering for the settings window's About section
-//! (`docs/V5_TECHNICAL_SPEC.md` §2, `get_about_info`). Everything
+//! (`get_about_info`). Everything
 //! decision-shaped here is a pure or near-pure function (bundle-root
 //! derivation, bundle size walk, `sw_vers` parsing) so it's unit-testable
 //! without a live `tauri::AppHandle` — the command wrapper in
@@ -13,9 +13,8 @@ use std::time::Instant;
 use serde::Serialize;
 use sysinfo::{Disks, Pid, ProcessesToUpdate, System};
 
-/// Wire shape of `get_about_info` — camelCase to match the rest of the
-/// settings IPC surface (`ConnectorHealthDto`'s own doc comment in
-/// `settings.rs` calls this out as the established convention).
+/// Wire shape of `get_about_info` — camelCase, the convention every DTO
+/// on the settings IPC surface follows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AboutInfo {
@@ -112,8 +111,8 @@ pub fn macos_product_version() -> Option<String> {
 /// `Instant` captured once at app boot (managed state, `lib.rs`'s
 /// `.setup()`) — uptime is process uptime, not system uptime.
 ///
-/// sysinfo refresh is targeted (plan spec: "process + memory, not
-/// everything") — `System::new()` refreshes nothing on its own; this
+/// sysinfo refresh is targeted (process + memory, not everything) —
+/// `System::new()` refreshes nothing on its own; this
 /// explicitly refreshes only memory and the current process, and a
 /// separate `Disks` list only for the root-mount stat, rather than
 /// `System::new_all()`'s full CPU/network/every-process sweep.

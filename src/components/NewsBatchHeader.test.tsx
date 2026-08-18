@@ -4,7 +4,7 @@ import { NewsBatchHeader } from "./NewsBatchHeader";
 
 afterEach(cleanup);
 
-describe("NewsBatchHeader (plan 171, slice I)", () => {
+describe("NewsBatchHeader", () => {
   it("renders the fresh count and the cycle-ended-ago text", () => {
     const { container } = render(
       <NewsBatchHeader
@@ -72,7 +72,7 @@ describe("NewsBatchHeader (plan 171, slice I)", () => {
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
-  it("does not crash when clicked with no callbacks wired (wiring deferred, spec section 10)", () => {
+  it("does not crash when clicked with no callbacks wired", () => {
     const { container } = render(<NewsBatchHeader freshCount={2} cycleEndedAgo="1m" />);
     const buttons = container.querySelectorAll(".batch-nav button");
     expect(() => {

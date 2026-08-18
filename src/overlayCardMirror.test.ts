@@ -23,7 +23,7 @@
 // compare individual comma-list members. No CSS parser: this is
 // deliberately the same "cheap but effective" register as
 // celebrationStacking.test.tsx's string pins, not a cascade engine.
-// @types/node is now a devDependency (Step 1), so these two
+// @types/node is a devDependency, so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -33,11 +33,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
-// back together via plain `@import "./relative.css";` lines — inlined here
-// so this still returns the full literal stylesheet text the selector
-// scanner below expects, unchanged from before the split (imports are one
-// level deep; no chunk file itself contains an @import).
+// overlay-card.css is split into src/overlay/*.css chunks pulled back
+// together via plain `@import "./relative.css";` lines — inlined here so
+// this returns the full literal stylesheet text the selector scanner
+// below expects (imports are one level deep; no chunk file itself
+// contains an @import).
 function readSourceCss(relativePath: string): string {
   const url = new NodeURL(relativePath, import.meta.url);
   const raw = readFileSync(fileURLToPath(url), "utf-8");
@@ -69,7 +69,7 @@ function stripComments(css: string): string {
  * selector (`50%`) — every `{` boundary yields one candidate. Harmless:
  * none of those non-selector preludes ever coincidentally match a real
  * CSS class selector string, and this is intentionally string-level, not
- * a CSS-aware parser (per the plan). */
+ * a CSS-aware parser. */
 function extractPreludes(css: string): string[] {
   const stripped = stripComments(css);
   const preludes: string[] = [];
@@ -127,8 +127,7 @@ function extractSelectorMembers(css: string): string[] {
 }
 
 /** Recovers the canonical (pre-`.card-root`-scope) selector text for a
- * shared-file member, mirroring the plan's own selector-transform rules
- * in reverse:
+ * shared-file member, reversing the scoping transform:
  *   - a leading ".card-root " token is stripped;
  *   - a ":root[...]"-anchored member has the " .card-root" scope token
  *     removed from just after that leading compound;
@@ -150,15 +149,11 @@ function buildSharedInventory(overlayCardCss: string): Set<string> {
 }
 
 /** Reviewed, explicit exceptions — a context file selector text that IS
- * allowed to coincide with a shared-inventory entry. Empty today: plan
- * 111's Step 0 audit found every previously-diverging rule was either
- * accumulated drift (fixed by unifying into overlay-card.css) or a
- * genuinely preview-only selector with no shared-inventory counterpart
- * at all (`.appearance-preview`, `.preview-row`, `.preview-label`,
- * `.preview-stage` — settings-gallery chrome, never in overlay-card.css)
- * — so no override earned a place here. Kept as a real mechanism (not
- * deleted) for the next deliberate adaptation, per the plan's own
- * "explicit reviewed allowlist" design. */
+ * allowed to coincide with a shared-inventory entry. Empty today: every
+ * preview-only selector (`.appearance-preview`, `.preview-row`,
+ * `.preview-label`, `.preview-stage` — settings-gallery chrome) has no
+ * shared-inventory counterpart at all, so nothing earns a place here.
+ * The mechanism stays for the next deliberate adaptation. */
 const ALLOWLISTED_SELECTORS: ReadonlySet<string> = new Set([]);
 
 function findRedefinitions(contextCss: string, sharedInventory: ReadonlySet<string>): string[] {
@@ -229,8 +224,8 @@ const overlayCardCss = readSourceCss("./overlay-card.css");
 const stylesCss = readSourceCss("./styles.css");
 const baseCss = readSourceCss("./settings/base.css");
 
-describe("overlay-card.css mirror invariant (plan 111)", () => {
-  it("src/settings/preview-overlay.css no longer exists", () => {
+describe("overlay-card.css mirror invariant", () => {
+  it("src/settings/preview-overlay.css does not exist", () => {
     expect(() => readSourceCss("./settings/preview-overlay.css")).toThrow();
   });
 

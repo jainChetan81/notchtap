@@ -42,8 +42,7 @@ export function DiagnosticsSection() {
       title="Recent log lines"
       description="The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app."
     >
-      {/* Ported from a raw inline style to utilities: bg-black/25
-          reproduces the old rgba(0,0,0,0.25) without a raw literal.
+      {/* bg-black/25 gives the panel wash without a raw rgba literal.
           fontSize stays a literal 11px (not the fs-body token) — it's
           decoupled from the type-scale system, a fixed size for this
           monospace log viewer. */}

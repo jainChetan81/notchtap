@@ -21,7 +21,7 @@ const NOTHING_AMBIENT_STATUS: StatusState = {
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
 };
 
-describe("IdleHoverPeek (plan 093)", () => {
+describe("IdleHoverPeek", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -41,9 +41,9 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
   });
 
-  // item 18: the timeline lives here unconditionally — it must not
-  // silently become unreachable for a user with nothing ambient
-  // configured, since 091 removed its only other home.
+  // the timeline lives here unconditionally — this is its only home, so
+  // it must not become unreachable for a user with nothing ambient
+  // configured.
   it("still opens with the day-progress timeline alone when no ambient data exists", () => {
     const { container } = render(<IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
@@ -51,7 +51,7 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
   });
 
-  // item 3's precedence rule: a live match fills the content slot.
+  // precedence rule: a live match fills the content slot.
   it("shows the scorecard reveal when a live match exists", () => {
     const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
     expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
@@ -67,13 +67,11 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
   });
 
-  // the `prefer` prop. §11 ("this
-  // peek's mechanism is untouched") means the football TAB selection
-  // reaches this component rather than a second copy of it — `prefer` is
-  // how the caller says so. Every case with `prefer` omitted must stay
-  // byte-identical to before the plan, which the rest of this file
-  // already pins.
-  describe("prefer (plan 171 slice K)", () => {
+  // The football TAB selection reaches this component rather than a
+  // second copy of it — `prefer` is how the caller says so. With
+  // `prefer` omitted, behaviour is exactly the default precedence chain,
+  // which the rest of this file already pins.
+  describe("prefer", () => {
     it("defaults to the shipped precedence chain — a live match fills the slot", () => {
       const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
       expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();

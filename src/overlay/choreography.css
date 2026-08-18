@@ -181,9 +181,8 @@
   }
 }
 
-/* content-swap moved to `motion/react` (AnimatePresence + motion.div
-   in StatusRailCard.tsx); `.card-content` no longer animates here.
-   `position: relative; z-index: 1` stays a plain rule below. */
+/* Content-swap animation lives in `motion/react` (AnimatePresence +
+   motion.div in StatusRailCard.tsx), not here. */
 /* `.card-content` keeps `position: relative; z-index: 1`: wins paint
    order against the z-0 celebration burst (auto z-index would still
    paint below a real z-index sibling). */

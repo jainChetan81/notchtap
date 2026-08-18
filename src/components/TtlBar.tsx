@@ -42,7 +42,7 @@ export function TtlBar({
   // honest because both sides pause/resume off the same tracking-area
   // transition.
   hoverPaused?: boolean;
-  // stories merge (2026-07-24): former Track.tsx props, absorbed. `total` = current batch
+  // `total` = current batch
   // size (`slot.queueTotal`), `done` = items already consumed
   // (`slot.queueDone`). See the module-level comment above for the
   // default-to-single-segment rationale.
@@ -187,14 +187,14 @@ export function TtlBar({
   return (
     <div
       className="ttl-bar"
-      // segment count is data, not theme — same `--queue-n` custom
-      // property Track.tsx fed its grid template with, so overlay-card.css
+      // segment count is data, not theme — it feeds the grid template
+      // through the `--queue-n` custom property so overlay-card.css
       // stays static.
       // SAFETY: --queue-n is a valid CSS custom property for this component's grid; React.CSSProperties lacks index signature for custom props.
       style={{ "--queue-n": segmentCount } as React.CSSProperties}
     >
       {Array.from({ length: segmentCount }, (_, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: anonymous positional queue-segment slots (0..n), same reasoning Track.tsx's own (now-removed) segment row documented — index is the only identity there is, and the sequence is always rendered fresh, never reordered or spliced.
+        // biome-ignore lint/suspicious/noArrayIndexKey: anonymous positional queue-segment slots (0..n) — index is the only identity there is, and the sequence is always rendered fresh, never reordered or spliced.
         <span key={i} className={i < current ? "ttl-seg done" : "ttl-seg"} />
       ))}
       <div

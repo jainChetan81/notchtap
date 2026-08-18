@@ -1,19 +1,9 @@
-//! append-only JSONL notification history, gated behind the
-//! opt-in `history_enabled` config flag (default `false`, see
-//! `config.rs`). The only writer is `Engine::accept`; the settings
-//! window's `get_history`/`clear_history` invoke commands
-//! (`settings.rs`) are the read/clear surface.
-//!
-//! DELIBERATE DIVERGENCE from `logging.rs`'s `SizeRotatingAppender`: this
-//! store stats the file on every `append` instead of caching an open file
-//! handle and a running size. `logging.rs` backs `tracing` and writes
-//! potentially thousands of lines per second, so it needs the cached
-//! handle to avoid a syscall per write. History writes a handful of lines
-//! per hour (one per accepted one-shot notification), so the simpler
-//! stat-per-append approach avoids holding a file handle open inside the
-//! `Engine` for the entire lifetime of the app — this is a considered
-//! choice, not an oversight; do not "fix" it into a shared abstraction
-//! with `logging.rs`.
+//! append-only JSONL notification history, gated behind the opt-in
+//! `history_enabled` config flag (`config.rs`, default `false`). The only
+//! writer is `Engine::accept`; the settings window's
+//! `get_history`/`clear_history` commands (`settings.rs`) read and clear.
+//! Deliberately stats the file per `append` rather than caching a handle
+//! like `logging.rs` — a few lines per hour; don't share the two paths.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -121,10 +111,9 @@ impl HistoryStore {
             .open(&path)?;
         // `.mode()` on `OpenOptions` only governs the permissions a *new*
         // file is created with — it's a no-op against a file that already
-        // existed (e.g. one written before this hardening landed, umask
-        // 0644). Force 0600 unconditionally on every append so a
-        // pre-existing permissive file gets fixed rather than staying
-        // world-readable forever.
+        // exists with a permissive mode (e.g. umask 0644). Force 0600
+        // unconditionally on every append so such a file gets fixed
+        // rather than staying world-readable forever.
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
         file.write_all(line.as_bytes())?;
         Ok(())
@@ -152,9 +141,9 @@ impl HistoryStore {
     /// read. Returned oldest -> newest, same ordering contract as
     /// `read_recent_lines`.
     ///
-    /// Called by the settings window's `get_history` invoke command
-    ///; also exercised directly by this
-    /// module's own tests and `engine.rs`'s history-hook tests.
+    /// Called by the settings window's `get_history` invoke command; also
+    /// exercised directly by this module's own tests and `engine.rs`'s
+    /// history-hook tests.
     pub fn read_recent(&self, n: usize) -> io::Result<Vec<HistoryEntry>> {
         // poison-tolerant, same rationale as `append` above.
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -281,11 +270,11 @@ mod tests {
         assert_eq!(entries[1].event.payload.title, "good-2");
     }
 
-    // Removed-origin compat: an on-disk history.jsonl may hold entries
-    // recorded while a since-removed origin (e.g. `weather`) still
-    // existed. Those lines no longer deserialize (`SourceKind` rejects
-    // unknown values), and loading must SKIP them — same non-fatal
-    // degrade as the malformed-line test above — never fail the read.
+    // Unknown-origin compat: an on-disk history.jsonl may hold entries
+    // whose origin (e.g. `weather`) is not a `SourceKind` value. Those
+    // lines fail to deserialize, and loading must SKIP them — same
+    // non-fatal degrade as the malformed-line test above — never fail
+    // the read.
     #[test]
     fn entry_with_removed_weather_origin_is_skipped_not_fatal() {
         let dir = temp_dir();
@@ -390,7 +379,7 @@ mod tests {
         let dir = temp_dir();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("history.jsonl");
-        // simulate a file written before this hardening landed (umask 0644)
+        // simulate a pre-existing file with a permissive mode (umask 0644)
         fs::write(&path, "").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 

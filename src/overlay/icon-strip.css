@@ -33,9 +33,8 @@
   /* the `var(--icon-strip-stagger-ms, 60ms)` DELAY on this leg only: the
      flank's own black paint starts at 0ms, the strip's opacity fade
      starts this many ms later, so there is never a frame where a glyph
-     is visible against the desktop instead of the flank behind it —
-     the design source's own "the entire fix for [an earlier draft's]
-     rejected screenshot" (animationTiming.ts's own doc on this token). */
+     is visible against the desktop instead of the flank behind it
+     (animationTiming.ts's own doc on this token). */
   transition:
     opacity var(--hover-ms, 160ms) var(--ease-notchtap) var(--icon-strip-stagger-ms, 60ms),
     transform var(--reveal-ms, 260ms) var(--ease-notchtap),

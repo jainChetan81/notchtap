@@ -217,7 +217,7 @@ describe("AgentBoard resting render", () => {
 // (waiting_for_permission, failed). Covers the three states the earlier
 // per-state describe block didn't (waiting_for_input, starting, stale),
 // so all seven states have hero-render coverage somewhere in this file.
-describe("AgentBoard hero fact pills (plan 169)", () => {
+describe("AgentBoard hero fact pills", () => {
   // `liveElapsedMs` (AgentBoard.tsx) adds `Date.now() - capturedAtMs` on
   // top of the fixture's own `elapsedMs` — with a real wall clock and the
   // tiny fixed `CAPTURED_AT_MS` epoch every other test in this file uses,
@@ -448,7 +448,7 @@ describe("AgentBoard expanded render", () => {
     );
   }
 
-  // Operator feedback (2026-08-02): `sessions[0]` is the HERO in both the
+  // `sessions[0]` is the HERO in both the
   // resting and the expanded state — only `sessions[1..]` become expanded
   // rows. Every row-level assertion below therefore puts a filler primary
   // ahead of the session actually under test, so that session is a ROW.
@@ -554,14 +554,12 @@ describe("AgentBoard expanded render", () => {
     expect(getByText("Bash")).toBeTruthy();
   });
 
-  // Operator feedback (2026-07-27, then 2026-08-02): the hero and the
-  // expanded list's first row both used to render `sessions[0]`, so at
-  // N=1 the same session appeared twice. Hiding the hero while expanded
-  // fixed the duplicate but broke something worse — hovering a
-  // one-session Board swapped its big hero card for one skinny list row,
-  // i.e. hover made the card SMALLER. The contract now: the hero stays
-  // mounted in both states and the list carries `sessions[1..]` only, so
-  // each session still renders exactly once at every N.
+  // The hero stays mounted in both states and the list carries
+  // `sessions[1..]` only, so each session renders exactly once at every
+  // N. Two failure modes this rules out: the hero and the list's first
+  // row both rendering `sessions[0]` (the same session twice at N=1),
+  // and unmounting the hero while expanded (hover would swap a big hero
+  // card for one skinny row, making the card SMALLER on hover).
   it("keeps the hero mounted while expanded, with no row at all for a one-session board", () => {
     const { container } = render(
       <AgentBoard
@@ -614,8 +612,8 @@ describe("AgentBoard expanded render", () => {
       />,
     );
     // The hero never unmounts; only the rows below it swap shape, and
-    // that swap is behind a sync `AnimatePresence` overlap (2026-08-02 —
-    // both branches share one grid cell and crossfade in place), whose
+    // that swap is behind a sync `AnimatePresence` overlap (both
+    // branches share one grid cell and crossfade in place), whose
     // exit is async and spring-driven — same reason the
     // history-disclosure test above asserts closing INTENT rather than an
     // immediate DOM state. So only the hero's presence is asserted here.
@@ -769,13 +767,12 @@ describe("AgentBoard expanded render", () => {
   });
 });
 
-// removal (and by
-// symmetry insertion/reorder) of a session row used to pop — the row
-// unmounted instantly and siblings jumped into place. `AgentRow` and the
-// expanded list's per-row wrapper now go through `AnimatePresence` with a
-// shared `ROW_TRANSITION`, mirroring how the `agent-expanded-history`
-// disclosure above already asserts CLOSING INTENT (a real, async spring)
-// rather than an immediate unmount.
+// Removal (and by symmetry insertion/reorder) of a session row must not
+// pop: an instant unmount makes siblings jump into place. `AgentRow` and
+// the expanded list's per-row wrapper go through `AnimatePresence` with
+// a shared `ROW_TRANSITION`, so these tests assert CLOSING INTENT (a
+// real, async spring) rather than an immediate unmount — the same way
+// the `agent-expanded-history` disclosure above does.
 describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   // Pins the one shared const so enter/exit/layout can never hand-copy-drift
   // apart from each other (CLAUDE.md's `dedup_eq` desynced-clocks failure
@@ -851,8 +848,8 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 
   it("a removed expanded row leaves its siblings' stable keys/content intact, and either unmounts or is visibly closing", () => {
-    // `sessions[0]` is the hero in BOTH states (operator feedback,
-    // 2026-08-02), so the three rows under test are sessions 1..3.
+    // `sessions[0]` is the hero in BOTH states, so the three rows under
+    // test are sessions 1..3.
     const sessions = [
       session({ id: "primary", runtime: "opencode" }),
       session({ id: "a", runtime: "claude-code" }),
@@ -936,7 +933,7 @@ describe("AgentBoard motion vitals", () => {
     "utf8",
   );
 
-  it("the dot's breathe animation is BOUNDED, never infinite (plan-105 precedent)", () => {
+  it("the dot's breathe animation is BOUNDED, never infinite", () => {
     // an `infinite` opacity loop on a `waiting_for_input` session that
     // persists for hours is the exact always-on pulse removed
     // from the status dots. 4 iterations ≈ 8.8s per state change.
@@ -951,11 +948,11 @@ describe("AgentBoard motion vitals", () => {
     // base rule: colour morph for every state (including completed/
     // failed/stale); the scale tick lives under `.pulse` so quiet states
     // stay quiet.
-    // 2026-08-02 animation audit (finding #2): the duration moved from
-    // `--hover-ms` to `--reveal-ms` so the dot lands on the SAME frame as
-    // every other accent consumer on a tier flip — see the next test for
-    // the rest of that set, and the rule's own comment for why the
-    // "direct response" family was the wrong one here.
+    // The duration is `--reveal-ms`, not `--hover-ms`, so the dot lands
+    // on the SAME frame as every other accent consumer on a tier flip —
+    // see the next test for the rest of that set, and the rule's own
+    // comment for why the "direct response" family is the wrong one
+    // here.
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-dot \{[^}]*transition: background-color var\(--reveal-ms, 260ms\) var\(--ease-notchtap\);/s,
     );
@@ -963,7 +960,7 @@ describe("AgentBoard motion vitals", () => {
     expect(AGENT_BOARD_CSS).not.toMatch(/\.card-root \.agent-dot \{[^}]*agent-dot-state-tick/s);
   });
 
-  // 2026-08-02 animation audit (finding #2): a working -> needs-approval
+  // A working -> needs-approval
   // flip rebinds BOTH accent channels (`--accent` on the shell,
   // `--agent-accent` on the below-block) at once. Every consumer the board
   // owns has to move on ONE clock, or the flip reads as several unrelated
@@ -989,11 +986,10 @@ describe("AgentBoard motion vitals", () => {
     expect(AGENT_BOARD_CSS).not.toMatch(/var\(--hover-ms/);
   });
 
-  // the bespoke
-  // hero block this file used to hand-roll lost its last .tsx consumer
-  // when the hero moved onto the shared `AgentHeroCard` template, leaving
-  // six rules that could never match anything.
-  it("carries no rules for the pre-169 bespoke hero block", () => {
+  // The hero renders through the shared `AgentHeroCard` template, so the
+  // bespoke hero-block selectors below have no .tsx consumer at all —
+  // rules for them could never match anything.
+  it("carries no rules for the bespoke hero-block selectors, which have no .tsx consumer", () => {
     for (const dead of [
       "agent-board-primary-head",
       "agent-board-runtime",
@@ -1159,16 +1155,14 @@ describe("AgentBoard motion vitals", () => {
   });
 });
 
-// Operator complaint (2026-08-02, screenshot-confirmed): the RESTING
-// Board measured 211px tall against a manual card's 135px, with a dead
-// black band under the hero's fact pills — 39px of stacked bottom
-// padding where the unified skeleton spends 13px, plus a right-aligned
-// COLUMN of pills that spent 43px of height to paint two pills. The fix
-// is CSS-only (agent-board.css), so most of it can only be pinned as
-// source text — the same discipline the "motion vitals" block above
-// already uses for its own keyframe/transition assertions. The one
-// genuinely DOM-level half is the `:has()` condition the hero-only
-// padding rule keys on, which IS assertable here.
+// The RESTING Board hugs its content: no dead black band under the
+// hero's fact pills, bottom padding on the unified skeleton's budget
+// (not 39px of stacked padding), and fact pills in a ROW rather than a
+// height-hungry right-aligned column. The mechanism is CSS-only
+// (agent-board.css), so most of it is pinned as source text — the same
+// discipline the "motion vitals" block above uses. The one genuinely
+// DOM-level half is the `:has()` condition the hero-only padding rule
+// keys on, which IS assertable here.
 describe("AgentBoard resting content-hug", () => {
   const AGENT_BOARD_CSS = readFileSync(
     fileURLToPath(new NodeURL("../overlay/agent-board.css", import.meta.url)),
@@ -1229,16 +1223,15 @@ describe("AgentBoard resting content-hug", () => {
   });
 });
 
-// Operator feedback (2026-08-02, live): the resting<->expanded swap "reads
-// badly". It ran `AnimatePresence mode="wait"`, so the outgoing list had to
-// collapse to height 0 before the incoming one started growing from 0 — a
-// full pinch to nothing, at double the settle time. Both branches now share
-// one grid cell and overlap, so the container's height is
-// `max(outgoing, incoming)` — one continuous size change. jsdom runs no
-// compositor, so this pins the STRUCTURE that produces the morph (the
-// wrapper, the shared cell, the shared spring) plus the stylesheet rules,
-// never mid-flight geometry — same discipline as the motion-vitals block
-// above.
+// The resting<->expanded swap must never run `AnimatePresence
+// mode="wait"`: serialising it collapses the outgoing list to height 0
+// before the incoming one grows from 0, a full pinch to nothing at
+// double the settle time. Both branches share one grid cell and overlap,
+// so the container's height is `max(outgoing, incoming)` — one
+// continuous size change. jsdom runs no compositor, so this pins the
+// STRUCTURE that produces the morph (the wrapper, the shared cell, the
+// shared spring) plus the stylesheet rules, never mid-flight geometry —
+// same discipline as the motion-vitals block above.
 describe("AgentBoard resting<->expanded morph", () => {
   const AGENT_BOARD_TSX = readFileSync(
     fileURLToPath(new NodeURL("./AgentBoard.tsx", import.meta.url)),
@@ -1258,8 +1251,7 @@ describe("AgentBoard resting<->expanded morph", () => {
     const swap = container.querySelector(".agent-board-swap");
     expect(swap).not.toBeNull();
     // the wrapper is a direct child of the board itself, so the parent
-    // flex `gap` still separates it from the hero exactly as the rows
-    // block used to be separated.
+    // flex `gap` separates it from the hero.
     expect(swap?.parentElement?.classList.contains("agent-board")).toBe(true);
 
     // SAFETY: the two-session fixture renders `.agent-board-rows` beneath the
@@ -1283,7 +1275,7 @@ describe("AgentBoard resting<->expanded morph", () => {
     expect(container.querySelector(".agent-board-expanded-scroll")).not.toBeNull();
   });
 
-  it('no longer serialises the swap — `mode="wait"` is gone from this block', () => {
+  it('does not serialise the swap — `mode="wait"` is absent from this block', () => {
     // `mode="wait"` IS still correct for the hero above (a single block
     // whose overlap would double its height), so this asserts that
     // exactly ONE `AnimatePresence` still opts into it, not that the

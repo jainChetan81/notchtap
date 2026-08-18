@@ -95,8 +95,8 @@ describe("ageLabel", () => {
   });
 });
 
-// Plan 136 (v7 ticket 4 of 13, spec §6.1): the presentation precedence
-// machine's own unit coverage — a Visible Notification always wins;
+// The presentation precedence machine's own unit coverage — a Visible
+// Notification always wins;
 // otherwise a non-empty Agent Board session count shows the board;
 // otherwise idle.
 describe("presentationMode", () => {
@@ -138,10 +138,9 @@ describe("presentationMode", () => {
     expect(presentationMode(empty, 0, false)).toBe("idle");
   });
 
-  // Operator feedback (2026-08-02): pausing notifications left the Agent
-  // Board on screen, still ticking with live agent activity. Paused means
-  // "quiet the whole notch" (CONTEXT.md's Paused) — the board falls
-  // through to the idle rail for the duration.
+  // Paused quiets the whole notch, so the Agent Board falls through to
+  // the idle rail for the duration — it never stays on screen ticking
+  // with live agent activity.
   it("hides the board while paused, falling through to idle even with sessions present", () => {
     expect(presentationMode(empty, 1, true)).toBe("idle");
     expect(presentationMode(empty, 5, true)).toBe("idle");

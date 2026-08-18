@@ -1,18 +1,13 @@
-// Single source of truth for the v5 settings-window command triple
-// (CLAUDE.md's "ipc & security" section; `V5_TECHNICAL_SPEC.md` §2):
-// build.rs's `AppManifest::commands` allowlist, `lib.rs`'s
-// `generate_handler!` registration, and `capabilities/settings.json`'s
-// `allow-<kebab-name>` permission list must all name exactly these
-// fifteen commands ( added get_queue/clear_queue/skip_current;
-// added search_news_now; the About section batch added
-// get_about_info; added get_agent_health/send_agent_test_event;
-// the telegram-connector removal dropped get_connector_health; the
-// secrets-store removal dropped get_secret_status/set_secret). Until now
-// only convention (plus a CLAUDE.md sentence) held that triple
-// together, and the failure mode is FAIL-OPEN: a command added to
-// `generate_handler!` and forgotten here would silently become
-// callable from the overlay (`main`) window too, breaking the
-// receive-only guarantee that's the whole point of the split.
+// Single source of truth for the settings-window command triple
+// (CLAUDE.md's "ipc & security" section): build.rs's
+// `AppManifest::commands` allowlist, `lib.rs`'s `generate_handler!`
+// registration, and `capabilities/settings.json`'s `allow-<kebab-name>`
+// permission list must all name exactly these fifteen commands. NEVER
+// add a `#[tauri::command]` to `generate_handler!` without adding it
+// here too — the failure mode is FAIL-OPEN: a command missing from this
+// list silently becomes callable from the overlay (`main`) window as
+// well, breaking the receive-only guarantee that's the whole point of
+// the split.
 //
 // `build.rs` is a SEPARATE compilation from this crate — it runs before
 // the crate even exists as a build artifact, so it cannot `use` this
@@ -35,19 +30,18 @@
 // strings — see `settings_json_permissions_match_exactly` below for that
 // translation.
 //
-// About-section addendum: `get_about_info`'s own data gathering (bundle
-// path derivation, the recursive size walk, the `sw_vers` shell-out,
-// sysinfo reads) lives in `about.rs`, not here or in `settings.rs` — this
-// file only needs the command's snake_case name for the parity triple.
+// `get_about_info`'s own data gathering (bundle path derivation, the
+// recursive size walk, the `sw_vers` shell-out, sysinfo reads) lives in
+// `about.rs`, not here or in `settings.rs` — this file only needs the
+// command's snake_case name for the parity triple.
 //
 // `#[allow(dead_code)]`: this crate's own non-test compilation never
 // reads SETTINGS_COMMANDS (only this file's #[cfg(test)] tests do) — the
 // OTHER consumer, build.rs, reaches it via `include!` into a wholly
 // separate compilation the crate's own dead-code analysis can't see.
-// Same shape as the codebase's existing targeted-allow precedent
-// (`SlotState`'s `large_enum_variant` allow in event.rs, `Engine::new`'s
-// `too_many_arguments` allow in engine.rs) rather than restructuring
-// around it.
+// Same targeted-allow shape as `SlotState`'s `large_enum_variant` allow
+// in event.rs and `Engine::new`'s `too_many_arguments` allow in
+// engine.rs.
 #[allow(dead_code)]
 pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "clear_history",
@@ -89,19 +83,14 @@ mod tests {
         assert!(SETTINGS_COMMANDS.contains(&"send_agent_test_event"));
     }
 
-    // Parity guard #1: capabilities/settings.json's FULL permissions array
-    // — not just the entries that happen to start with
-    // "allow-", the previous version's filter) must be exactly the
-    // command permissions derived from SETTINGS_COMMANDS plus the two
-    // pinned event extras below, nothing missing and nothing extra. The
-    // previous filtered version had a blind spot: a namespaced plugin
-    // grant like "shell:allow-execute" does not start with the literal
-    // "allow-" this test used to filter on, so it would silently pass
-    // through unaudited — widening the window's real capability grant
-    // (e.g. shell access) without this test ever noticing. Comparing the
-    // WHOLE set against the WHOLE expected set closes that: any such
-    // grant now fails loudly as "extra" rather than being invisible to
-    // the filter.
+    // Parity guard #1: capabilities/settings.json's FULL permissions
+    // array must be exactly the command permissions derived from
+    // SETTINGS_COMMANDS plus the two pinned event extras below, nothing
+    // missing and nothing extra. Comparing the WHOLE set — never a subset
+    // filtered on some prefix — is load-bearing: a namespaced plugin
+    // grant like "shell:allow-execute" doesn't start with "allow-", so a
+    // filtered comparison would let it widen the window's real capability
+    // grant unaudited. Whole-set equality fails it loudly as "extra".
     #[test]
     fn settings_json_permissions_match_exactly() {
         let raw = include_str!("../capabilities/settings.json");

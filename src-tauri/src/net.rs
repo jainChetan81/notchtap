@@ -1,7 +1,6 @@
-//! Shared HTTP posture for the outbound pollers: one client
-//! builder and one capped body reader, so the espn and rss fetch paths
-//! cannot drift apart again (they did once — the streaming cap landed
-//! on rss only).
+//! Shared HTTP posture for the outbound pollers: one client builder and
+//! one capped body reader, so the espn and rss fetch paths cannot drift
+//! apart on timeout, user agent, redirect policy or body cap.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -20,8 +19,7 @@ pub(crate) fn build_poll_client() -> reqwest::Result<reqwest::Client> {
     client_builder().redirect(redirect_policy()).build()
 }
 
-/// Caps redirects at 3 hops — the same limit `Policy::limited(3)` used to
-/// enforce — and additionally rejects any hop whose URL resolves to a
+/// Caps redirects at 3 hops and rejects any hop whose URL resolves to a
 /// blocked host (see [`host_is_blocked`]). Without this, a feed source
 /// (espn/rss) that starts out pointing at a legitimate public host could
 /// 302 the poller onto an internal service (SSRF) or a DNS name that
@@ -30,7 +28,7 @@ pub(crate) fn build_poll_client() -> reqwest::Result<reqwest::Client> {
 fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
         // mirrors `Policy::limited`'s own boundary (`previous().len() >
-        // max`), so the hop count behaves exactly as it did before.
+        // max`).
         if attempt.previous().len() > 3 {
             return attempt.error("too many redirects");
         }
@@ -71,8 +69,8 @@ pub(crate) fn host_is_blocked(url: &reqwest::Url) -> bool {
         // An IPv4-mapped v6 address (`::ffff:a.b.c.d`) reaches the same
         // hosts as its v4 form, so unmap and re-run the v4 ranges;
         // otherwise cover native-v6 loopback, link-local (fe80::/10) and
-        // unique-local (fc00::/7). `is_loopback()` alone (the original)
-        // let `::ffff:127.0.0.1`, `fe80::1` and `fc00::1` straight through.
+        // unique-local (fc00::/7). `is_loopback()` alone would let
+        // `::ffff:127.0.0.1`, `fe80::1` and `fc00::1` straight through.
         Ok(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
             Some(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
             None => {
@@ -122,7 +120,7 @@ mod tests {
 
     const TEST_CAP: usize = 1024;
 
-    // --- M2: host_is_blocked (SSRF/DNS-rebinding redirect defense) ---
+    // --- host_is_blocked (SSRF/DNS-rebinding redirect defense) ---
 
     fn url(s: &str) -> reqwest::Url {
         reqwest::Url::parse(s).unwrap()

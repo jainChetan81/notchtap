@@ -1,10 +1,9 @@
-//! Idle source-status rail: one combined `status-state` event
-//! answering the idle card's "what's happening / what's next" — the boot
-//! source gates, the queue depth behind the empty slot, and the one live
-//! watched football match. Delivery duplicates the slot-state pattern
-//! exactly: the rust core emits on change and plants
-//! `window.__NOTCHTAP_STATUS_STATE__` on page load (lib.rs). The overlay
-//! stays receive-only — this is a listen-only channel, no invoke.
+//! Idle source-status rail: one combined `status-state` event answering
+//! the idle card's "what's happening / what's next" — the boot source
+//! gates, the queue depth behind the empty slot, and the one live watched
+//! football match. Delivery mirrors the slot-state pattern exactly: the
+//! rust core emits on change and plants `window.__NOTCHTAP_STATUS_STATE__`
+//! on page load (lib.rs). The overlay stays receive-only, no invoke.
 
 use serde::Serialize;
 
@@ -57,8 +56,8 @@ pub struct LiveMatchSummary {
 }
 
 /// "News paused" in the idle rail means `enabled == false`: the polling
-/// gates are boot-config since v6, so there is no runtime poll pause to
-/// report beyond the gate itself.
+/// gates are boot-config, so there is no runtime poll pause to report
+/// beyond the gate itself.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewsStatus {
@@ -73,11 +72,10 @@ pub struct NewsStatus {
     pub is_charged: bool,
 }
 
-/// Named-field inputs for [`StatusState::snapshot`] — replaces five
-/// positional bool/Option arguments (three same-typed `bool`s, two
-/// same-shaped `Option`s) that a future call-site edit could transpose
-/// without a compile error. Construct with field names, not
-/// positionally, at every call site.
+/// Named-field inputs for [`StatusState::snapshot`]. Three same-typed
+/// `bool`s and two same-shaped `Option`s would transpose silently as
+/// positional arguments, so construct with field names at every call
+/// site.
 pub struct StatusInputs {
     pub live: Option<LiveMatchSummary>,
     pub espn_enabled: bool,
@@ -288,7 +286,7 @@ mod tests {
         assert_eq!(snap.football.live, None);
         assert!(!snap.news.enabled);
 
-        // paused pushes buffer instead of promoting (v5 semantics)
+        // paused pushes buffer instead of promoting
         queue
             .enqueue(generic_event(), std::time::Instant::now())
             .unwrap();

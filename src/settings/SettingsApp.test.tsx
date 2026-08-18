@@ -31,7 +31,7 @@ class ResizeObserverStub {
 // biome-ignore lint/suspicious/noExplicitAny: test-environment polyfill assignment, not app code.
 (globalThis as any).ResizeObserver ??= ResizeObserverStub;
 
-// Several plan-108 tests drive setInterval/setTimeout-based status transitions
+// Several tests drive setInterval/setTimeout-based status transitions
 // (ok-message auto-clear) with fake timers. Those
 // timers must be created UNDER the fake clock, so fake timers are engaged
 // before render — which means we can't rely on RTL's findBy/waitFor (their
@@ -46,11 +46,9 @@ async function flush(times = 6) {
   }
 }
 
-// the Switch contract change (native checkbox ->
-// shadcn/radix Switch) moves the on/off signal from
-// `HTMLInputElement.checked` to `aria-checked` on a real `<button
-// role="switch">` — this reads that attribute instead, everywhere a
-// test used to read `.checked` on a toggle.
+// The shadcn/radix Switch carries its on/off signal as `aria-checked`
+// on a real `<button role="switch">`, not as `HTMLInputElement.checked`
+// — every toggle assertion in this file reads it through here.
 function isChecked(element: HTMLElement): boolean {
   return element.getAttribute("aria-checked") === "true";
 }
@@ -310,7 +308,7 @@ describe("SettingsApp", () => {
     expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
 
-  it("sidebar brand renders the real mark as an image, not the old CSS placeholder blob", async () => {
+  it("sidebar brand renders the real mark as an image, never a CSS placeholder blob", async () => {
     mockLoads();
     const { container } = render(<SettingsApp />);
 
@@ -767,10 +765,9 @@ describe("SettingsApp", () => {
     expect(selectedPriorityLabel(rssToggle)).toBe("High");
   });
 
-  // the Cmux tab (and its Priority/Rotation
-  // seconds controls for what's now `agent_priority`/`agent_ttl_secs`) is
-  // gone — no replacement UI exists until ticket 143's Agents section, so
-  // there is no settings-window surface left to exercise here.
+  // `agent_priority`/`agent_ttl_secs` have no settings-window control; the
+  // Agents section owns agent configuration, so there is nothing to
+  // exercise here.
 
   it("preserves a feed's source/category when its url is edited by a trailing slash", async () => {
     let savedConfig: Config | null = null;
@@ -874,7 +871,7 @@ describe("SettingsApp", () => {
 
   // --- on-the-go search (search_news_now) ---
 
-  describe("Search now (plan 130 Step 3)", () => {
+  describe("Search now", () => {
     async function openNews() {
       render(<SettingsApp />);
       await screen.findByRole("heading", { level: 1, name: "General" });
@@ -1008,10 +1005,10 @@ describe("SettingsApp", () => {
 
     const rows = screen.getAllByRole("listitem");
     const [newsRow, agentRow, manualRow, footballRow] = rows;
-    // M12: the boundary buttons are marked `aria-disabled` rather than
-    // native `disabled`, so they stay in the tab order (a boundary move
-    // no longer strands keyboard focus on <body>); `move` no-ops when the
-    // target is out of range.
+    // The boundary buttons are marked `aria-disabled` rather than native
+    // `disabled`, so they stay in the tab order and a boundary move never
+    // strands keyboard focus on <body>; `move` no-ops when the target is
+    // out of range.
     expect(
       within(newsRow)
         .getByRole("button", { name: /earlier/ })
@@ -1074,10 +1071,9 @@ describe("SettingsApp", () => {
 
     const titles = screen
       .getAllByText(/notification$/)
-      // history-title now carries utility classes
-      // alongside its stable "history-title" hook class, so an exact
-      // className match no longer isolates it — check for the token
-      // instead (classList.contains), same selection intent.
+      // history-title carries utility classes alongside its stable
+      // "history-title" hook class, so an exact className match can't
+      // isolate it — check for the token (classList.contains) instead.
       .filter((el) => el.classList.contains("history-title"))
       .map((el) => el.textContent);
     expect(titles).toEqual(["Second notification", "First notification"]);
@@ -1088,7 +1084,7 @@ describe("SettingsApp", () => {
   // matching inline `color`, an origin with no entry in that table
   // (news, which is coloured by category instead) carries no inline
   // style at all.
-  it("History origin spans carry each origin's SOURCE_ORIGIN_COLORS colour (news included, plan 147 finisher)", async () => {
+  it("History origin spans carry each origin's SOURCE_ORIGIN_COLORS colour, news included", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_default_config") return rustConfigDefaults;
@@ -1227,7 +1223,7 @@ describe("SettingsApp", () => {
 
   // history richness — the metadata row + expandable
   // details.
-  describe("history richness (plan 110)", () => {
+  describe("history richness", () => {
     function mockHistory(entries: HistoryEntry[]) {
       mockIPC((command) => {
         if (command === "get_config") return config;
@@ -1425,7 +1421,7 @@ describe("SettingsApp", () => {
   });
 
   // settings-window queue visibility + clear/skip.
-  describe("Queue section (plan 121)", () => {
+  describe("Queue section", () => {
     const waitingHigh: QueueItemSummary = {
       title: "High priority waiting item",
       priority: "high",
@@ -1619,9 +1615,9 @@ describe("SettingsApp", () => {
       expect(getQueue).toHaveBeenCalledTimes(2);
     });
 
-    // the row key used to be `${index}:${item.title}` — stable
-    // only as long as the list never reorders, which a refetch that lands
-    // duplicate/reordered summaries could violate. The
+    // An `${index}:${item.title}` row key is stable only as long as the
+    // list never reorders, which a refetch that lands duplicate or
+    // reordered summaries can violate. The
     // priority:source:title:occurrenceIndex key stays stable across a
     // refetch that returns the identical list, which is what lets
     // AnimatePresence treat unchanged rows as "still here" (no exit+enter)
@@ -1629,20 +1625,13 @@ describe("SettingsApp", () => {
     // identity (not just equal content) is the proof: a remount would
     // produce a brand-new element.
     //
-    // the ORIGINAL version of this test
-    // refetched the exact same two-item list unchanged — a case where a
-    // positional `${index}:${item.title}` key and the content-based key
-    // above compute the IDENTICAL string for every row (nothing shifted
-    // index), so the test passed under both implementations and never
-    // actually discriminated between them. Replaced with a refetch that
-    // DROPS the first row: `waitingLow` moves from index 1 to index 0,
-    // which a positional key would compute as a different key (`1:...`
-    // -> `0:...`) for the exact same surviving row, forcing an
-    // AnimatePresence exit+enter remount — the content-based key doesn't
-    // care about position at all, so the row's identity survives. Verified
-    // this fails against the old positional-key implementation (reverted
-    // `withQueueRowKeys` locally, re-ran, saw the DOM-node-identity
-    // assertion fail as expected, then restored the fix — not committed).
+    // The refetch below DROPS the first row on purpose: `waitingLow`
+    // moves from index 1 to index 0, which a positional key computes as a
+    // different key (`1:...` -> `0:...`) for the exact same surviving
+    // row, forcing an AnimatePresence exit+enter remount. The
+    // content-based key ignores position, so the row's identity survives.
+    // A refetch of an unchanged list would not discriminate: both key
+    // schemes compute the identical string for every row.
     it("a surviving row keeps its DOM node identity when a refetch drops an earlier row — no remount from a positional key", async () => {
       let queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
       // Not `mockQueue(queueItems)`: that helper closes over the array
@@ -1784,7 +1773,7 @@ describe("SettingsApp", () => {
   // controls bind config.agents.*, four adapter cards read a mocked
   // get_agent_health, and the test-event button invokes
   // send_agent_test_event.
-  describe("Agents section (plan 143)", () => {
+  describe("Agents section", () => {
     const health: AdapterHealthDto[] = [
       {
         runtime: "claude-code",
@@ -1937,8 +1926,7 @@ describe("SettingsApp", () => {
       // cards start
       // collapsed, and the setup snippet's Copy/Send-test buttons only
       // mount once expanded — click the header/name button to expand it
-      // first (CodeRabbit review, PR #11: this comment previously said
-      // "collapse," backwards from what the click actually does).
+      // first.
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Claude Code" }));
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Send test event" }));
 
@@ -2049,7 +2037,7 @@ describe("SettingsApp", () => {
     });
 
     it("the completion-cards toggle round-trips into the saved config payload", async () => {
-      // Operator decision 2026-08-02: agents.completion_notifications is
+      // agents.completion_notifications is
       // the per-turn-card off switch, and it must survive the
       // get_config -> edit -> save_config_and_relaunch round trip like
       // every other [agents] key.
@@ -2082,7 +2070,7 @@ describe("SettingsApp", () => {
     });
 
     it("the board-presence toggle round-trips into the saved config payload", async () => {
-      // Operator decision 2026-08-02: agents.board_show_working gates
+      // agents.board_show_working gates
       // whether a merely-working session may summon the Agent Board at
       // all. Rust owns the gate itself; Settings only has to round-trip
       // the key like every other [agents] key.
@@ -2127,7 +2115,7 @@ describe("SettingsApp", () => {
 // resets hot-apply the live overlay, and every operation that can
 // silently fail now reports its outcome through the shared ActionStatus
 // mechanism. Each of the seven operations gets independent coverage below.
-describe("SettingsApp — action status (plan 108)", () => {
+describe("SettingsApp — action status", () => {
   it("Reset invokes set_appearance with the loaded config's saved values, not the currently-adjusted ones", async () => {
     const setAppearance = vi.fn();
     mockIPC((command, payload) => {
@@ -2471,7 +2459,7 @@ describe("SettingsApp — action status (plan 108)", () => {
 // relationships (fieldset/legend, ul/li, table/thead/tbody/th/td, and
 // label-to-control) that replaced it, not just that the ARIA roles still
 // resolve.
-describe("SettingsApp — native semantic markup (plan 109)", () => {
+describe("SettingsApp — native semantic markup", () => {
   it("the Scale segmented control is a real <fieldset> named by its <legend>", async () => {
     mockLoads();
     render(<SettingsApp />);
@@ -2493,9 +2481,8 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    // this used to navigate to the (now-removed) Cmux tab —
-    // any section's Priority `Segmented` fieldset exercises the same
-    // native-markup contract, so Football's stands in for it.
+    // Any section's Priority `Segmented` fieldset exercises the same
+    // native-markup contract, so Football's stands in for the rest.
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     await screen.findByRole("heading", { level: 1, name: "Football" });
 
@@ -2575,7 +2562,7 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
 // passes `disabled` today (grep confirms no call site does), so
 // disabled coverage renders the shadcn Switch + Label pair directly,
 // the same components ToggleControl composes.
-describe("SettingsApp — shadcn Switch contract (plan 112 Step 4)", () => {
+describe("SettingsApp — shadcn Switch contract", () => {
   it("is a real role=switch button, named by an associated Label, reflecting aria-checked", () => {
     render(
       <>

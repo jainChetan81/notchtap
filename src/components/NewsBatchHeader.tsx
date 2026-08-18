@@ -14,16 +14,15 @@
 // renders ONLY the text row + nav buttons.
 //
 // `onPrevious`/`onNext` are presentational callbacks only, same "click
-// routing deferred" posture every other new interactive surface in this
-// plan follows (see `AgentBelowBlock.tsx`'s `cycleSessionIndex`,
-// `IconStrip.tsx`'s `onSelect`). The click-detection MECHANISM is settled
-// and shipped — a rust-side `NSEvent` local monitor
-// (`src-tauri/src/click.rs`, `docs/ARCHITECTURE.md` §22) observes clicks
-// and pushes typed events down the receive-only channel. What is still
-// missing is click ROUTING for these specific nav buttons (an open item
-// tracked in `plans/README.md`), and the prefix keymap's own
-// `[`/`]`-equivalent for news. This component never calls `invoke()` and
-// knows nothing about how a click or prefix action actually reaches it.
+// routing deferred" posture the other interactive surfaces hold (see
+// `AgentBelowBlock.tsx`'s `cycleSessionIndex`, `IconStrip.tsx`'s
+// `onSelect`). Clicks are detected rust-side by an `NSEvent` local
+// monitor (`src-tauri/src/click.rs`, `docs/ARCHITECTURE.md` §22) and
+// pushed as typed events down the receive-only channel; routing those
+// events to these specific nav buttons, and the prefix keymap's own
+// `[`/`]`-equivalent for news, are open items. This component never
+// calls `invoke()` and knows nothing about how a click or prefix action
+// actually reaches it.
 export function NewsBatchHeader({
   freshCount,
   cycleEndedAgo,
@@ -34,9 +33,8 @@ export function NewsBatchHeader({
   /** Pre-formatted relative time (e.g. "2m", rendered as "cycle ended 2m
    * ago") — this component does no date-math itself, same "arrives as a
    * plain primitive" discipline `AgentBelowBlock.tsx`'s own doc comment
-   * establishes for its props. Nullable (a deliberate widening beyond the
-   * plan's own "e.g. cycleEndedAgo: string" sketch): `newsAge`/
-   * `newsCategory` are already nullable everywhere else this codebase
+   * establishes for its props. Nullable: `newsAge`/
+   * `newsCategory` are nullable everywhere else this codebase
    * renders relative-time chrome (`NotificationBody.tsx`'s news branch),
    * and a caller genuinely may have no ended-cycle timestamp yet (e.g.
    * right after startup, before the first poll cycle boundary). `null`

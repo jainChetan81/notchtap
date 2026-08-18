@@ -18,8 +18,7 @@
 /* KEPT: a single 12s-per-leg (24s round trip) positional drift of an
    oversized (-30% inset), already-translucent gradient — reads as ambient
    "alive" background texture, not a brightness/opacity flicker in
-   peripheral vision. Different category of motion from the removed
-   status-dot/live-dot pulses. */
+   peripheral vision. */
 .card-root .news-shade::before {
   content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
@@ -29,13 +28,11 @@
   pointer-events: none;
   will-change: transform;
 }
-/* SHAPE only — the drift path is no longer a straight line, so the
-   return leg traces the same curve in reverse rather than retracing a
-   rail. The intermediate stops are deliberately NOT collinear with the
+/* SHAPE only — the drift path is a curve, not a straight line, so the
+   return leg traces that curve in reverse rather than retracing a rail.
+   The intermediate stops are deliberately NOT collinear with the
    endpoints (33% leans further left than its share, 66% further up).
-   Duration, `ease-in-out`, `alternate` and the endpoints are all
-   unchanged; same cost, same GPU work, one composited transform either
-   way. */
+   One composited transform either way. */
 @keyframes shade-drift {
   0%   { transform: translate3d(0, 0, 0); }
   33%  { transform: translate3d(-7%, -2%, 0); }
@@ -53,8 +50,8 @@
 /* `.masthead-row` pairs the masthead with the priority Stamp badge
    (Stamp sits in the header, for both card types). The generic branch's
    title row shares this SAME masthead-row/`.masthead` markup too (kicker
-   text "cmux"/"cli" instead of a source name) — so this is no longer
-   news-only. `.masthead` itself grows to fill the row (`flex: 1`) so its
+   text instead of a source name), so these rules are not news-only.
+   `.masthead` itself grows to fill the row (`flex: 1`) so its
    own trailing hairline (`::after`) still fills exactly the space before
    the Stamp badge. */
 .card-root .masthead-row {
@@ -82,9 +79,9 @@
 }
 
 /* ==== the unified chip language: `.notif-meta-row` is the pills
-   container; `.chip-category` is the category pill. The old age-pill
-   class does NOT converge to `.chip` — it lives in the plain
-   `.notif-time-inline` slot instead, so there is no `.chip-age`. ==== */
+   container; `.chip-category` is the category pill. The age label does
+   NOT use `.chip` — it lives in the plain `.notif-time-inline` slot
+   instead, so there is no `.chip-age`. ==== */
 .card-root .chip {
   display: inline-flex;
   align-items: center;
@@ -111,14 +108,13 @@
 
 /* the news meta row's enter animation. `both` fill-mode keeps the element
    at its `from` state before the delayed animation starts, matching
-   motion's `initial` prop. Uses `var(--swap-exit-ms, 175ms)` so it can
-   never drift from the shared token again. Fade-only: the stagger and
-   the `translateY` slide leg are both gone — this pair replays on EVERY
-   same-slot rotation (news items rotating ~10s, live-match signal
-   updates, ...), not just the initial idle->showing promotion, so a
-   stagger+slide tuned as a one-time flourish became a small but real
-   ceremony tax paid every rotation. The fade alone reads identically
-   pleasant on both legs. A same-slot rotation no longer replays this
+   motion's `initial` prop. Uses `var(--swap-exit-ms, 175ms)` so it
+   never drifts from the shared token. Fade-only, no stagger and no
+   `translateY` slide leg: this pair replays on EVERY same-slot rotation
+   (news items rotating ~10s, live-match signal updates, ...), not just
+   the initial idle->showing promotion, so a stagger+slide would be a
+   small but real ceremony tax paid every rotation. The fade alone reads
+   identically pleasant on both legs. A same-slot rotation does not replay this
    fade at all — StatusRailCard.tsx puts a `rotation-swap` class on
    `.card-content` (mirroring its own `data-rotation-swap` test hook)
    whenever `isRotation` is true, and the override rule immediately

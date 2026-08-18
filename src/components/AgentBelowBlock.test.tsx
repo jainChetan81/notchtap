@@ -25,7 +25,7 @@ function session(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
   };
 }
 
-describe("cycleSessionIndex (plan 171, slice F)", () => {
+describe("cycleSessionIndex", () => {
   it("advances to the next index", () => {
     expect(cycleSessionIndex(0, 3, "next")).toBe(1);
   });
@@ -52,7 +52,7 @@ describe("cycleSessionIndex (plan 171, slice F)", () => {
   });
 });
 
-describe("AgentBelowBlock (plan 171, slice F)", () => {
+describe("AgentBelowBlock", () => {
   it("renders nothing when there are zero sessions", () => {
     const { container } = render(
       <AgentBelowBlock
