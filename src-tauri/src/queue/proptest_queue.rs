@@ -1,3 +1,6 @@
+//! Property tests for the single-slot queue: the nine documented
+//! invariants, checked against generated enqueue/rotate sequences.
+
 use super::*;
 use crate::event::{EventMeta, EventPayload, EventSignal, EventType};
 use proptest::prelude::*;
@@ -362,8 +365,8 @@ impl Harness {
 
         let Ok(()) = result else {
             // Rejected (QueueFull): not part of the 9 documented
-            // invariants (no I6-style rejection-untouched check here
-            // by design — kept to the retargeted §9.1 list exactly).
+            // invariants, so there is deliberately no
+            // rejection-untouched check here.
             return;
         };
         let after_total = self.total_in_queue();

@@ -24,7 +24,7 @@ const PREFIX = "⌃⇧";
 /** The shared table's accept side — mirrored verbatim in settings.rs. */
 const ACCEPTED: [string, string][] = [
   [`${PREFIX}K`, "a single glyph, the shape the shipped seven shortcuts use"],
-  [`${PREFIX}Space`, "a spelled-out key name, the spec's chosen default"],
+  [`${PREFIX}Space`, "a spelled-out key name, the shipped default"],
   [`${PREFIX}K\u{FEFF}`, "U+FEFF is NOT Unicode White_Space — both sides accept it"],
   [`${PREFIX}${"K".repeat(24)}`, "24 chars of key name — the inclusive upper bound"],
 ];

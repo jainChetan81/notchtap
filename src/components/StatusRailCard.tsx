@@ -372,8 +372,8 @@ export function StatusRailCard({
   // `showing`, for the same delayed-swap-settle reason every other
   // idle-flavored mount gate in this file uses.
   const tabPullOpen = !renderedShowing && hovered;
-  // Spec section 7's "none" page falls out of this, rather than being
-  // built as its own case: with nothing selected, `TabBelowBlock`
+  // The "none" page falls out of this, rather than being built as its
+  // own case: with nothing selected, `TabBelowBlock`
   // returns null and `IdleHoverPeek` keeps its shipped ambient chain.
   const pulledTab = tabPullOpen ? selectedTab : null;
   const peekPreference = peekPreferenceFor(pulledTab);

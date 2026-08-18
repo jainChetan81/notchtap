@@ -1525,11 +1525,10 @@ describe("SettingsApp", () => {
       await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
     });
 
-    // the actual choreography fix, pinned directly. Before
-    // this plan, `items.length === 0 ? <p> : <ul>…` unmounted the whole
-    // `<ul>` (AnimatePresence included) the instant Clear emptied the
-    // array, so the outgoing row's own exit animation never got a chance
-    // to play — a hard cut, not a collapse. The fix keeps the `<ul>` +
+    // the exit choreography, pinned directly. `items.length === 0 ? <p> :
+    // <ul>…` would unmount the whole `<ul>` (AnimatePresence included) the
+    // instant Clear empties the array, so the outgoing row's exit
+    // animation would never play — a hard cut, not a collapse. Keep the `<ul>` +
     // AnimatePresence mounted and renders the empty-state `<p>` as a
     // sibling instead, so both can be true on the SAME render: the row is
     // still in the DOM (exiting) AND the empty-state text has already
@@ -1579,8 +1578,8 @@ describe("SettingsApp", () => {
       await openQueue();
 
       expect(await screen.findByText("Couldn't load the queue")).toBeTruthy();
-      // before this fix, a failed mount fetch left `items`
-      // at `null` forever, so "Loading…" rendered underneath the sticky
+      // a failed mount fetch must not leave `items` at `null` forever,
+      // or "Loading…" renders underneath the sticky
       // ActionStatus error above it — the load never resolves into either
       // an error-aware or an empty state. Assert it's actually gone, not
       // merely that the error text is present alongside it.

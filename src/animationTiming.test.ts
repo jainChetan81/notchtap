@@ -26,7 +26,7 @@ import { applyAnimationTiming } from "./applyAnimationTiming";
 // pins the single-sourced duration constant to the exact value
 // every existing consumer/test already assumed (StatusRailCard's
 // useDelayedSwap window) — a regression here is exactly the kind of
-// silent drift this plan exists to prevent.
+// silent drift this pin exists to prevent.
 //
 // 220 -> 175 (~20%
 // quicker) — this pin moves WITH the constant, same as

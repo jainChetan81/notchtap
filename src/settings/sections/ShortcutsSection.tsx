@@ -94,7 +94,7 @@ function PrefixShortcutControl({
       <ControlCopy
         htmlFor="prefix-shortcut"
         name="Prefix keybinding"
-        help="Tmux-style prefix (spec 171 §9): press this, then one more key, to select a tab, cycle agent sessions, pause, or expand/collapse — then it disarms. The seven shortcuts below are unaffected and keep working prefix-free."
+        help="Tmux-style prefix: press this, then one more key, to select a tab, cycle agent sessions, pause, or expand/collapse — then it disarms. The seven shortcuts below are unaffected and keep working prefix-free."
       />
       <Input
         id="prefix-shortcut"

@@ -1,28 +1,15 @@
-// the enforcement that replaces the old hand-maintained-mirror
-// review discipline ("change one, change both, in the same commit", now
-// retired). `src/settings/preview-overlay.css` is gone;
-// both entry points share `src/overlay-card.css`, scoped under
-// `.card-root`. The one thing that could silently bring the mirror back
-// is a context stylesheet (`src/styles.css`, `src/settings/base.css`)
-// re-declaring one of overlay-card.css's own selectors as an UNSCOPED
-// duplicate — this file is the automated guard against that, run on
-// every test pass instead of relying on a reviewer noticing.
-// settings.css (the previous settings-side context
-// file this guard checked) is deleted; every rule it still carried —
-// including the Appearance preview frame chrome this guard exists to
-// protect — is now inside base.css, so the check below moved there
-// too. Zero-hit verified directly against the real files before this
-// edit landed (base.css's own selectors: element resets, `.section-*`,
-// the mono-font list, `.appearance-preview`/`.preview-row`/
-// `.preview-label`/`.preview-stage` — none collide with overlay-card.css's
-// ~186-member shared inventory).
+// Guards against a context stylesheet (`src/styles.css`,
+// `src/settings/base.css`) re-declaring one of `src/overlay-card.css`'s
+// own selectors as an UNSCOPED duplicate. Both entry points share
+// overlay-card.css scoped under `.card-root`, so an unscoped duplicate in
+// a context file is a second, divergent copy of a card selector.
 //
-// String-level by design (matches the plan's own instruction): strip
-// `/* ... */` comments first, then extract SELECTOR-shaped occurrences —
-// prelude text between a `}` (or file start) and the next `{` — and
-// compare individual comma-list members. No CSS parser: this is
-// deliberately the same "cheap but effective" register as
+// String-level by design: strip `/* ... */` comments first, then extract
+// SELECTOR-shaped occurrences — prelude text between a `}` (or file start)
+// and the next `{` — and compare individual comma-list members. No CSS
+// parser: this is deliberately the same "cheap but effective" register as
 // celebrationStacking.test.tsx's string pins, not a cascade engine.
+//
 // @types/node is a devDependency, so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
@@ -43,8 +30,7 @@ function readSourceCss(relativePath: string): string {
   const raw = readFileSync(fileURLToPath(url), "utf-8");
   // Only inline RELATIVE imports (the overlay-card.css split) — bare-specifier
   // imports (e.g. base.css's `@import "@chetanjain/shared-ui/..."`,
-  // `"tailwindcss/..."`) are left as literal text, same as before this
-  // function learned to resolve anything.
+  // `"tailwindcss/..."`) are left as literal text.
   return raw.replace(/^@import\s+["'](\.[^"']+)["'];\s*$/gm, (_match, importPath: string) =>
     readFileSync(fileURLToPath(new NodeURL(importPath, url)), "utf-8"),
   );
@@ -166,7 +152,7 @@ function findRedefinitions(contextCss: string, sharedInventory: ReadonlySet<stri
   return hits;
 }
 
-// ---- scanner self-test (the plan's own required fixtures) -------------
+// ---- scanner self-test (fixtures for the scanner itself) --------------
 
 describe("overlayCardMirror scanner — self-test fixtures", () => {
   const inventory = new Set([".card-assembly", ".status-dots"]);
@@ -246,11 +232,11 @@ describe("overlay-card.css mirror invariant", () => {
     expect(findRedefinitions(baseCss, inventory)).toEqual([]);
   });
 
-  // the override block itself: 's done criteria caps it at the
-  // Step-0 deliberate-adaptation count. That count is 0 (see
-  // ALLOWLISTED_SELECTORS's own comment) — pin it so a future override
-  // added here is a deliberate, reviewed act, not silent growth.
-  it("the allowlist (override budget) matches the Step-0 deliberate-adaptation count", () => {
+  // the override budget: the allowlist holds one entry per deliberate
+  // adaptation, and there are none (see ALLOWLISTED_SELECTORS's own
+  // comment) — pin it so a future override added here is a deliberate,
+  // reviewed act, not silent growth.
+  it("the allowlist (override budget) stays empty", () => {
     expect(ALLOWLISTED_SELECTORS.size).toBe(0);
   });
 });

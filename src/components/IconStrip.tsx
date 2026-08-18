@@ -20,14 +20,14 @@ export type Tab = "agent" | "football" | "news";
 
 export const TAB_ORDER: readonly Tab[] = ["agent", "football", "news"];
 
-// Spec section 6's three-tier luminance scheme, uniform across all
+// The three-tier luminance scheme, uniform across all
 // icons: "hidden" never renders as `.is-present` at all (zero width,
 // invisible — the strip's own baseline `.icon` rule), "present" is the
 // dim 0.62-opacity tier ("present but idle — quiet news" per the design
 // source), "live" is full 1.0 opacity ("genuinely live — agent/match").
-// Agent/football are only ever "hidden" or "live" in practice (spec
-// section 6's table: each is present ONLY while genuinely live, so
-// there is no "present but not live" state for them) — "present" mainly
+// Agent/football are only ever "hidden" or "live" in practice (each is
+// present ONLY while genuinely live, so there is no "present but not
+// live" state for them) — "present" mainly
 // exists for news (dim while charging, escalating only once
 // `newsCharged` below is separately true).
 export type IconVisualState = "hidden" | "present" | "live";
@@ -36,11 +36,11 @@ export interface IconStripProps {
   agent: IconVisualState;
   football: IconVisualState;
   news: IconVisualState;
-  /** Spec section 8: 0..1 fill level, rising silently across the poll
+  /** 0..1 fill level, rising silently across the poll
    * cycle. Purely visual (a `scaleY` on the glyph's own interior
    * rectangle) — never glows, never implies `newsCharged`. */
   newsCharge: number;
-  /** Spec section 8: the cycle has ended AND items are genuinely
+  /** The cycle has ended AND items are genuinely
    * waiting — the glyph goes to full weight and breathes coral ->
    * salmon until visited (selecting the news tab). Independent of
    * `news: IconVisualState` above (a news icon can be "present" —
@@ -51,8 +51,8 @@ export interface IconStripProps {
    * is declared AFTER (and so beats) the plain luminance tiers at
    * equal specificity). */
   newsCharged: boolean;
-  /** Spec section 12 open question 5's shipped default ("ship both"):
-   * the literal count badge alongside the ambient fill. `null` omits
+  /** The literal count badge, shown alongside the ambient fill rather
+   * than instead of it. `null` omits
    * the badge entirely (nothing waiting, or the count is unknown). */
   newsCount: number | null;
   selected: Tab | null;

@@ -192,6 +192,7 @@ from the working tree; every one is retrievable via
 - 182 — AgentBoard flank gets the same icon glyphs IconStrip draws.
 - 183 — Revert notification manifest hover-expand back to keyboard-only.
 - 184 — Wire `agent-viewed-session-changed` to the display; add auto-advance.
+- 185 — Comment history purge across the rust core and frontend, telegram remnants removed, shared provider helpers into `wire.rs`, queue tests and tray split out (`plans/2026-08-18-rust-comment-purge.html`).
 
 ## retired, never executed
 

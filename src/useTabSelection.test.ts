@@ -50,7 +50,7 @@ describe("useTabSelection", () => {
     expect(result.current).toBe("news");
   });
 
-  it("an explicit null deselects (spec's 'none' page), and is not treated as malformed", async () => {
+  it("an explicit null deselects (the 'none' page), and is not treated as malformed", async () => {
     const { result } = await renderReady();
     emit({ selected: "football" });
     emit({ selected: null });

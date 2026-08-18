@@ -26,7 +26,7 @@ describe("Button — transition-property", () => {
       "transition-[color,background-color,border-color,box-shadow,translate,scale]",
     );
     expect(button.className).not.toMatch(/(?:^|\s)transition-all(?:\s|$)/);
-    // the press-feedback utility itself is untouched by this plan.
+    // the press-feedback utility stays on the button.
     expect(button.className).toContain("active:not-aria-[haspopup]:translate-y-px");
   });
 });

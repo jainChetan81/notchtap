@@ -1,3 +1,5 @@
+//! Unit tests for the single-slot queue.
+
 use super::*;
 use crate::error::QueueError;
 use crate::event::{test_fixtures, DetailItem, EventMeta, EventPayload, EventSignal};
@@ -227,9 +229,8 @@ fn rotation_order_only_breaks_ties_within_a_tier_not_across_tiers() {
     assert_eq!(visible_title(&q), Some("news-high"));
 }
 
-// the old contract ("a Priority arrival never interrupts
-// the currently-Visible item") is DELETED — a strictly-higher-priority
-// arrival now preempts immediately. See the `preemption` test module
+// a strictly-higher-priority arrival preempts the Visible item
+// immediately; equal priority never does. See the `preemption` test module
 // below for the full suite (chained preemption, head-of-tier requeue,
 // remaining-time restoration, equal/lower no-preempt, silenced
 // interaction).
@@ -425,9 +426,9 @@ fn visible_supersede_top_up_ignores_banked_hover_time() {
     q.hover_enter(t0 + Duration::from_secs(1));
     q.hover_exit(t0 + Duration::from_secs(4));
 
-    // raw elapsed at t0+9s is 9s, so RAW remaining (10 - 9 = 1s) is
-    // below the 2s floor and the pre-fix code would grant an
-    // extension. Hover-adjusted elapsed discounts the banked 3s
+    // raw elapsed at t0+9s is 9s, so RAW remaining (10 - 9 = 1s) sits
+    // below the 2s floor. The floor must be measured against
+    // hover-adjusted elapsed, which discounts the banked 3s
     // (9 - 3 = 6s), so real remaining is 10 - 6 = 4s — comfortably
     // above the floor. No extension should be granted.
     q.enqueue(

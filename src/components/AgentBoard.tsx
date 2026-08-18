@@ -399,8 +399,8 @@ function ExpandedAgentRow({
             style={{ overflow: "hidden" }}
           >
             <ul className="agent-expanded-history-list">
-              {/* oldest first, exactly as rust sent it (spec's own "no
-                  sorting" rule extends to per-row history) */}
+              {/* oldest first, exactly as rust sent it — the "no
+                  sorting" rule extends to per-row history */}
               {session.history.map((transition, index) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: transitions carry no stable identity of their own (state can repeat across entries) — index is stable for a given snapshot, all a receive-only list needs.
                 <li key={index} className="agent-expanded-history-entry">

@@ -17,7 +17,7 @@ function Switch({
       className={cn(
         // Track is sized so the thumb (18px/12px with a consistent 2px
         // inset in its own translate math) never overflows. `duration-150`
-        // pins the track's on/off color swap to the spec'd 150ms, matching
+        // pins the track's on/off color swap to 150ms, matching
         // the thumb. No `dark:data-unchecked:bg-input/80` dim — `--input`
         // alone reads at full contrast against the window. This window's
         // Tailwind is a NO-preflight build (settings/base.css header), so

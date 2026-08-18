@@ -1,3 +1,10 @@
+//! The single-slot priority queue: one Visible item, three Waiting
+//! lines keyed by Priority, and the rotation clock that moves items
+//! between them.
+//!
+//! Only `engine.rs` may hold this type. Reaching it from anywhere else
+//! breaks the Engine's guarantee that every Slot change flows through one place.
+
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 

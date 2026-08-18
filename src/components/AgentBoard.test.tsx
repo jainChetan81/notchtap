@@ -411,7 +411,7 @@ describe("AgentBoard hero fact pills", () => {
   // respect (NotificationBody.tsx) — a session with more declared
   // details than the cap must never grow the card past a knowable
   // height (see manifest.css's `.detail-facts`/`.fact-pill` truncation
-  // rules, verified statically per the plan's overflow-check note).
+  // rules, verified statically).
   it("caps the hero's fact pills at MAX_VISIBLE_DETAIL_PAIRS even with more declared details", () => {
     const { container } = render(
       <AgentBoard
@@ -917,7 +917,7 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 });
 
-// the four fixes this plan lands — a BOUNDED
+// the four behaviours pinned here — a BOUNDED
 // dot pulse that restarts on state change, an accent that morphs instead
 // of snapping, a hero that swaps on IDENTITY change only, and a wall-clock
 // tick that adapts to what `elapsedLabel` can actually render. These pin

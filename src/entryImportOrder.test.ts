@@ -1,11 +1,10 @@
 // the shared card-shape stylesheet must load BEFORE
 // each window's own residue, at both real entry points, so context-only
-// declarations win any specificity tie by source order (same discipline
-// the old single-file styles.css/preview-overlay.css pair relied on
-// implicitly). The ordering lives in these two TypeScript entry files
-// rather than in a CSS `@import`, so it's pinned here by reading their
-// literal source text: a jsdom/vitest run doesn't otherwise observe CSS
-// load order at all.
+// declarations win any specificity tie by source order. The ordering
+// lives in these two TypeScript entry files rather than in a CSS
+// `@import`, so it's pinned here by reading their literal source text:
+// a jsdom/vitest run doesn't otherwise observe CSS load order at all.
+//
 // @types/node is a devDependency, so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)

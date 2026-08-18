@@ -193,7 +193,7 @@
    toolbar.
 
    The position indicator is the shared `PositionBar` component
-   (`.ttl-bar`/`.ttl-seg` above, Slice F), not a bespoke dot strip.
+   (`.ttl-bar`/`.ttl-seg` above), not a bespoke dot strip.
    See `src/components/NewsBatchHeader.tsx`'s own header comment.
 
    `.batch-nav`'s `margin-left: auto` pushes nav buttons to the row's

@@ -564,8 +564,7 @@ describe("StatusRailCard", () => {
     // `.card-content.idle` wrapper — so a plain `.card-content` query
     // here would find THAT one first (flank-right precedes below-block
     // in DOM order), not the below-block's swapped content this test is
-    // actually about. Scoped to `.below-block .card-content` to keep
-    // targeting the same node as before this plan.
+    // actually about. Scoped to `.below-block .card-content`.
     // SAFETY: test helper guarantees element exists for this selector.
     const cardContent = container.querySelector(".below-block .card-content") as HTMLElement;
     const children = Array.from(cardContent.children);
@@ -1115,8 +1114,8 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // explicit regression pin for the default/unset cases — the
-  // idle rail must render byte-identically to before this plan.
+  // explicit regression pin: the default and unset cases must both
+  // render the idle clock/status rail.
   describe("resting_state: rail (default) and unset", () => {
     it('renders the idle clock/status rail when restingState is "rail"', () => {
       const { container } = render(
@@ -1465,7 +1464,7 @@ describe("StatusRailCard", () => {
       // through the shared `.title.headline`/`.stamp` template
       // (`FootballHeroCard`, NotificationBody.tsx), with the league/
       // live-pill/clock/crests/score row kept as an additive block below
-      // it (assertions further down, unchanged from before this plan).
+      // it (assertions further down).
       expect(container.querySelector(".title.headline")?.textContent).toBe("Goal — K. Havertz 78'");
       // signal "goal" -> SIGNAL_STAMPS["goal"] === "Live" (lib/presentation.ts).
       expect(container.querySelector(".stamp")?.textContent).toBe("Live");
@@ -2280,8 +2279,7 @@ describe("StatusRailCard", () => {
     // above: `exit-to-bare` must NEVER appear on the rail leg, at any
     // point during or after the exit window — `restingState === "rail"`
     // never lands on `.bare` at all, so there is nothing for this
-    // modifier to converge on. Existing rail-mode exit assertions above
-    // this test are untouched by this plan.
+    // modifier to converge on.
     it("rail resting mode: showing->idle exit never applies `exit-to-bare`, at any point in or after the exit window", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="rail" />);
 
@@ -2771,10 +2769,10 @@ describe("tab-notch integration", () => {
     // and the rule that puts a card under the notch spans it across row 2.
     // Grid placement only reaches DIRECT items, and every `TabBelowBlock`
     // branch renders its own `.below-block` root inside this path's
-    // animating wrapper — i.e. a grandchild. Before this plan that wrapper
-    // carried no placement at all, so it was auto-placed into the next
+    // animating wrapper — i.e. a grandchild. That wrapper MUST carry its
+    // own placement; without it the browser auto-places it into the next
     // free cell (the left flank column, effectively zero-width in bare
-    // notch mode) and the pulled card rendered squeezed into the flank.
+    // notch mode) and the pulled card renders squeezed into the flank.
     //
     // jsdom applies no stylesheet, so these pin the machine-checkable
     // half: the DOM shape the CSS requires (a placement class, on a direct

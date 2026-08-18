@@ -95,7 +95,7 @@
   transform: scale(1);
   cursor: pointer;
 }
-/* the three luminance tiers, spec section 6 — weight only, hue never
+/* the three luminance tiers — weight only, hue never
    changes per-tier, same discipline the shipped status dots already use
    (status-dots.css's own active/dim split). */
 .card-root .icon.is-present {
@@ -150,8 +150,7 @@
 
 /* ---- per-icon character: three distinct motions, three distinct
    periods (1.9s / 2.8s / 2.6s), so the strip never lands on a shared
-   downbeat. Every icon animates — there is no "still anchor" icon (spec
-   section 2 decision 3). ---- */
+   downbeat. Every icon animates — there is no "still anchor" icon. ---- */
 
 /* AGENT — a slow ~1.9s breath, blue -> teal and back, glow swelling with
    it. The calmest of the loud ones: an agent session is the longest-
@@ -222,7 +221,7 @@
 
 /* NEWS — charging (the interior fill rising) and charged (full weight,
    breathing coral -> salmon) are two different things and must not be
-   confused (spec section 8): charging is silent and slow, charged is a
+   confused: charging is silent and slow, charged is a
    summons. `.is-charged` is declared AFTER (and at equal specificity to)
    the plain luminance tiers above so it wins on source order alone — no
    `!important` anywhere in this file, matching the design source's own
@@ -249,9 +248,9 @@
 }
 
 /* the literal count badge — 8px mono digits at the glyph's top-right
-   corner. Spec section 12 open question 5: shipped alongside the fill
-   (the mock's own "ship both" default), either can be dropped later as
-   a pure CSS/JS change with no structural impact. */
+   corner. Shipped alongside the fill rather than instead of it; either
+   can be dropped later as a pure CSS/JS change with no structural
+   impact. */
 .card-root .charge-count {
   position: absolute;
   top: -5px;

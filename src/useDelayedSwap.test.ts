@@ -65,12 +65,11 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "v3", exiting: false });
   });
 
-  // H3 regression: a same-key update (e.g. a card's `expanded` flag
-  // auto-retracting mid-visible) must be what a subsequent key change
-  // freezes on, not the value from whenever this key was first
-  // promoted in. Before the fix, `shown.value` was only ever written at
-  // mount/swap time, so it silently replayed the ORIGINAL value for the
-  // whole exit window instead of the last-rendered one.
+  // a same-key update (e.g. a card's `expanded` flag auto-retracting
+  // mid-visible) must be what a subsequent key change freezes on, not
+  // the value from whenever this key was first promoted in:
+  // `shown.value` tracks the LAST-rendered value for the key, so the
+  // exit window replays what was on screen, never a mount-time snapshot.
   it("freezes the LAST-rendered same-key value on a key change, not the value from when the key first appeared", () => {
     const { result, rerender } = renderSwap("A", "k1");
     expect(result.current).toEqual({ value: "A", exiting: false });
@@ -89,7 +88,7 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "C", exiting: false });
   });
 
-  // H3 regression, incoming side: if the NEW key re-renders again with
+  // the incoming side: if the NEW key re-renders again with
   // an updated value while its own exit timer is still pending (key
   // unchanged, so the timer isn't reset), the eventual swap must land
   // on that freshest value rather than the one captured when the timer

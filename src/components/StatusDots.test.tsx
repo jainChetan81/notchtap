@@ -175,7 +175,7 @@ describe("StatusDots", () => {
       expect(screen.getByRole("img", { name: "News — disabled" })).toBeTruthy();
     });
 
-    // The core bug this plan fixes: the label must come from the RAW
+    // The label must come from the RAW
     // config flag, never the pause-suppressed display booleans — while
     // paused, an otherwise-enabled source is still truthfully "enabled"
     // (dim luminance + its configured shape retained), and the pause

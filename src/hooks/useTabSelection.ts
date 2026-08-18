@@ -11,8 +11,8 @@ type UnparsedObject = { [key: string]: UnparsedValue };
 // a listener, a dead-listener `console.error` — on a third, listen-only
 // channel.
 //
-// **Rust owns selection, not this hook and not the DOM.** Spec section
-// 10 is explicit: the overlay stays receive-only for commands, so a
+// **Rust owns selection, not this hook and not the DOM.** The overlay
+// stays receive-only for commands, so a
 // click on an icon is detected rust-side (the native click monitor
 // adjacent to `hover.rs`'s own tracking area), rust decides which tab
 // that click selected, and rust emits the transition here. There is no
@@ -26,9 +26,8 @@ type UnparsedObject = { [key: string]: UnparsedValue };
 // there is no "value at page load" to seed — same reasoning App.tsx's
 // own `hover-changed` listener documents for hover.
 
-/// The wire payload. `selected: null` is a real, expected value (spec
-/// section 7's "none" page — deselecting the current tab), never an
-/// error.
+/// The wire payload. `selected: null` is a real, expected value (the
+/// "none" page — deselecting the current tab), never an error.
 export type TabSelectionPayload = { selected: Tab | null };
 
 // Closed-set validation against the SAME `TAB_ORDER` the strip itself
