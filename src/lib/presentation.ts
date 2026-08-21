@@ -5,8 +5,8 @@
 // (a `never` check on the default arm) so adding a new Priority/EventSignal
 // variant is a compile error here until this file is updated, not a
 // silent fallback to the wrong label.
-import type { AgentRuntime, AgentSessionState } from "../useAgentState";
-import type { SlotState, SourceKind } from "../useSlotState";
+import type { AgentRuntime, AgentSessionState } from "../hooks/useAgentState";
+import type { SlotState, SourceKind } from "../hooks/useSlotState";
 
 type ShowingSlot = Extract<SlotState, { state: "showing" }>;
 export type Priority = ShowingSlot["priority"];

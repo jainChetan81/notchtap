@@ -6,8 +6,7 @@
 //! strip renders from — every caller calls in, never the other way.
 
 /// The three sources the Icon Strip can select, in the strip's fixed
-/// left-to-right order
-/// (`docs/superpowers/specs/2026-08-02-tab-notch-design.md`) — the SAME
+/// left-to-right order — the SAME
 /// order `prefix+1..3` maps onto: digits select in strip order, left to
 /// right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,7 +51,7 @@ impl TabSelection {
     }
 
     /// A click on `tab`: the SAME tab clicked again deselects; a
-    /// different tab (or nothing previously selected) moves the selection
+    /// different tab moves the selection
     /// to it. `prefix+1..3` drives this same method — one rule, two
     /// callers, not two mechanisms.
     pub fn select(&mut self, tab: Tab) {

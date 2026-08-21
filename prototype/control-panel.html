@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>control panel — 12-section settings window (mirrors src/settings/, 2026-07-30)</title>
+<title>control panel — 10-section settings window</title>
 <style>
   :root {
     /* page chrome (this document's own wrapper, not part of the window mock) */
@@ -169,18 +169,18 @@
 </head>
 <body>
 <div style="border:1px solid var(--page-rule);border-radius:8px;padding:8px 14px;font:12px/1.5 var(--font-mono);color:var(--page-dim);max-width:900px;margin:0 auto 32px;">
-  Mirrors the settings window as of 2026-07-30 — see <code>src/settings/</code> for the live source. This is still a static, hand-authored mock (no build step); it is not a pixel-exact export.
+  Mirrors the settings window. See <code>src/settings/</code> for the live source.
 </div>
 <main>
-  <h1 class="page-title">Control panel — the settings window (12 sections)</h1>
+  <h1 class="page-title">Control panel — the settings window (10 sections)</h1>
   <p class="lede">
     <code>SettingsApp.tsx</code>'s <code>navigation</code> array is the
-    source of truth for order/count: <b>General, Football, News, Weather,
-    Connectors &amp; Keys, Agents, Shortcuts, Appearance, Diagnostics,
-    History, Queue, About</b> — 12 sections, sidebar icon + label each, no
+    source of truth for order/count: <b>General, Football, News, Agents,
+    Shortcuts, Appearance, Diagnostics, History, Queue, About</b> — 10 sections,
+    sidebar icon + label each, no
     per-row index badge (the "01"/"02"… index now only appears in the pane
-    header, e.g. "Settings / 06"). Three sections are drawn out in full
-    below (General, Agents, Connectors &amp; Keys); the other nine are
+    header, e.g. "Settings / 04"). Two sections are drawn out in full
+    below (General and Agents); the other eight are
     summarized in prose with their real control list.
   </p>
   <p class="note">
@@ -217,8 +217,6 @@
           <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
@@ -298,15 +296,11 @@
                   <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
                 </div>
                 <div class="rotation-order-row">
-                  <span class="rotation-order-rank">3</span><span class="rotation-order-name">Weather</span>
+                  <span class="rotation-order-rank">3</span><span class="rotation-order-name">Agent</span>
                   <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
                 </div>
                 <div class="rotation-order-row">
-                  <span class="rotation-order-rank">4</span><span class="rotation-order-name">Agent</span>
-                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
-                </div>
-                <div class="rotation-order-row">
-                  <span class="rotation-order-rank">5</span><span class="rotation-order-name">News</span>
+                  <span class="rotation-order-rank">4</span><span class="rotation-order-name">News</span>
                   <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn" style="opacity:.5">▼</span></div>
                 </div>
               </div>
@@ -340,7 +334,7 @@
 
   <!-- ============================================================ -->
   <section class="rig">
-    <h2>06 — Agents</h2>
+    <h2>04 — Agents</h2>
     <p class="rig-sub">
       The v7 Agent Adapter section (spec §4.6/§8) — the newest and largest
       section. Four groups: Agent Adapters (master enable + retention/stale
@@ -362,8 +356,6 @@
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
           <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
           <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
@@ -377,7 +369,7 @@
       <div class="pane">
         <div class="section-scroll">
           <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
-            <div class="section-index">Settings / 06</div>
+            <div class="section-index">Settings / 04</div>
             <h1 class="pane-title">Agents</h1>
             <p class="pane-desc">Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.</p>
           </div>
@@ -514,66 +506,6 @@
 
   <!-- ============================================================ -->
   <section class="rig">
-    <h2>05 — Connectors &amp; Keys</h2>
-    <p class="rig-sub">
-      One group, "Write-only keys" — currently a single row (the OpenRouter
-      API key). Values never come back across IPC; the status chip only
-      ever reads "unset" or a masked confirmation once saved.
-    </p>
-    <div class="rig-label">Connectors &amp; Keys pane</div>
-    <div class="window">
-      <div class="sidebar">
-        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
-        <nav class="sidebar-nav">
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
-          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
-          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
-        </nav>
-        <div class="sidebar-meta">settings / v5</div>
-      </div>
-      <div class="pane">
-        <div class="section-scroll">
-          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
-            <div class="section-index">Settings / 05</div>
-            <h1 class="pane-title">Connectors &amp; Keys</h1>
-            <p class="pane-desc">Manage write-only credentials for outbound integrations.</p>
-          </div>
-          <div class="settings-group">
-            <div class="group-heading"><div class="group-title">Write-only keys</div><div class="group-desc">Values never come back across IPC. Status reveals only whether a value is set and, when safe, its masked suffix.</div></div>
-            <div class="group-body">
-              <div class="textarea-control" style="padding-top:11px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;">
-                  <span class="control-name">OpenRouter API key</span>
-                  <span class="meta-chip uppercase">unset</span>
-                </div>
-                <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;">
-                  <input class="settings-input" style="margin-top:0;" type="password" placeholder="Enter a new key">
-                  <button class="btn outline sm" disabled>Save</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-footer">
-          <button class="btn default sm">Save &amp; Relaunch</button>
-          <button class="btn outline sm">Reset</button>
-          <button class="btn outline sm">Reset to defaults</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================ -->
-  <section class="rig">
     <h2>Sections not drawn out in full</h2>
     <p class="rig-sub">
       Every other section, with its real control list and copy — same
@@ -585,13 +517,12 @@
         <ul class="prose-list">
           <li><b style="color:var(--foreground)">02 Football</b> — one group ("Score polling"): a <span class="snip">Football</span> identity chip, enable toggle, a leagues textarea (one ESPN league code per line), poll interval, rotation seconds, a "Live match card" toggle (consolidate updates into one card instead of a burst), a "Richer match events" toggle (fouls/offsides/VAR/subs, opt-in — heavier polling), priority segmented, test button.</li>
           <li><b style="color:var(--foreground)">03 News</b> — one group ("RSS polling"): enable toggle, feeds textarea, topics textarea (searched via Google News, merged into the same stream), poll interval, headline rotation seconds, max-per-poll burst cap, priority segmented, test button, an ad-hoc "Search now" row (one-off Google News search, not saved as a topic), and a read-only category-colour legend (six chips: Politics/Tech/Sports/Business/World/Science).</li>
-          <li><b style="color:var(--foreground)">04 Weather</b> — one group: keyless Open-Meteo polling. Identity chip, enable toggle, latitude/longitude (decimal degrees), a Celsius/Fahrenheit units segmented (display only — alert thresholds are always Celsius), poll interval, rain threshold %, rain lookahead minutes, hot/cold temperature thresholds (°C), priority segmented, test button.</li>
-          <li><b style="color:var(--foreground)">07 Shortcuts</b> — one group, a real <code style="color:inherit;font-size:inherit">&lt;table&gt;</code> (not a div grid) of 7 rows: expand/collapse (⌃⇧N), open story link (⌃⇧O), dismiss now (⌃⇧X), pause/resume (⌃⇧P), skip to next (⌃⇧]), focus front Agent Session's host app (⌃⇧A), open settings (⌃⇧,) — every row currently "active" (no planned-but-unshipped rows today).</li>
-          <li><b style="color:var(--foreground)">08 Appearance</b> — two groups: "Card shape" (Scale/Radius/Opacity — three bare, unlabelled segmented controls each with 3 options, e.g. Small/Medium/Large — applies live to the real overlay via <code style="color:inherit;font-size:inherit">set_appearance</code> — plus a "Live check" test button), and "Overlay animations" — a preview gallery that renders the actual <code style="color:inherit;font-size:inherit">StatusRailCard</code> component (imported from the overlay, not re-implemented) across several fixture states, reflecting the shape settings above live.</li>
-          <li><b style="color:var(--foreground)">09 Diagnostics</b> — one group: a read-only <code style="color:inherit;font-size:inherit">&lt;pre&gt;</code> tail of the last 200 lines of <code style="color:inherit;font-size:inherit">~/Library/Logs/notchtap/notchtap.log</code>, fetched on section-open, plus a manual Refresh button (no live tail).</li>
-          <li><b style="color:var(--foreground)">10 History</b> — one group: a reverse-chronological list of recorded notifications (time, origin, title, metadata chips for source/category/priority/event-type/rotation, body, an expandable "More details" native <code style="color:inherit;font-size:inherit">&lt;details&gt;</code> for subtitle/topic/published time/ESPN summary/link-as-text), fetched on section-open, plus a two-step-confirm Clear history button. Empty-state copy differs depending on whether history recording is on.</li>
-          <li><b style="color:var(--foreground)">11 Queue</b> — one group: a plain list of items currently waiting behind the visible card (title + priority chip), a manual Refresh button, a Skip current button (dismiss the visible card now, promote the next waiting item), and a Clear queue button (drops every waiting item; the visible card finishes its own turn untouched).</li>
-          <li><b style="color:var(--foreground)">12 About</b> — five groups: identity (brand mark, version + bundle id), "What it is" (one paragraph), "How to use it" (a 4-item list with inline <code style="color:inherit;font-size:inherit">./notchtap …</code>/<code style="color:inherit;font-size:inherit">notchtap run -- …</code> snippets and the three most-used shortcuts), "Tech stack" (chips: Rust core, Tauri v2, React + TypeScript, Motion, Vite), and "System" — a live 2-second-polled 2×3 stat grid (app memory, system memory, disk, platform/arch, bundle size, uptime).</li>
+          <li><b style="color:var(--foreground)">05 Shortcuts</b> — one group, a real <code style="color:inherit;font-size:inherit">&lt;table&gt;</code> of 7 active shortcut rows.</li>
+          <li><b style="color:var(--foreground)">06 Appearance</b> — card shape controls and the overlay preview gallery.</li>
+          <li><b style="color:var(--foreground)">07 Diagnostics</b> — a read-only log tail and a manual Refresh button.</li>
+          <li><b style="color:var(--foreground)">08 History</b> — recorded notifications and a two-step Clear history button.</li>
+          <li><b style="color:var(--foreground)">09 Queue</b> — waiting items, Refresh, Skip current, and Clear queue controls.</li>
+          <li><b style="color:var(--foreground)">10 About</b> — identity, usage, stack, and live system information.</li>
         </ul>
       </div>
     </div>

@@ -100,11 +100,9 @@
   .card-root .status-dot svg { width: 100%; height: 100%; }
   .card-root .status-dot.football { background: var(--overlay-green); }
   .card-root .status-dot.news { background: var(--overlay-coral); }
-  .card-root .status-dot.weather { background: var(--overlay-amber); }
   .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
   .card-root .status-dot.football.active { color: var(--overlay-green); }
   .card-root .status-dot.news.active { color: var(--overlay-coral); }
-  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
   /* ============== priority accent (card-chrome.css, verbatim) — consumed
@@ -130,11 +128,7 @@
     position: relative; z-index: 1;
   }
 
-  /* ============== the shared `.compact` hero template
-     (masthead-content.css/news-category.css/manifest.css, verbatim) — the
-     hero now renders through this SAME template every generic/news/football
-     card uses (`AgentHeroCard`, NotificationBody.tsx, plan 169). This is
-     no longer a "proposal" block; it is what's on screen today. ====== */
+  /* Shared compact template used by AgentHeroCard and NotificationBody. */
   .card-root .compact { position: relative; box-sizing: border-box; overflow: hidden; padding: 12px 16px 13px 20px; }
   .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
   .card-root .copy { min-width: 0; }
@@ -156,7 +150,7 @@
   .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
   .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
 
-  /* ============== agent-board.css, verbatim (2026-08-02 fidelity pass) ============== */
+  /* Agent Board styles. */
   .card-root .agent-board { display: flex; flex-direction: column; gap: 8px; padding: 0 0 12px; }
   /* CONTENT-HUG: the 12px bottom padding is only owed to a mounted rows/
      list block, so a hero-only (single-session) board ends flush at the
@@ -198,7 +192,6 @@
   .card-root .agent-dot.pulse { animation: agent-dot-state-tick 240ms var(--ease-notchtap), agent-dot-breathe 2.2s ease-in-out 4; }
   @keyframes agent-dot-state-tick { from { transform: scale(1.35); } to { transform: scale(1); } }
   @keyframes agent-dot-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .card-root .agent-dot.pulse { animation: agent-dot-breathe 2.2s ease-in-out 4; } }
   .card-root .agent-waiting { --agent-accent: var(--overlay-amber); }
   .card-root .agent-failed { --agent-accent: var(--overlay-coral); }
   .card-root .agent-working { --agent-accent: var(--overlay-blue); }
@@ -263,13 +256,11 @@
      above), never replays this. */
   .agent-board-primary.swap-out { transition: opacity var(--hover-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); opacity: 0; transform: translateY(-6px); }
 
-  /* ============== section 6 demo: the OUTER Board<->status-rail surface
+  /* The outer Board<->status-rail surface
      swap (App.tsx's SURFACE_STACK_STYLE/SURFACE_CELL_STYLE + BOARD_SURFACE_
      MOTION/RAIL_SURFACE_MOTION). Opacity-only on both legs — the shell
-     itself (the synthetic notch cutout) NEVER transforms; a scale/drop
-     entrance was tried and rejected on sight (2026-08-02 operator feedback:
-     "looks weird, something about its size animation" — it moved the fake
-     notch). Arrival is the longer, house-eased BOARD_SUMMON_MS (260ms);
+     itself (the synthetic notch cutout) NEVER transforms. Arrival uses
+     the longer, house-eased BOARD_SUMMON_MS (260ms);
      dismissal is the quieter, shared SURFACE_SWAP_MS (180ms) — a deliberate
      asymmetry: an arrival earns emphasis, a dismissal should be quieter
      than the thing it dismisses. ============== */
@@ -351,8 +342,8 @@
   <section>
     <h2>1 — presence: which sessions earn the Board at all</h2>
     <p class="section-sub">
-      Operator decision 2026-08-02: <b>the Board's job is attention, not a
-      dashboard.</b> A session in a merely-<code>Working</code>,
+      <b>The Board's job is attention, not a dashboard.</b> A session in a
+      merely-<code>Working</code>,
       <code>Starting</code>, or <code>Stale</code> state does not, on its
       own, summon the Board — <code>AgentSessionState::summons_board</code>
       (rust, <code>agents/model.rs</code>) is <code>true</code> only for
@@ -365,8 +356,7 @@
       downstream consumer (the overlay's <code>presentationMode</code>, the
       hover-expand primitive) stays ignorant of the knob entirely. The
       Settings toggle is <code>[agents] board_show_working</code>,
-      <b>default OFF</b> — a deliberate behavior change from the pre-
-      2026-08-02 always-on Board.
+      <b>default OFF</b>.
     </p>
     <p class="section-sub">
       This gates PRESENCE only, never CONTENT: once <i>something</i> has
@@ -383,10 +373,8 @@
       Ordering follows the same principle: <code>urgency_rank</code>
       guarantees <b>every summoning state outranks every non-summoning
       state</b>, so the session that actually summoned the Board always
-      leads the hero — a <code>Completed</code> session that just summoned
-      the Board can never lose the hero card to a merely-<code>Working</code>
-      sibling (that was a real, fixed bug: the Board used to arrive
-      announcing "Agent working" on exactly that scenario).
+      leads the hero. A <code>Completed</code> session that summons the Board
+      cannot lose the hero card to a merely-<code>Working</code> sibling.
     </p>
     <div class="controls">
       <button id="gateOffBtn" aria-pressed="true">board_show_working = false (default)</button>
@@ -404,7 +392,6 @@
             <span class="status-dots">
               <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
               <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-              <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
             </span>
           </div>
           <div class="below-block agent-board agent-completed agent-origin src-kimi" id="gateBelow" style="display:none;">
@@ -518,7 +505,6 @@
             <span class="status-dots">
               <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
               <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-              <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
             </span>
           </div>
           <div class="below-block agent-board agent-waiting agent-origin src-claude-code" id="heroBelowBlock">
@@ -562,10 +548,8 @@
       routine rail<span>↔</span>rail crossfade's 180ms — while its EXIT
       stays on the shared, quieter <code>SURFACE_SWAP_MS</code> (180ms): an
       interruption should announce itself and then leave without ceremony.
-      Both legs are <b>opacity-only</b> — a scale/drop entrance was tried
-      and rejected on sight (2026-08-02, live operator feedback: "looks
-      weird, something about its size animation"), because the wrapping
-      <code>motion.div</code> also contains the synthetic notch cutout, and
+      Both legs are <b>opacity-only</b> because the wrapping
+      <code>motion.div</code> contains the synthetic notch cutout, and
       that cutout's whole illusion depends on being a fixed physical
       anchor. The standing law: any future entrance emphasis on this
       surface animates ONLY content below the cutout, never the shell.
@@ -586,7 +570,6 @@
                 <span class="status-dots">
                   <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
                   <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-                  <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
                 </span>
               </div>
             </div>
@@ -599,7 +582,6 @@
                 <span class="status-dots">
                   <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
                   <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-                  <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
                 </span>
               </div>
               <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
@@ -622,20 +604,13 @@
   <section>
     <h2>6 — resting ↔ hover-expanded · one continuous morph</h2>
     <p class="section-sub">
-      2026-08-02 operator feedback: "the compact&lt;-&gt;expanded transition
-      reads badly." It used to run <code>mode="wait"</code> — the resting
-      rows collapsed ALL THE WAY to nothing before the expanded list was
-      allowed to start growing, so a hover played as two chained beats with
-      a full pinch-to-zero between them. Fixed by stacking both branches in
-      ONE grid cell (<code>.agent-board-swap</code>) with BOTH kept on the
+      Both branches stack in one grid cell
+      (<code>.agent-board-swap</code>) with both kept on the
       same height spring, started the same frame — since a grid row sizes
       to the MAX of its items rather than their sum, the wrapper's height
       traces <code>max(outgoing, incoming)</code> as one continuous curve.
-      The hero above is unaffected either way — it stays mounted in BOTH
-      states (a fix for a separate bug: hovering a one-session Board used
-      to swap its hero for a single skinny row, which read as the card
-      getting SMALLER on hover — a hover must never shrink or swap the
-      hero). The expanded list below only ever holds the OTHER sessions
+      The hero stays mounted in both states. A hover never shrinks or swaps
+      the hero. The expanded list only holds the other sessions
       (<code>rest</code>), so each session appears exactly once at every
       session count.
     </p>
@@ -654,7 +629,6 @@
             <span class="status-dots">
               <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
               <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-              <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
             </span>
           </div>
           <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
@@ -700,7 +674,7 @@
       plus the hero plus the list's own top margin) plus
       <code>EXPANDED_ROW_HEIGHT</code> (96px, honestly sized to what
       <code>ExpandedAgentRow</code> actually renders — name/summary/meta —
-      not the compact row's much shorter 34px, which used to clip rows
+      rather than the compact row's shorter 34px, which would clip rows
       mid-text) per non-primary session, floored at the same 300px resting
       canvas and capped at 75% of screen height. Board hover-out also now
       waits a 450ms grace before shrinking the native frame, so the row-
@@ -733,7 +707,6 @@
             <span class="status-dots">
               <span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
               <span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span>
-              <span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span>
             </span>
           </div>
           <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
@@ -825,12 +798,10 @@
     <code>src/lib/presentation.ts</code>, <code>src/animationTiming.ts</code>,
     <code>src-tauri/src/agents/board.rs</code>,
     <code>src-tauri/src/agents/model.rs</code>,
-    <code>src-tauri/src/config.rs</code>, as of merge commit
-    <code>0252767</code> (PR #10, <code>fix/board-motion-polish</code>;
-    repo HEAD <code>25c007c2</code> at the time of this pass).
+    <code>src-tauri/src/config.rs</code>.
     Sibling files: <code>notch-states.html</code> (the shared shell + every
     OTHER card mode), <code>football-card.html</code>, <code>news-card.html</code>,
-    <code>weather-art.html</code>, <code>status-rail.html</code>,
+    <code>status-rail.html</code>,
     <code>control-panel.html</code>, <code>system-stats.html</code> — see
     <code>index.html</code> in this folder for the full set.
   </footer>
@@ -910,7 +881,6 @@
       '<div class="card-assembly expanded agent-board-shell ' + s.priority + '" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.82);transform-origin:top center;">' +
       '<span class="notch-gill notch-gill-left"></span><span class="notch-gill notch-gill-right"></span>' +
       '<div class="flank-left"><span class="time-only">14:32</span></div><div class="synthetic-cutout"></div>' +
-      '<div class="flank-right"><span class="status-dots"><span class="status-dot football active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 9 L9 3.5 M9 9 L13.7 11.7 M9 9 L4.3 11.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span><span class="status-dot news active"><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 6 H12.5 M5.5 8.6 H10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></span><span class="status-dot weather dim"><svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z"/></svg></span></span></div>' +
       '<div class="below-block agent-board agent-origin ' + s.className + ' src-claude-code">' +
       '<div class="agent-board-primary">' + heroHtml("claude-code", key, "notchtap") + "</div>" +
       "</div></div></div></div>";

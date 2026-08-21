@@ -1,21 +1,18 @@
-# Claude Code adapter (v7 ticket 6 of 13)
+# Claude Code adapter
 
 notchtap's Claude Code adapter is not a plugin — it's the shared
 `notchtap-agent` binary (`src-tauri/src/bin/notchtap_agent.rs`, built and
 installed with the app) invoked as a Claude Code **command hook**. There
 is nothing to install beyond pointing Claude Code's hook config at that
-binary; see `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` §4.1/§4.2 for
-the full delivery/parsing contract this implements.
+binary. See `docs/ARCHITECTURE.md` §10 for the delivery contract.
 
-This file is the copyable setup snippet plan 143 (Settings' Agents
-section) surfaces to the user, plus the exact target file to add it to.
+This file contains the setup snippet shown in the Settings Agents section.
 
 ## target file
 
 `~/.claude/settings.json` (user-level) or a project's `.claude/settings.json`
 — either works; Claude Code merges them. notchtap never edits this file
-itself (spec §4.6: "v7 does not silently edit a user's global provider
-configuration") — copy the snippet below in yourself.
+itself. Copy the snippet below yourself.
 
 ## snippet
 

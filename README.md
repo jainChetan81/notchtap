@@ -105,8 +105,9 @@ command — `brew install just` first.
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | locked decisions: scope, stack, cross-device behavior, IPC security, agent adapter contract |
 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, the hardware checklist |
+| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | domain glossary: the product's terms, one definition each |
 | [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint |
-| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance and domain glossary (`AGENTS.md` and `CONTEXT.md` are symlinks to it) |
+| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance (`AGENTS.md` and `CONTEXT.md` are symlinks to it) |
 
 ## scope
 

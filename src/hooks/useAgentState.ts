@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { isNonNegativeInteger, isNullableString } from "../lib/guards";
+import { isDetailArray, isNonNegativeInteger, isNullableString } from "../lib/guards";
 
 // The Agent Board's `agent-state` channel — same delivery discipline as
 // slot-state/status-state: runtime-validated payload, dead-listener
@@ -101,20 +101,6 @@ function emptyAgentState(): ResolvedAgentState {
     tabSessions: [],
     adapterHealth: [],
   };
-}
-
-function isDetailArray(v: unknown): v is AgentDetail[] {
-  return (
-    Array.isArray(v) &&
-    v.every((d) => {
-      if (typeof d !== "object" || d === null || !("label" in d) || !("value" in d)) {
-        return false;
-      }
-      // SAFETY: "label" and "value" in d narrows to { label: unknown, value: unknown }.
-      const pair = d as { label: unknown; value: unknown };
-      return typeof pair.label === "string" && typeof pair.value === "string";
-    })
-  );
 }
 
 function isValidProject(v: unknown): v is AgentProject {

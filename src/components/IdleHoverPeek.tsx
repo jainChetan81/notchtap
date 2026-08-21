@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { DISCLOSURE_SPRING } from "../animationTiming";
-import { useClock } from "../useClock";
-import type { LiveMatchSummary, StatusState } from "../useStatusState";
+import { useClock } from "../hooks/useClock";
+import type { LiveMatchSummary, StatusState } from "../hooks/useStatusState";
+import { DISCLOSURE_SPRING } from "../lib/constants";
 
 // The idle hover-expanded state — hovering the idle assembly (`hovered`,
 // the hover primitive's prop, NEVER CSS `:hover` — the overlay window is
@@ -106,7 +106,7 @@ export function IdleHoverPeek({
           initial={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
           animate={{ height: 100, opacity: 1, paddingTop: 12, paddingBottom: 13 }}
           exit={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
-          // Transition numbers live in animationTiming.ts as
+          // Transition numbers live in lib/constants.ts as
           // DISCLOSURE_SPRING, shared with AgentBoard's disclosures. See
           // that constant's own doc for why a fixed opacity tween
           // desynced from the spring on interrupted hover flips.

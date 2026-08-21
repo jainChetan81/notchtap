@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { isNonNegativeInteger } from "../lib/guards";
+import { isDetailArray, isNonNegativeInteger } from "../lib/guards";
 import type { AgentRuntime } from "./useAgentState";
 
 type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
@@ -177,22 +177,6 @@ function isValidEspnMeta(v: unknown): v is EspnMeta {
 
 function isCardTuple(v: unknown): v is [number, number] {
   return Array.isArray(v) && v.length === 2 && v.every(isNonNegativeInteger);
-}
-
-// Pairs originate in untrusted hook input — revalidated even though rust
-// is trusted; malformed `details` falls back to empty.
-function isDetailArray(v: unknown): v is { label: string; value: string }[] {
-  return (
-    Array.isArray(v) &&
-    v.every((d) => {
-      if (typeof d !== "object" || d === null) {
-        return false;
-      }
-      // SAFETY: validated as record via preceding checks.
-      const pair = d as UnparsedObject;
-      return typeof pair.label === "string" && typeof pair.value === "string";
-    })
-  );
 }
 
 function initialSlotState(): SlotState {

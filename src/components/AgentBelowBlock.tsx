@@ -20,8 +20,8 @@
 // `agentHeroPropsFor`, exported from AgentBoard.tsx for exactly this
 // (see that function's own doc comment) — not a second, drifting copy.
 
+import type { AgentSessionView } from "../hooks/useAgentState";
 import { agentRuntimeClass } from "../lib/presentation";
-import type { AgentSessionView } from "../useAgentState";
 import { agentHeroPropsFor } from "./AgentBoard";
 import { AgentHeroCard } from "./NotificationBody";
 import { PositionBar } from "./PositionBar";

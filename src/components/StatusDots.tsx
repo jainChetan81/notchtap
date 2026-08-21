@@ -1,4 +1,4 @@
-import type { StatusState } from "../useStatusState";
+import type { StatusState } from "../hooks/useStatusState";
 import { FootballGlyph, NewsGlyph } from "./IconStrip";
 
 // Right flank status dots, fixed order Football/News. "Active" = source

@@ -1,26 +1,19 @@
 #!/bin/sh
-# notchtap — cli push for the notchtap notification engine (spec §12).
+# notchtap — cli push for the notchtap notification engine.
 # flags only, no positional form:
 #   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--port <p>]
 # second, distinct mode — the one exception to "flags only": `notchtap run`
 # wraps a command and pushes a completion notification (see below).
-# --subtitle and --detail are first-class wire fields (plan 035): --subtitle
-# posts as its own optional field (it no longer folds into the body), and each
+# --subtitle posts as its own optional wire field, and each
 # repeatable --detail Label=Value adds a {label,value} pair to a details array
 # (max 8; the value may itself contain '=' — the split is on the FIRST '='; the
 # label must be non-empty). the server caps/truncates both for display safety.
 # --priority and --signal fold into the posted json as-is; when omitted, the
 # field is left off the payload entirely and the server's own default applies
-# — v3.6 spec §6: there is exactly one place "what does unspecified mean"
-# lives, not two kept in sync. --signal is mainly a manual-testing aid (real
+# so the server remains the single source for defaults. --signal is mainly a
+# manual-testing aid. Real
 # football signals come from the espn poller, which knows the specific event
-# structurally — CLI callers can't) — see IMPLEMENTATION_PLAN.md's manual
-# verification section for its use.
-# plan 137 (v7 ticket 5, spec §7/§12): the v6 cmux relay's `--source cmux`
-# flag and its CMUX_NOTIFICATION_BODY env-var autodetection are gone —
-# superseded by the v7 Agent Adapter layer (`notchtap-agent`, a separate
-# binary posting to `/agent/events`). every push from this script is an
-# ordinary Origin Manual push now.
+# structurally. Every push from this script has Origin Manual.
 # port resolution: --port flag → $NOTCHTAP_PORT → 9789. never reads
 # config.toml. exits non-zero on connection failure or any non-2xx
 # response so callers surface failures instead of swallowing them.
@@ -204,14 +197,11 @@ done
 [ -n "$title" ] || usage
 [ -n "$body" ] || usage
 
-# plan 035: --subtitle no longer folds into the body — it posts as its own
-# wire field below (the manifest renders it as a dedicated cell).
-
 # jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
 # subtitle/priority/signal are merged in only when set, so an unspecified
 # field is genuinely absent from the wire (not sent as an empty string) —
 # the server's own default is the single source of truth for "unspecified".
-# details is merged only when non-empty (plan 035); it is already a JSON
+# details is merged only when non-empty; it is already a JSON
 # array built safely via jq per --detail above.
 payload=$(jq -n \
   --arg title "$title" --arg body "$body" --arg subtitle "$subtitle" \

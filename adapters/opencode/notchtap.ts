@@ -1,10 +1,8 @@
-// notchtap — OpenCode plugin adapter (v7 ticket 9 of 13, plan 141,
-// `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` §3, §4.1, §4.5).
+// notchtap — OpenCode plugin adapter.
 //
 // OpenCode's lifecycle surface is a plugin event bus, not command hooks
 // (unlike Claude Code/Codex/Kimi, which post via the `notchtap-agent`
-// Rust binary — see `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-// §4.1-§4.4). This file is that plugin: it normalizes OpenCode's bus
+// Rust binary). This file normalizes OpenCode's bus
 // events into the same schema-v1 `POST /agent/events` body the Rust
 // helper sends, and posts them to the same loopback endpoint
 // (`127.0.0.1:9789` by default, `NOTCHTAP_PORT` override), matching its
@@ -12,8 +10,7 @@
 //
 // ## Install
 //
-// OpenCode loads plugins from (per https://opencode.ai/docs/plugins/,
-// fetched 2026-07-26):
+// OpenCode loads plugins from https://opencode.ai/docs/plugins/:
 //   - project directory:  .opencode/plugins/  (drop this file there)
 //   - global directory:   ~/.config/opencode/plugins/
 //   - or as an npm package referenced from `plugin` in opencode.json
@@ -37,8 +34,7 @@
 //
 // ## OpenCode plugin API this was built against
 //
-// https://opencode.ai/docs/plugins/ (and the same content indexed as
-// context7 library `/websites/opencode_ai_plugins`), fetched 2026-07-26:
+// https://opencode.ai/docs/plugins/:
 //
 //   export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
 //     return {
@@ -52,7 +48,7 @@
 // keyed by a `event.type` discriminated union (not one hook method per
 // event name), while tool execution has its own two dedicated hook
 // keys taking `(input, output)`. The docs enumerate `event.type` values
-// including every one plan 141 asks for (`permission.asked`,
+// including `permission.asked`,
 // `permission.replied`, `session.created`, `session.updated`,
 // `session.status`, `session.idle`, `session.error`,
 // `session.deleted`) but do NOT publish the exact `event.properties`
@@ -76,9 +72,7 @@
 //   adapter cannot distinguish a failed tool call at that hook and
 //   never emits `kind: "failed"` from it (spec: never infer state from
 //   wording/heuristics on undocumented payloads).
-// - No subagent lifecycle event is listed in plan 141's event list or
-//   the plugin docs, matching the §1 matrix row ("subagent lifecycle:
-//   not declared until verified") — this adapter never emits a
+// - The plugin docs list no subagent lifecycle event. This adapter never emits a
 //   `subagent` field and never declares the `subagents` capability.
 // - OpenCode plugin docs don't expose Host app identity, so this
 //   adapter never sends a `host` field and never declares
@@ -426,9 +420,8 @@ function mapSessionStatus(event: BusEvent, ctx: EventContext): AgentWireEvent | 
   return wire;
 }
 
-/** Operator decision 2026-07-26 (spec §2.1): `session.idle` fires once
- * per turn (the agent finished and is awaiting the user), not once per
- * session — non-terminal, so the registry resolves this into
+/** `session.idle` fires once per turn while the agent awaits the user.
+ * The registry resolves it into
  * `WaitingForInput` rather than a terminal state. Only `session.deleted`
  * (`mapSessionDeleted`) is the explicit session-end signal. */
 function mapSessionIdle(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
@@ -445,7 +438,7 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   const wire = baseEvent(event.type, sessionId, "failed", "failed", true, ctx);
   // Deliberately a fixed, generic summary — an undocumented `error`
   // payload could be a stack trace or otherwise contain sensitive
-  // command/prompt content, which spec §3.2 forbids forwarding. Only a
+  // command/prompt content. Only a
   // short, safe error *name*/*code* (never a message) is allowed
   // through as a detail.
   wire.summary = sanitizeSummary("Session failed");
@@ -458,17 +451,8 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   return wire;
 }
 
-/** `session.deleted` is OpenCode's explicit session-end signal, so it is
- * the counterpart of the other three runtimes' `SessionEnd` hook: a
- * TERMINAL `completed`. It used to emit `informational` + terminal,
- * which meant OpenCode's real session end produced no card at all (it
- * fell into the off-by-default `informational_notifications` gate) while
- * the other three runtimes carded — an inconsistency the core's
- * `Completed`-terminal split (2026-08-02) made visible. Emitting
- * `completed` here is what makes a real session end card identically
- * across all four runtimes; the registry's `next_state` lands both
- * `Completed`+terminal and `Informational`+terminal in the same terminal
- * `Completed` state, so the Agent Board is unaffected by the change. */
+/** `session.deleted` is OpenCode's explicit terminal completion signal.
+ * It emits the same completion card as the other runtimes' `SessionEnd` hook. */
 function mapSessionDeleted(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;

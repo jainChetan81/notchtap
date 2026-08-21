@@ -1,5 +1,5 @@
 //! Pure, clock-free scheduling for **Silenced** — the Silent Period,
-//! Timed Mute and Skip entries in `CLAUDE.md`'s glossary. No function
+//! Timed Mute and Skip entries in the `docs/GLOSSARY.md` glossary. No function
 //! here reads the system clock: each takes "now" as a plain value and
 //! returns a plain value, the same pure-decision split
 //! `presentation::presentation_mode` uses. The live wiring — a
@@ -228,7 +228,7 @@ impl SilenceController {
     }
 
     /// The union of "the Silent Period is active and not skipped" and "a
-    /// Timed Mute is running" — Silenced per `CLAUDE.md`'s glossary.
+    /// Timed Mute is running" — Silenced per the `docs/GLOSSARY.md` glossary.
     pub fn is_silenced(&self, now: AbsoluteMinute) -> bool {
         self.mute_active(now) || self.schedule_active(now)
     }

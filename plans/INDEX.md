@@ -151,7 +151,7 @@ from the working tree; every one is retrievable via
 - 142 — Agent Board expanded state + scroll (v7 ticket 10).
 - 143 — Settings Agents section + Adapter Health (v7 ticket 11).
 - 144 — Open/Focus Session shortcut ⌃⇧A (v7 ticket 12).
-- 145 — v7 manual verification + doc closeout (v7 ticket 13; its manual-verification content is superseded by `plans/2026-08-16-anti-slop-deslop.html`).
+- 145 — v7 manual verification + doc closeout; manual verification lives in `docs/TESTING_STRATEGY.md` §6.
 - 146 — Silenced (Silent Period + Timed Mutes + Breakthrough) and Priority Preemption.
 - 147 — Source identity colours, Claude/Kimi card parity, weather TTL unification.
 - 148 — Motion token cohesion: crossfade ease, disclosure spring, idle-face durations.
@@ -192,7 +192,7 @@ from the working tree; every one is retrievable via
 - 182 — AgentBoard flank gets the same icon glyphs IconStrip draws.
 - 183 — Revert notification manifest hover-expand back to keyboard-only.
 - 184 — Wire `agent-viewed-session-changed` to the display; add auto-advance.
-- 185 — Comment history purge across the rust core and frontend, telegram remnants removed, shared provider helpers into `wire.rs`, queue tests and tray split out (`plans/2026-08-18-rust-comment-purge.html`).
+- 185 — Comment history purge across the rust core and frontend, telegram remnants removed, shared provider helpers into `wire.rs`, queue tests and tray split out.
 
 ## retired, never executed
 

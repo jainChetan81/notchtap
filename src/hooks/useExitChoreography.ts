@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { SWAP_EXIT_MS } from "../animationTiming";
+import { SWAP_EXIT_MS } from "../lib/constants";
 import { presentationFacts } from "../lib/presentationFacts";
 import { useDelayedSwap } from "./useDelayedSwap";
 import type { SlotState } from "./useSlotState";

@@ -1,16 +1,15 @@
-# Kimi adapter (v7 ticket 8 of 13)
+# Kimi adapter
 
 Like the Claude Code and Codex adapters, this is the shared
 `notchtap-agent` binary (`src-tauri/src/bin/notchtap_agent.rs`, built and
 installed with the app) invoked as a Kimi Code **command hook** — not a
 plugin, nothing else to install. See
-`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` §4.1/§4.4 and
+`docs/ARCHITECTURE.md` §10 and
 `src-tauri/src/agents/providers/kimi.rs`/`kimi_version.rs`'s module docs
 for the full delivery/parsing contract and the hook-support version
 gate below.
 
-This file is the copyable setup snippet plan 143 (Settings' Agents
-section) surfaces to the user, plus the exact target file to add it to.
+This file contains the setup snippet shown in the Settings Agents section.
 
 ## version requirement — check this first
 
@@ -20,14 +19,13 @@ hook surface is below version **0.9.0** (best-effort minimum — see
 Settings' Agents section reports the detected version and whether it
 clears the gate; `kimi --version` on the command line shows the same
 thing. Below the minimum, this adapter reports `unavailable` and does
-**not** fall back to any other detection method — there is no terminal
-scraping fallback, ever (spec §4.4).
+**not** fall back to any other detection method. There is no terminal
+scraping fallback.
 
 ## target file
 
 `~/.kimi-code/config.toml` (user-level). notchtap never edits this file
-itself (spec §4.6: "v7 does not silently edit a user's global provider
-configuration") — copy the snippet below in yourself.
+itself. Copy the snippet below yourself.
 
 ## snippet
 

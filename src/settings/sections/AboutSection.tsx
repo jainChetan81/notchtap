@@ -1,10 +1,10 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { NOTCHTAP_EASE } from "@/lib/constants";
+import { formatBytePair, formatBytes, formatUptime } from "@/lib/format";
 import brandMark from "../../../assets/branding/notchtap-mark-128.png";
-import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
-import { formatBytePair, formatBytes, formatUptime } from "../byteFormat";
 import { SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
 import type { AboutInfo } from "../types";
@@ -49,8 +49,7 @@ function StatTile({ label, value, index }: { label: string; value: string; index
 // Fetch-on-open + a 2s live poll while the section stays mounted (unlike
 // Diagnostics/Queue's manual-Refresh-only shape) — memory/disk are the
 // one part of this section meant to visibly move. The interval is torn
-// down on unmount, same pattern as the connector-health poll in
-// SettingsApp.tsx, so switching away from About stops the polling
+// down on unmount, so switching away from About stops the polling
 // entirely rather than leaking a background timer.
 export function AboutSection() {
   const [info, setInfo] = useState<AboutInfo | null>(null);
@@ -110,10 +109,7 @@ export function AboutSection() {
             <Snippet>{"notchtap run -- <cmd>"}</Snippet> wraps a long-running command and pushes a
             completion card when it finishes.
           </li>
-          <li>
-            Connectors for football scores and personalized news topics are configured in their own
-            tabs.
-          </li>
+          <li>Football scores and personalised news topics are configured in their own tabs.</li>
           <li>
             <Snippet>⌃⇧N</Snippet> expands a card, <Snippet>⌃⇧O</Snippet> opens its link,{" "}
             <Snippet>⌃⇧,</Snippet> opens settings.

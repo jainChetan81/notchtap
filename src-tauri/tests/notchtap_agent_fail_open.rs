@@ -1,5 +1,5 @@
-//! Plan 138: a black-box test of the actual `notchtap-agent` binary's
-//! fail-open contract (spec §4.1) — this is the one thing the unit
+//! Black-box tests of the `notchtap-agent` binary's fail-open contract.
+//! This is the one thing the unit
 //! tests inside `agents::providers` can't prove on their own, since
 //! they exercise `deliver`/`normalize` as library functions, never the
 //! compiled binary's stdin/stdout/exit-code behavior end to end.
@@ -94,9 +94,7 @@ fn hook_claude_code_exits_0_with_empty_stdout_on_malformed_stdin() {
 
 #[test]
 fn hook_codex_and_kimi_exit_0_with_empty_stdout_on_malformed_stdin() {
-    // Codex and Kimi both have real, pure hook parsers now
-    // (`agents::providers::codex`/`kimi`, plans 139/140) — this is no
-    // longer exercising a stub. A payload with no recognizable
+    // A payload with no recognizable
     // `session_id`/`hook_event_name` fails `normalize` for both, and the
     // fail-open contract (spec §4.1: never block the provider, never
     // write to stdout) must hold on that parse-failure path exactly as

@@ -1219,11 +1219,8 @@ async fn poll_rich_events(
     }
 }
 
-/// Ingest goes through `Engine::accept` — the one shared path that
-/// enqueues with the mutate→wake→emit protocol and then fans accepted
-/// events out to every connector (exception: rss/news events are
-/// overlay-only and never offered — a rule `accept` encodes via the
-/// origin gate, so no per-caller flag here).
+/// Ingest goes through `Engine::accept`, which owns queue mutation, wake,
+/// and event emission.
 #[allow(clippy::too_many_arguments)] // untested outer wiring, same reasoning as CardTopic's bundling for the pure/tested side
 pub fn spawn_espn_poller(
     engine: Engine,

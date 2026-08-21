@@ -1,5 +1,4 @@
-//! The tmux-style Prefix keymap's ARM/DISARM state machine, encoding
-//! `docs/superpowers/specs/2026-08-02-tab-notch-design.md`. Pure: no
+//! The tmux-style Prefix keymap's ARM/DISARM state machine. Pure: no
 //! AppKit and no `tauri_plugin_global_shortcut` types, so the rules stay
 //! unit-testable off-device while the timing-sensitive grab side stays
 //! in `lib.rs` (`docs/TESTING_STRATEGY.md` §4.4).

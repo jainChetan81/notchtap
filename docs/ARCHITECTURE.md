@@ -80,9 +80,8 @@ type), never a new render path.
 
 **reduce-motion**: deliberately not handled, anywhere — no
 `prefers-reduced-motion` media queries, no `MotionConfig
-reducedMotion`, no JS gates. a standing app-wide non-goal (operator
-decree, 2026-08-16): this is a personal overlay for one operator's own
-machines, and its motion always plays.
+reducedMotion`, no JS gates. this is a personal overlay for one operator's
+own machines, and its motion always plays.
 
 ## 3. cross-device behaviour
 
@@ -175,7 +174,7 @@ that raised the alert.
 
 ## 6. queue model — single slot, priority tiers, rotation
 
-the domain glossary in `CLAUDE.md` defines the terms; the shape:
+the domain glossary in `docs/GLOSSARY.md` defines the terms; the shape:
 
 - **exactly one item is ever visible** (the Slot). accepted items wait
   in three per-priority lines (`Low | Medium | High`), each
@@ -478,7 +477,6 @@ copied trade dress, or implied affiliation.
 
 ## 11. tab-notch pull model: the icon strip
 
-design spec: `docs/superpowers/specs/2026-08-02-tab-notch-design.md`.
 the shipped implementation under `src/` is authoritative.
 
 - **the notch is pull-based, additively.** push behaviour (interrupts,

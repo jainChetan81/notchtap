@@ -1,4 +1,4 @@
-import { useClock } from "../useClock";
+import { useClock } from "../hooks/useClock";
 
 // The left flank's clock — shared verbatim between the idle and
 // showing/exiting states (StatusRailCard renders this component at both

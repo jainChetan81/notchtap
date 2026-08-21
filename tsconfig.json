@@ -14,7 +14,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* plan 112: shadcn-generated components resolve via "@/..." */
+    /* Generated components resolve through the source alias. */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

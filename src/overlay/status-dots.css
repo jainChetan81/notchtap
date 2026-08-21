@@ -1,6 +1,5 @@
-/* ==== Idle right flank's three status dots (<StatusDots>): fixed
-   Football/News/Weather order and coloring, from the locked reference
-   (`prototype/notch-states.html:62-74`). `active` = enabled (glow + a
+/* ==== Idle right flank's status dots (<StatusDots>): fixed
+   Football/News order and colouring. `active` = enabled (glow + a
    1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow,
    no text content. ==== */
 .card-root .status-dots {
@@ -122,4 +121,3 @@
   border-radius: 1px;
   background: rgba(255, 255, 255, 0.5);
 }
-

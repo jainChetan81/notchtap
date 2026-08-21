@@ -4,8 +4,7 @@
 //! Clock-agnostic like `queue.rs`: [`AgentRegistry::apply_event`] and
 //! [`AgentRegistry::tick`] both take `now: Instant` from the caller —
 //! no wall-clock read happens inside this module, so tests drive a
-//! simulated clock instead of sleeping (CLAUDE.md's injected-clock
-//! rule).
+//! simulated clock instead of sleeping — keep it that way.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;

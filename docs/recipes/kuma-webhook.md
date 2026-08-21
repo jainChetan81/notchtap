@@ -5,12 +5,8 @@ routes an uptime kuma monitor's up/down alert through notchtap's existing
 card — no new notchtap code, no new service, one kuma notification config
 entry.
 
-status: **verified working 2026-07-17** — kuma v2.4.0, test-button webhook
-correctly substituted `{{name}}`/`{{msg}}` into the overlay card (no sign
-of the known template-substitution bugs, github issues #3635/#4861 on
-`louislam/uptime-kuma`, on this version). still worth a smoke-test on any
-other kuma version before relying on this for anything you actually care
-about noticing — those issues are version-specific.
+uptime kuma v2.4.0 substitutes `{{name}}` and `{{msg}}` into the overlay
+card. smoke-test other versions because template behaviour varies.
 
 ## constraint: same machine only
 

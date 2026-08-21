@@ -15,8 +15,8 @@
 // `null`, so with no `.below-block` in the DOM, `card-chrome.css`'s
 // `:not(:has(.below-block))` rounding law hands the outer corners back to
 // the flanks by itself.
-import type { AgentSessionView } from "../useAgentState";
-import type { StatusState } from "../useStatusState";
+import type { AgentSessionView } from "../hooks/useAgentState";
+import type { StatusState } from "../hooks/useStatusState";
 import { AgentBelowBlock } from "./AgentBelowBlock";
 import type { Tab } from "./IconStrip";
 import { NewsBelowBlock, type NewsStoryView } from "./NewsBelowBlock";

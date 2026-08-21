@@ -78,11 +78,9 @@
   .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .status-dot.football { background: var(--overlay-green); }
   .status-dot.news { background: var(--overlay-coral); }
-  .status-dot.weather { background: var(--overlay-amber); }
   .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
   .status-dot.football.active { color: var(--overlay-green); }
   .status-dot.news.active { color: var(--overlay-coral); }
-  .status-dot.weather.active { color: var(--overlay-amber); }
   .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
   /* below-block: grid-column 1/-1, grid-row 2 — carries the priority
@@ -109,10 +107,7 @@
   .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
   .cat-science  { --cat: #f2a2c8; --cat-deep: rgba(242,162,200,0.15); --cat-pill: rgba(242,162,200,0.13); }
 
-  /* the news-shade ambient wash — plan 105 kept this ONE animation on
-     purpose (a slow positional drift, not a blink); plan 151 reshaped the
-     path from a straight there-and-back pendulum to a non-collinear
-     wander, same duration/ease/endpoints. */
+  /* The news shade follows a slow, non-collinear positional drift. */
   .news-shade::before {
     content: ""; position: absolute; inset: -30%; z-index: 0;
     background:
@@ -129,10 +124,8 @@
   }
   .news-shade .compact, .news-shade .manifest { position: relative; z-index: 1; }
 
-  /* ==== .compact — src/overlay/masthead-content.css. Plain block flow
-     (the Stamp badge moved INTO the masthead row, plan 092 — it is not a
-     sibling grid column anymore); a 3px priority-accent edge on the left,
-     which is why the left inset is wider (20px) than the other sides. ==== */
+  /* ==== .compact — src/overlay/masthead-content.css. The Stamp badge sits
+     in the masthead row. The priority edge requires the wider left inset. ==== */
   .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
   .expanded .compact { min-height: 82px; }
   .compact::before {
@@ -162,11 +155,8 @@
     white-space: normal; font-weight: 680; font-size: 13px; line-height: 1.3;
   }
 
-  /* the chip + one relative-age time slot — plan 110 removed the old
-     redundant "published HH:MM" node, so this is the compact card's ONLY
-     time expression. NOT spread apart: .notif-meta-row has no
-     justify-content, so the chip and the age pack together on the left
-     with a 5px gap — never pushed to the far right. */
+  /* The compact card has one relative-age slot. The chip and age stay
+     together on the left with a 5px gap. */
   .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
   .chip {
     display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
@@ -177,11 +167,8 @@
   .chip-category, .notif-meta-row .notif-time-inline { animation: pill-enter 175ms var(--ease-notchtap) both; }
   @keyframes pill-enter { from { opacity: 0; } to { opacity: 1; } }
 
-  /* the "more" hint — absolutely positioned against .compact, only
-     rendered while NOT expanded (NotificationBody.tsx's `!expanded` gate).
-     Real markup is <kbd>⌃⇧N</kbd> more, not a flex row with a track slider
-     — the old standalone .track queue slider was removed in the
-     stories-merge (2026-07-24): it merged into the ttl-bar below instead. */
+  /* The compact hint renders only while collapsed. The ttl bar carries
+     the queue indicator. */
   .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
   .compact-hint kbd {
     display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
@@ -190,12 +177,8 @@
     font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
   }
 
-  /* ==== the expanded manifest — src/overlay/manifest.css +
-     src/components/Manifest.tsx. 2026-07-24 declutter: this panel is ONLY
-     label + summary text + the keyboard hint footer now — the old 3-column
-     "Summary / Source+Published / Category+Control" grid (and its
-     .manifest-meta row) is gone; all of that metadata lives in .compact
-     above instead, never duplicated down here. ==== */
+  /* ==== The expanded manifest contains a label, summary, and keyboard hint.
+     Compact metadata stays in the compact panel above. ==== */
   .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 320ms var(--ease-notchtap), opacity 320ms var(--ease-notchtap); }
   .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
   .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
@@ -215,12 +198,8 @@
     font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
   }
 
-  /* ==== the ttl-bar — src/overlay/ttl-bar.css + src/components/TtlBar.tsx.
-     Last child of .below-block, absolutely positioned to its bottom edge
-     (never static in-flow — that was the double-border-above-the-manifest
-     bug plan 100 fixed). Since the stories merge (2026-07-24) it also
-     carries the queue-position slider — the old standalone .track element
-     is gone, its segments folded into this one 4px floor strip. ==== */
+  /* ==== The ttl bar is an absolute floor strip that carries rotation time
+     and queue position. ==== */
   .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); gap: 3px; }
   .ttl-seg { background: rgba(255,255,255,0.08); }
   .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
@@ -242,9 +221,7 @@
     chip + one relative-age time slot packed to the left, the animated
     news-shade wash, and the queue-segmented TTL floor bar. Expanded adds
     the manifest panel — label, summary text, and a keyboard-hint footer
-    only; there is no separate source/published/category row down there
-    anymore (removed in the 2026-07-24 declutter — that metadata lives in
-    the masthead above, once, not twice).
+    only; source, published time, and category metadata live in the masthead.
   </p>
 
   <section>
@@ -268,7 +245,6 @@
             <span class="status-dots">
               <span class="status-dot football dim"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather active"></span>
             </span>
           </div>
           <div class="below-block news-shade">
@@ -303,7 +279,6 @@
             <span class="status-dots">
               <span class="status-dot football active"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather dim"></span>
             </span>
           </div>
           <div class="below-block news-shade">
@@ -338,7 +313,6 @@
             <span class="status-dots">
               <span class="status-dot football dim"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather dim"></span>
             </span>
           </div>
           <div class="below-block news-shade">
@@ -384,7 +358,6 @@
             <span class="status-dots">
               <span class="status-dot football dim"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather active"></span>
             </span>
           </div>
           <div class="below-block news-shade">
@@ -437,7 +410,6 @@
             <span class="status-dots">
               <span class="status-dot football dim"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather dim"></span>
             </span>
           </div>
           <div class="below-block news-shade">
@@ -471,20 +443,6 @@
     </div>
   </section>
 
-  <footer>
-    Corrections against the pre-2026-07-30 version of this page (which
-    carried a "historical prototype, not a reference" banner): the shell
-    is a CSS grid (<code>.card-assembly</code>), not absolutely-positioned
-    boxes; the Stamp badge is colored by priority accent, never a flat
-    white outline; <code>.notif-meta-row</code>'s chip and age pack
-    together on the left (no <code>margin-left: auto</code> spreading them
-    apart); the old <code>.track</code> queue slider and <code>.card-foot</code>
-    row are gone, folded into the queue-segmented <code>.ttl-bar</code>
-    floor strip; the expanded manifest carries only a label, summary text,
-    and a keyboard hint — no source/published/category row; and status
-    dots stay mounted in the right flank through a showing card, not just
-    at idle.
-  </footer>
 </main>
 <style>
   #hover-card { transition: width 320ms cubic-bezier(0.3, 1.36, 0.44, 1); }

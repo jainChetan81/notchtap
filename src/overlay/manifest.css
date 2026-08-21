@@ -3,7 +3,7 @@
    at zero height when collapsed, so no re-mount on toggle. Wrapper
    carries aria-hidden when collapsed (Manifest.tsx). Duration:
    `var(--expand-ms, 300ms)`, lockstep with EXPAND_MS in
-   animationTiming.ts. */
+   lib/constants.ts. */
 .card-root .manifest-wrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -102,4 +102,3 @@
   color: var(--overlay-fg);
   white-space: nowrap;
 }
-

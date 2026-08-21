@@ -608,9 +608,7 @@ fn feed_log_ref(config: &RssFeedConfig) -> String {
         .unwrap_or_else(|| "<unparseable feed url>".to_string())
 }
 
-// ingest goes through `Engine::accept`, same as the espn
-// poller — rss's deliberately offer-less inline loop is subsumed by
-// accept's origin gate (News events are never offered to connectors).
+// Ingest goes through `Engine::accept`, as it does for the ESPN poller.
 //
 // `topics` merges with `feeds` (via `merge_feed_sources`) into
 // ONE poll list — same SeenStore, same TTL/priority/max-per-poll, same

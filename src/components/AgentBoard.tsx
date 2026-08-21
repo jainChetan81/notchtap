@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { DISCLOSURE_SPRING, NOTCHTAP_EASE } from "../animationTiming";
+import type { AgentSessionState, AgentSessionView } from "../hooks/useAgentState";
+import type { StatusState } from "../hooks/useStatusState";
+import { DISCLOSURE_SPRING, NOTCHTAP_EASE } from "../lib/constants";
 import {
   abbreviateHome,
   agentRuntimeClass,
@@ -10,8 +12,6 @@ import {
   elapsedLabel,
   type Priority,
 } from "../lib/presentation";
-import type { AgentSessionState, AgentSessionView } from "../useAgentState";
-import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
 import {
   AgentHeroCard,

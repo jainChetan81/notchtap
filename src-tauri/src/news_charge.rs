@@ -1,8 +1,7 @@
 //! The News Charge state machine — pure, no I/O, same discipline
 //! `tabs.rs` follows (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many
 //! items have landed since the news icon was last visited and whether a
-//! full batch has accumulated by a poll-cycle boundary
-//! (`docs/superpowers/specs/2026-08-02-tab-notch-design.md`).
+//! full batch has accumulated by a poll-cycle boundary.
 //!
 //! `charged` is EDGE-TRIGGERED, not live "is a full batch sitting there
 //! right now" arithmetic re-evaluated on every read: `cycle_end` sets it

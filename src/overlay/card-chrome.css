@@ -35,7 +35,7 @@
      way per-cell box-shadows would have. Only recomputes during
      animation; idle is cached. */
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* `--expand-ms` is EXPAND_MS (animationTiming.ts), injected by
+  /* `--expand-ms` is EXPAND_MS (lib/constants.ts), injected by
      applyAnimationTiming.ts at both entry points; the fallback literal
      tracks the constant. Width only, on the plain house ease: hover-out
      of `.expanded` resolves against this rule, so a pop here would bounce
@@ -231,7 +231,7 @@
    no radius flip at the handoff. Entrance is never transitioned by this
    declaration: the rule stops matching when the below-block mounts, so
    the un-round snaps (the base flank rule's own border-radius leg covers
-   it). `--content-exit-ms` is CONTENT_EXIT_MS (animationTiming.ts),
+   it). `--content-exit-ms` is CONTENT_EXIT_MS (lib/constants.ts),
    injected by applyAnimationTiming.ts. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left,
 .card-root .card-assembly.exiting .flank-left {
@@ -251,7 +251,7 @@
    geometry class still sits on the shell (`.exiting` and `.idle`/`.bare`
    never coexist). The formula is deliberately the SAME one `.idle` uses,
    so the handoff when `.exiting` clears never re-triggers a transition
-   or jumps. `--swap-exit-ms` is SWAP_EXIT_MS (animationTiming.ts),
+   or jumps. `--swap-exit-ms` is SWAP_EXIT_MS (lib/constants.ts),
    injected by applyAnimationTiming.ts — the shell fully reaches idle
    width the same tick the geometry-class freeze lets go. `width` stays
    on `--ease-notchtap`, never the pop: exits must settle, not bounce. */

@@ -13,9 +13,7 @@ export default defineConfig(async () => ({
 
   resolve: {
     alias: {
-      // plan 112: shadcn-generated components import via "@/..."; resolve
-      // ESM-safely with fileURLToPath rather than "/src" or bare
-      // __dirname (unavailable under Vite's ESM config loading).
+      // Generated components use this ESM-safe source alias.
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },

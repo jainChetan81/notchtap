@@ -1,5 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentSessionView } from "../hooks/useAgentState";
+import { useExitChoreography } from "../hooks/useExitChoreography";
+import type { EspnMeta, Priority, SlotState } from "../hooks/useSlotState";
+import type { StatusState } from "../hooks/useStatusState";
 import {
   CONTENT_EXIT_MS,
   EXPAND_MS,
@@ -10,7 +14,7 @@ import {
   ROTATION_ENTER_MS,
   ROTATION_EXIT_MS,
   SWAP_EXIT_MS,
-} from "../animationTiming";
+} from "../lib/constants";
 import { iconPresenceFor } from "../lib/iconPresence";
 import { renderInlineMarkdown } from "../lib/markdown";
 import {
@@ -23,10 +27,6 @@ import {
   livePillVariantFor,
   sourceClass,
 } from "../lib/presentation";
-import type { AgentSessionView } from "../useAgentState";
-import { useExitChoreography } from "../useExitChoreography";
-import type { EspnMeta, Priority, SlotState } from "../useSlotState";
-import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
 import type { Tab } from "./IconStrip";
 import { IconStrip } from "./IconStrip";
@@ -761,7 +761,7 @@ export function StatusRailCard({
           rather than jump-cutting — every content swap in this file is
           animated. `mode="wait"` matches the rotation swap's own
           discipline (one card on stage at a time). Emphasis is
-          below-cutout content only, per animationTiming.ts's standing
+          below-cutout content only, per lib/constants.ts's standing
           law — the shell itself is untouched. Durations are the rotation
           tokens, not new literals. */}
       <AnimatePresence mode="wait" initial={false}>

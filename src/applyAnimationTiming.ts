@@ -9,7 +9,7 @@ import {
   ROTATION_ENTER_MS,
   ROTATION_EXIT_MS,
   SWAP_EXIT_MS,
-} from "./animationTiming";
+} from "./lib/constants";
 
 // Injects each JS timing literal as a root CSS custom property, consumed by
 // overlay-card.css via `var(--x, <matching-literal-fallback>)`.

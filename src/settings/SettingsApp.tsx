@@ -14,14 +14,13 @@ import {
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { NOTCHTAP_EASE } from "@/lib/constants";
+import type { ActionError } from "@/lib/error";
 import { isString } from "@/lib/guards";
 import { cn } from "@/lib/utils";
 import brandMark from "../../assets/branding/notchtap-mark-128.png";
-import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
-
-type ActionError = string | string[] | Error;
 
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";

@@ -900,15 +900,8 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".below-block.agent-origin")).not.toBeNull();
     });
 
-    // The generic branch serves ALL non-news origins, not just agent — a bare
-    // `origin === "agent" ? "agent" : "cli"` ternary would mislabel
-    // football live cards and weather cards as "cli". The kicker maps
-    // every `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual"
-    // is the `/notify` CLI path (-> "cli"), "football" gets
-    // its own label, and "news" (reachable here only because this
-    // fixture's `eventType` stays "generic" regardless of the origin
-    // override) is the defensive fallback that just echoes the origin
-    // string.
+    // The generic branch serves every non-news origin. The kicker maps each
+    // SourceKind explicitly, including the defensive generic-news fixture.
     it("shows the origin-derived kicker (never the removed Agent chip) for every non-agent origin", () => {
       const expectedKicker = {
         football: "football",
@@ -1953,7 +1946,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelector(".below-block .card-content")).toBeNull();
 
-      // 175 = SWAP_EXIT_MS (src/animationTiming.ts) — the swap settles
+      // 175 = SWAP_EXIT_MS (src/lib/constants.ts) — the swap settles
       // here, same literal-with-comment convention as the
       // "compact->idle geometry" describe block above. `renderedShowing`
       // flips true in this same tick, which both mounts the card content
@@ -2671,12 +2664,7 @@ describe("tab-notch integration", () => {
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // Pins that `viewedSessionIndex` — the
-    // `agent-viewed-session-changed` wire's value, sourced by
-    // `useAgentViewedSession` and threaded down from App.tsx — actually
-    // reaches `AgentBelowBlock`/`PositionBar`, not just that the prop
-    // type exists. Drop the prop and `AgentBelowBlock` silently shows
-    // session 0 regardless of rust's own `viewed_session` state.
+    // The selected session must reach AgentBelowBlock and PositionBar.
     it("threads viewedSessionIndex through to the below-block, changing which session's hero renders", () => {
       const sessions = [
         agentSession({ project: { name: "alpha-repo", cwd: null } }),

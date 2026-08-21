@@ -736,8 +736,7 @@ mod tests {
         // Same content, only wall-clock time (and therefore elapsed_ms/
         // last_seen_at_ms) has moved — must NOT re-emit, and the
         // revision must stay exactly where the first real publish left
-        // it (CLAUDE.md: "a revision counter must NOT defeat
-        // suppression").
+        // it: a revision counter must NOT defeat suppression.
         let later = base + Duration::from_secs(30);
         let emitted = publisher.publish_if_changed(later).await;
         assert!(!emitted, "a clock-only tick must not publish");

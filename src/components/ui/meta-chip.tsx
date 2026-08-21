@@ -2,33 +2,12 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-// M16 consolidation: this repo had grown FOUR separate implementations
-// of the same "small mono metadata chip" role — History's
-// `history-meta-chip` / Queue's `queue-priority-tag`
-// (rounded-full border-border px-[7px] py-0.5 font-[650]), About's
-// tech-stack chip (rounded-full px-[9px] py-[3px], no weight), a shadcn
-// `Badge` override in Connectors (rounded-[4px] px-[5px] py-[3px]), and
-// Shortcuts' `shortcut-status` (rounded-[3px] px-1 py-0.5). One shape —
-// radius/padding/weight/tracking — replaces all four call sites; the two
-// genuinely semantic differences (a status chip reading as emphasized
-// once "set"/"active", and free-form content wanting mixed case rather
-// than an uppercase status word) stay as the `active`/`uppercase` props
-// below rather than forking the shape again.
-//
-// Tone redesign: `active` alone only ever had one visual (a brighter-
-// bordered neutral). Real status chips (adapter health, secret-saved)
-// carry real meaning with more than one state, so `tone` gives them a
-// real color — reusing the SAME five accent hues the overlay's priority/
-// source-identity system already uses (`--overlay-*`, tokens.css), never
-// a new palette invented for the settings window alone. `tone` and
-// `active` are independent: `active` still governs the plain emphasized-
-// neutral look for chips that only ever have one state worth
-// highlighting (Shortcuts' wired/not, Queue's priority word); `tone`
-// is for chips with a real positive/caution/critical status to report.
+// `tone` carries multi-state health meaning. `active` carries a plain
+// emphasized state for controls with one state worth highlighting.
 export type ChipTone = "neutral" | "positive" | "caution" | "critical" | "accent";
 
 const TONE_CLASSES = {
-  // adapter available, secret saved, connector reachable
+  // adapter available
   positive: "border-overlay-green/45 bg-overlay-green/15 text-overlay-green",
   // adapter partial/stale, degraded but not down
   caution: "border-overlay-amber/45 bg-overlay-amber/15 text-overlay-amber",
@@ -57,8 +36,7 @@ export function MetaChip({
    *  needing the label text read in full. Defaults to `"neutral"`
    *  (the plain bordered look, unaffected by `active`'s own styling). */
   tone?: ChipTone;
-  /** Status-word chips (Connectors' secret status, Shortcuts' active/
-   *  planned column) read as uppercase; free-form content chips
+  /** Status-word chips read as uppercase; free-form content chips
    *  (a history entry's source, a tech-stack name) don't. */
   uppercase?: boolean;
   /** Leading colour swatch — a source/runtime/category

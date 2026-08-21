@@ -251,7 +251,7 @@ pub struct AgentTransition {
 /// Session. Clock-agnostic like
 /// `queue.rs`'s items: every method that needs "now" takes it as a
 /// parameter, no wall-clock read happens inside this module — tests
-/// pass a simulated clock (CLAUDE.md's injected-clock rule).
+/// pass a simulated clock — the module must stay injectable-clock.
 #[derive(Debug, Clone)]
 pub struct AgentSession {
     // `key`/`first_seen_at` are read back by `to_state` (the live

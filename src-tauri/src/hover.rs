@@ -559,8 +559,8 @@ mod tests {
     // assertion, not a live CSS parse. If an edit changes one of these
     // numbers in styles.css or App.tsx without updating the constants at
     // the top of this file, this test does NOT catch it by itself (it
-    // only asserts internal self-consistency) — it exists so a reviewer
-    // diffing this file sees the citations and checks both sides.
+    // only asserts internal self-consistency). The named citations keep
+    // both sides visible when either value changes.
     #[test]
     fn active_card_rect_geometry_constants_match_named_style_constants() {
         assert_eq!(FLANK_IDLE, 85.0);

@@ -153,11 +153,9 @@
   .card-root .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .card-root .status-dot.football { background: var(--overlay-green); }
   .card-root .status-dot.news { background: var(--overlay-coral); }
-  .card-root .status-dot.weather { background: var(--overlay-amber); }
   .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
   .card-root .status-dot.football.active { color: var(--overlay-green); }
   .card-root .status-dot.news.active { color: var(--overlay-coral); }
-  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
   /* ---- news-category.css: the shared `.chip` base rule every pill on
@@ -262,10 +260,7 @@
     100% { box-shadow: none; }
   }
 
-  /* ---- choreography.css: the hover "breathing" scale was REMOVED from
-     the shipped UI on operator instruction (2026-08-02) — hover no longer
-     scales the shell; it expands the card instead. Mirror kept rule-free
-     to match. ---- */
+  /* Hover expands the card without scaling the shell. */
 
 </style>
 </head>
@@ -316,7 +311,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
             </div>
@@ -334,7 +328,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block idle-peek">
@@ -377,7 +370,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -408,7 +400,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -439,7 +430,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -470,7 +460,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -502,7 +491,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -534,7 +522,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -565,7 +552,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -596,7 +582,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -627,7 +612,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -670,7 +654,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -701,7 +684,6 @@
                 <div class="status-dots">
                   <span class="status-dot football active"></span>
                   <span class="status-dot news"></span>
-                  <span class="status-dot weather active"></span>
                 </div>
               </div>
               <div class="below-block"><div class="card-content"><div class="notif-block">
@@ -742,7 +724,6 @@
             <div class="status-dots">
               <span class="status-dot football active" id="demo-dot"></span>
               <span class="status-dot news"></span>
-              <span class="status-dot weather active"></span>
             </div>
           </div>
         </div>

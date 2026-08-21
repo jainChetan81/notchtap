@@ -1,24 +1,20 @@
-// Shared constants — single source for animation timings, default port, limits.
-// animationTiming.ts re-exports for compat; new code imports from here.
-
 export const DEFAULT_PORT = 9789;
 export const MAX_QUEUED_PER_TIER = 50;
 
-export {
-  BOARD_SUMMON_MS,
-  CONTENT_EXIT_MS,
-  DISCLOSURE_SPRING,
-  EXPAND_MS,
-  ICON_STRIP_STAGGER_MS,
-  IDLE_GLANCE_MS,
-  IDLE_REVEAL_MS,
-  INTERRUPT_EASE,
-  INTERRUPT_EXIT_MS,
-  NEWS_CHARGE_STEP_MS,
-  NOTCHTAP_EASE,
-  REVEAL_MS,
-  ROTATION_ENTER_MS,
-  ROTATION_EXIT_MS,
-  SURFACE_SWAP_MS,
-  SWAP_EXIT_MS,
-} from "../animationTiming";
+export const SWAP_EXIT_MS = 175;
+export const CONTENT_EXIT_MS = 105;
+export const NOTCHTAP_EASE: [number, number, number, number] = [0.23, 1, 0.32, 1];
+export const EXPAND_MS = 300;
+export const REVEAL_MS = 260;
+export const HOVER_MS = 160;
+export const ROTATION_EXIT_MS = 70;
+export const ROTATION_ENTER_MS = 120;
+export const INTERRUPT_EXIT_MS = 60;
+export const INTERRUPT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];
+export const SURFACE_SWAP_MS = 180;
+export const BOARD_SUMMON_MS = 260;
+export const DISCLOSURE_SPRING = { type: "spring", stiffness: 480, damping: 37 } as const;
+export const IDLE_REVEAL_MS = 240;
+export const IDLE_GLANCE_MS = 200;
+export const ICON_STRIP_STAGGER_MS = 60;
+export const NEWS_CHARGE_STEP_MS = 320;

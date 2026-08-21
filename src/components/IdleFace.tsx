@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { IDLE_GLANCE_MS, IDLE_REVEAL_MS, NOTCHTAP_EASE } from "../animationTiming";
+import { IDLE_GLANCE_MS, IDLE_REVEAL_MS, NOTCHTAP_EASE } from "../lib/constants";
 
 // The idle face: a minimal, notchtap-branded bit of personality that fades
 // into the CENTER of the idle rail (the `.synthetic-cutout` grid cell —
@@ -140,7 +140,7 @@ export function IdleFace({ idle }: { idle: boolean }) {
              every promotion/hover. 0.1s reads as instant without a
              one-frame hard cut. */
           exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.1, ease: "easeOut" } }}
-          /* Duration is animationTiming.ts's IDLE_REVEAL_MS — same
+          /* Duration is lib/constants.ts's IDLE_REVEAL_MS — same
              value, now named rather than a bare literal. */
           transition={{ duration: IDLE_REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
         >
@@ -150,10 +150,10 @@ export function IdleFace({ idle }: { idle: boolean }) {
               blink's scaleY rides the SAME `transform` property (one
               translate+scaleY string), so one transition covers both
               glance and blink with a single declaration. The curve is
-              animationTiming.ts's NOTCHTAP_EASE, interpolated via
+              lib/constants.ts's NOTCHTAP_EASE, interpolated via
               `NOTCHTAP_EASE.join(", ")` below — the imported array is
               the only place these four numbers are written; the
-              duration is animationTiming.ts's IDLE_GLANCE_MS. */}
+              duration is lib/constants.ts's IDLE_GLANCE_MS. */}
           <div
             className="idle-face-eyes"
             style={{

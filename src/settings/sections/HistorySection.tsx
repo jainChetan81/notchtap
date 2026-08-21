@@ -2,14 +2,14 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { NOTCHTAP_EASE } from "@/lib/constants";
+import { formatClockTime, formatRecordedAt } from "@/lib/format";
 import { isString } from "@/lib/guards";
 import { SOURCE_ORIGIN_COLORS, type SourceOriginToken } from "@/lib/sourceColors";
 import { cn } from "@/lib/utils";
-import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
-import { formatClockTime, formatRecordedAt } from "../timeFormat";
 import type { Config, HistoryEntry, HistoryEspnMeta, HistoryRotationSpec } from "../types";
 import { PRIORITY_LABELS } from "../types";
 

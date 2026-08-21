@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>notchtap — Status Rail mirror (shipped overlay, synced 2026-08-02)</title>
+<title>notchtap — Status Rail mirror</title>
 <style>
 /* ============================================================
    PART 1 — the real design system, verbatim selectors/values.
@@ -55,11 +55,8 @@
   isolation: isolate;
   transform-origin: top center;
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* the bouncy `--ease-notchtap-pop` is scoped to a genuine arrival
-     (promotion/entrance width growth); every hover-driven or exiting width
-     change below re-declares its own non-bouncy curve. No `transform` leg:
-     the hover "breathe" scale it used to ease was deleted (operator
-     removal, 2026-08-02 — see choreography.css's own note). */
+  /* Arrival bounce stays scoped to promotion. Hover and exit use their own
+     width curves. */
   transition: width var(--expand-ms, 320ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 /* idle rest-rail width and expanded width are two named modifiers; a
@@ -69,10 +66,7 @@
 .card-root .card-assembly.idle {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
 }
-/* plan 165: hover-expand grows the shell while `.manifest-wrap`'s own
-   disclosure grows the content — same --expand-ms duration, and now the
-   same plain (non-overshooting) curve, so both halves of one disclosure
-   land together instead of the shell wobbling ~85ms late. */
+/* Expanded width and manifest disclosure share one duration and curve. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
   transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
@@ -80,12 +74,7 @@
 /* bare/minimal notch mode (resting_state: "notch", idle, not hovered): the
    shell mounts but paints zero app-drawn pixels — cutout-width-only, flanks
    transparent — so it reads as the raw hardware notch. */
-/* plan 164: bare<->peek is a HOVER-driven width change (cursor proximity,
-   many times a session), so it must not inherit the base rule's arrival
-   pop; it rides --reveal-ms to finish on the same clock as the flank
-   clock/status-dot fade the same gesture triggers. Both the plain `.bare`
-   rule and the `:has(.idle-peek)` rule below carry the identical
-   transition, so the curve is the same whichever direction is playing. */
+/* Bare and peek widths share the reveal timing used by the flank content. */
 .card-root .card-assembly.bare {
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
   transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
@@ -116,11 +105,8 @@
   align-items: center;
   background: #000;
   color: var(--overlay-fg);
-  /* plan 166: the `border-radius` leg covers the ENTRANCE direction (a
-     below-block newly mounting, so the flank un-rounds) — previously an
-     instant snap. The exit direction is untouched: the rounding-law rules
-     below have higher specificity and still win the whole shorthand with
-     their own --content-exit-ms. */
+  /* Border radius transitions on entrance. Higher-specificity exit rules
+     apply the content-exit timing below. */
   transition:
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
     padding var(--reveal-ms, 260ms) var(--ease-notchtap),
@@ -174,12 +160,8 @@
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
   border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
-/* plan 167: within HUD mode the gill's show/hide is `opacity`-driven, not a
-   `display` toggle — `display` cannot be transitioned, so the element now
-   stays permanently in the render tree (tiny, absolutely positioned,
-   pointer-events: none) and fades instead of popping. `display: none` here
-   stays as the unconditional "does this mode exist at all" gate: on real
-   notch hardware the gill is never in the render tree at all. */
+/* HUD mode fades the gill with opacity. Display remains the presentation-mode
+   gate, so notch hardware never renders it. */
 .card-root .notch-gill {
   display: none;
   position: absolute;
@@ -263,11 +245,6 @@
 .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255, 107, 87, 0.28); }
 
 /* ============ src/overlay/choreography.css ============ */
-/* hover no longer scales the shell (operator removal, 2026-08-02): the old
-   "breathe" (`.card-assembly.hovered { transform: scale(1.02) }`) read as
-   the shell DETACHING from the notch top on every hover, and nothing
-   replaced it. `.hovered` itself is still very much alive — it drives the
-   bare-rail reveal, the idle peek, TTL hover-pause, and hover-expand. */
 
 .card-root .card-assembly::after {
   content: ""; position: absolute; inset: -60px; z-index: 0; border-radius: 50%;
@@ -342,10 +319,7 @@
 }
 
 /* ============ src/overlay/ttl-bar.css ============ */
-/* plan 168: the explicit `grid-template-rows: 4px` here plus `grid-row: 1`
-   on the fill below pin every segment AND the live fill to one 4px row —
-   without them the fill could be placed into an implicit second row and
-   the bar would render at double height. */
+/* Explicit row placement keeps every segment and the fill in one 4px row. */
 .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
 .card-root .ttl-seg { background: rgba(255,255,255,0.08); transition: background var(--reveal-ms, 260ms) var(--ease-notchtap); }
 .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
@@ -486,14 +460,6 @@
   transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-assembly.pulse-goal, .card-root .card-assembly.pulse-goal::before, .card-root .card-assembly.pulse-goal::after,
-  .card-root .card-assembly.pulse-red, .card-root .cele-ripple span, .card-root .news-shade::before,
-  .card-root .card-assembly.cele-goal, .card-root .card-assembly.cele-goal::after, .card-root .card-assembly.cele-yc::after, .card-root .card-assembly.cele-rc,
-  .card-root .chip-category, .card-root .notif-meta-row .notif-time-inline {
-    animation: none;
-  }
-}
 
 /* ============================================================
    PART 2 — showcase-only chrome (NOT part of the design system)
@@ -540,18 +506,8 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 <h1>notchtap · Status Rail — shipped overlay mirror</h1>
 <p class="note">
-  Re-synced <b>2026-07-30</b> against the real DOM/CSS. Previous state: this file
-  carried a HISTORICAL PROTOTYPE banner (plan 099) and, as of plan 106, an explicit
-  note that its <b>CSS content was NOT re-synced</b> even though the surrounding prose
-  had been corrected — this page was still rendering the old plan-032 single-shell
-  <code>.rail-card</code>, three sync passes stale (plans 091/105/135+ all landed on
-  the real overlay without a matching update here). That gap is closed now: every
-  section below builds real <code>.card-assembly</code> markup (the cutout/flank
-  grid) with real class names from <code>src/overlay-card.css</code> +
-  <code>src/overlay/*.css</code>. See the top-of-file HTML comment for exactly what's
-  faithful (selectors/values/DOM nesting) vs. substituted for a static file (motion
-  springs approximated with CSS transitions on their documented fallback durations;
-  crest artwork replaced with placeholder glyphs).
+  Mirrors the current <code>.card-assembly</code> DOM and overlay CSS.
+  Motion springs use their documented CSS fallback durations.
 </p>
 
 <div class="appearance-bar" id="appearance-bar">
@@ -585,7 +541,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 <h2>0 · The notch shell — flanks, cutout, idle face, rail furniture</h2>
 <p class="note">
-  <code>StatusRailCard.tsx</code>'s outer shape (plan 091 onward): a real 3-col/2-row
+  <code>StatusRailCard.tsx</code>'s outer shape is a 3-column, 2-row
   CSS grid, <code>.flank-left</code> / the notch cutout (<code>.synthetic-cutout</code>,
   HUD-mode only — real notch hardware draws nothing here) / <code>.flank-right</code>
   on row 1, <code>.below-block</code> spanning row 2 when a card is showing. The clock
@@ -630,11 +586,9 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 <h2>4 · TTL bar — rotation countdown + queue segmentation</h2>
 <p class="note">
-  The 2026-07-24 "stories merge" folded the old separate queue slider
-  (<code>Track.tsx</code>) into this one floor strip — <code>TtlBar.tsx</code> now
-  takes <code>total</code>/<code>done</code> directly and segments the same bar the
-  countdown fill drains across. Segment count caps at 10; beyond that the current
-  index maps proportionally.
+  <code>TtlBar.tsx</code> combines the rotation countdown and queue segmentation
+  in one floor strip. It takes <code>total</code>/<code>done</code> directly.
+  Segment count caps at 10; beyond that the current index maps proportionally.
 </p>
 <div class="grid" id="ttl-states"></div>
 
@@ -652,8 +606,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 <h2>6 · News categories</h2>
 <p class="note">
-  Seven category shaders (<code>science</code> split off from <code>tech</code> by
-  plan 147) driving the masthead dot, category chip, and the ambient
+  Seven category shaders drive the masthead dot, category chip, and the ambient
   <code>news-shade</code> drift wash — same <code>--cat</code>/<code>--cat-deep</code>/
   <code>--cat-pill</code> triple every card's below-block reads.
 </p>
@@ -661,7 +614,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 <h2>7 · Source identity — agent runtimes + non-agent origins</h2>
 <p class="note">
-  Plan 147: every notification SOURCE gets its own identity colour on the
+  Every notification source gets its own identity colour on the
   below-block wash + hairline (<code>sourceClass</code>, <code>source-identity.css</code>)
   — a system distinct from news's per-category colour above; a card only ever uses
   one of the two. Agent runtime names appear neutrally per <code>CLAUDE.md</code>'s
@@ -684,7 +637,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 <p class="note">
   <code>resting_state: "notch"</code> (Settings → Appearance) paints zero app pixels
   at idle — cutout-width-only, transparent flanks — until hovered, when it widens
-  back to the full rail and paints the flanks black again (Task 1.2, 2026-07-23).
+  back to the full rail and paints the flanks black again.
   <code>resting_state: "rail"</code> (the default) skips the bare/minimal look
   entirely and always shows the full clock+dots rail.
 </p>

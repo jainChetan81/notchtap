@@ -7,7 +7,7 @@
      `@import "tailwindcss"` root — the overlay entry never has one, so
      redeclare the plain value here (defense-in-depth, same convention as
      `--ease-notchtap-pop`). Value must stay the exact twin of tokens.css
-     and animationTiming.ts's `NOTCHTAP_EASE` — keep all three in sync. */
+     and lib/constants.ts's `NOTCHTAP_EASE` — keep all three in sync. */
   --ease-notchtap: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }

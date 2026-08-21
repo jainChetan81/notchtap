@@ -105,10 +105,7 @@ describe("mapBusEvent", () => {
   });
 
   it("maps session.idle to a non-terminal completed event (per-turn, not session-end)", () => {
-    // Operator decision 2026-07-26 (spec §2.1): session.idle fires once
-    // per turn (the agent finished and awaits the user), not once per
-    // session — it must NOT be terminal, or a multi-turn session would
-    // fragment into suffixed terminal rows on every turn. Only
+    // session.idle fires once per turn and must stay non-terminal.
     // session.deleted is the explicit session-end signal.
     const wire = mapBusEvent({ type: "session.idle", properties: { sessionID: "s1" } }, fixedCtx());
     expect(wire?.kind).toBe("completed");

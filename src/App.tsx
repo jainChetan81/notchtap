@@ -1,16 +1,16 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { BOARD_SUMMON_MS, NOTCHTAP_EASE, SURFACE_SWAP_MS } from "./animationTiming";
+import { useAgentState } from "@/hooks/useAgentState";
+import { useAgentViewedSession } from "@/hooks/useAgentViewedSession";
+import { useSlotState } from "@/hooks/useSlotState";
+import { useStatusState } from "@/hooks/useStatusState";
+import { useTabSelection } from "@/hooks/useTabSelection";
+import { BOARD_SUMMON_MS, NOTCHTAP_EASE, SURFACE_SWAP_MS } from "@/lib/constants";
 import { AgentBoard } from "./components/AgentBoard";
 import { StatusRailCard } from "./components/StatusRailCard";
 import { presentationMode } from "./lib/presentation";
 import { presentationFacts } from "./lib/presentationFacts";
-import { useAgentState } from "./useAgentState";
-import { useAgentViewedSession } from "./useAgentViewedSession";
-import { useSlotState } from "./useSlotState";
-import { useStatusState } from "./useStatusState";
-import { useTabSelection } from "./useTabSelection";
 
 type RestingState = "rail" | "notch";
 

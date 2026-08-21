@@ -5,10 +5,7 @@
 - [Shared UI — Foundations & Components](https://www.figma.com/design/OjBY1RR6vVYmSSxLcSYF4Y)
 - [notchtap — Product Design System](https://www.figma.com/design/J4mguJpJEDHDHWbxrhmCMn)
 
-Both files live in Chetan Jain's Starter team drafts.
-
-The Starter plan permits local components, styles, and variables.
-It blocks team library publication and cross-file library reuse.
+Both files live in Chetan Jain's team drafts.
 
 ## authority
 
@@ -70,27 +67,20 @@ They are not reusable overlay components.
 
 ## publication
 
-Upgrade the team to a paid Figma plan before publication.
 Move both files from drafts into one team project.
 Publish Shared UI first.
 Enable Shared UI in the notchtap file.
 Replace shared-value paints in notchtap with Shared UI variable bindings.
 Publish notchtap second.
 
-The seven radius labels on the notchtap Foundations & Settings page were fixed 2026-08-08.
-Layer names and text now read `sm · 6` through `4xl · 26`, matching the renamed variables.
-No known pre-publication cleanup remains.
+Radius labels on the notchtap Foundations & Settings page read `sm · 6`
+through `4xl · 26`, matching the variables.
 
-## verification log
+## verification
 
-2026-08-08 audit, via desktop-app variable export (MCP quota exhausted):
-
-- Shared UI variables: 43 of 43 match `figma.tokens.json` exactly (33 colours, radius, 3 fonts, 6 motion). `media-mint` correctly absent.
-- notchtap variables: 44 of 44 match code (`src/notchtap-tokens.css`, `src/lib/sourceColors.ts`, `src/settings/base.css`, `src/animationTiming.ts`, `src/styles.css`). `media-mint` present at `#B6F5E5`.
-- `figma.tokens.json` sourceSha256 matches current `design/tokens.css`.
-- The seven stale radius labels were the only drift; fixed same day after the plan upgrade (verified by script read-back and screenshot).
-- Shared UI Foundations page radius panel checked clean (`radius/base 10` only).
-
-The team upgraded to Figma Professional on 2026-08-08 (200 MCP tool calls per day, Full seat).
-On Starter the MCP allowed six tool calls per month; `whoami` is exempt.
-The desktop app's collection right-click "Export modes" gives a JSON export for auditing without MCP calls.
+- Shared UI variables match `figma.tokens.json`.
+- notchtap variables match `src/notchtap-tokens.css`, `src/lib/sourceColors.ts`,
+  `src/settings/base.css`, `src/lib/constants.ts`, and `src/styles.css`.
+- `figma.tokens.json` records the current `design/tokens.css` source hash.
+- Shared UI Foundations contains `radius/base 10` only.
+- Use the desktop app's collection export for an offline variable audit.

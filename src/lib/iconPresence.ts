@@ -16,7 +16,7 @@
 // predicts ("agent/football are only ever 'hidden' or 'live' in
 // practice").
 import type { IconVisualState, Tab } from "../components/IconStrip";
-import type { StatusState } from "../useStatusState";
+import type { StatusState } from "../hooks/useStatusState";
 
 export type IconPresence = Record<Tab, IconVisualState>;
 

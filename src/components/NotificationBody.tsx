@@ -1,9 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useState } from "react";
-import { NOTCHTAP_EASE } from "../animationTiming";
+import type { EspnMeta, SlotState, SourceKind } from "../hooks/useSlotState";
+import { NOTCHTAP_EASE } from "../lib/constants";
 import type { EventSignal, EventType, LivePillVariant, Priority } from "../lib/presentation";
-import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import type { Detail } from "./StatusRailCard";
@@ -286,7 +286,7 @@ function Crest({ abbrev, path }: { abbrev: string; path: string | null }) {
 }
 
 // Score-roll timing. Deliberately LOCAL literals rather than
-// animationTiming.ts tokens — that file single-sources values with a
+// lib/constants.ts tokens — that file single-sources values with a
 // CSS or cross-component counterpart that must stay in lockstep, and
 // this roll has exactly one consumer, no CSS twin. The delay lets the
 // goal celebration's first beat land first: 120 + 360 = 480ms inside

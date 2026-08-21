@@ -4,18 +4,15 @@ version = "0.1.0"
 description = "macOS notch/hud notification overlay"
 authors = ["chetanjain"]
 edition = "2021"
-# Two binary targets exist since plan 138 added `notchtap-agent`; tauri's
-# bundler needs to know which one is the app.
+# The Tauri bundler uses `notchtap` as the application binary.
 default-run = "notchtap"
 
 [lib]
 name = "notchtap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# Plan 138 (v7 ticket 6 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-# §4.1): the shared hook-delivery binary installed alongside the app. Kept
-# thin on purpose — its logic lives in `agents::providers` (this crate's
-# lib target), so this is just an entry point + argv dispatch.
+# Shared hook-delivery binary installed alongside the app. Its logic lives in
+# `agents::providers`; this target only handles entry and argument dispatch.
 [[bin]]
 name = "notchtap-agent"
 path = "src/bin/notchtap_agent.rs"
@@ -24,8 +21,7 @@ path = "src/bin/notchtap_agent.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# plan 083 workstream a: `protocol-asset` enables tauri's asset protocol
-# (route (i) for serving cached crest PNGs to the webview) — required by
+# `protocol-asset` serves cached crest PNGs to the webview and is required by
 # tauri.conf.json's `app.security.assetProtocol.enable`.
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "protocol-asset"] }
 serde = { version = "1", features = ["derive"] }

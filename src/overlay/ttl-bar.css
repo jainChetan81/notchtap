@@ -36,7 +36,7 @@
 .card-root .ttl-seg {
   background: color-mix(in srgb, var(--accent) 33%, transparent);
   /* reveal-tier timing/easing shared with the flank background and
-     FlankClock/StatusDots fades (animationTiming.ts). This leg covers a
+     FlankClock/StatusDots fades (lib/constants.ts). This leg covers a
      `done` change WITHIN one slot id (a same-id re-emit whose
      `queueDone` moved — the bar stays mounted, only the class flips);
      a queue advance that also advances the slot REMOUNTS the whole bar
@@ -115,4 +115,3 @@
   opacity: 0.87;
   background: color-mix(in srgb, var(--accent) 95%, transparent);
 }
-

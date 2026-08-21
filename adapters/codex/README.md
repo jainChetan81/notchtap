@@ -1,16 +1,15 @@
-# Codex adapter (v7 ticket 7 of 13)
+# Codex adapter
 
 Like the Claude Code adapter, this is not a plugin — it's the shared
 `notchtap-agent` binary (`src-tauri/src/bin/notchtap_agent.rs`, built and
 installed with the app) invoked as a Codex **command hook**. See
-`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` §4.1/§4.3 and
-`src-tauri/src/agents/providers/codex.rs`'s module doc for the full
-delivery/parsing contract and the one known doc-vs-spec gap (Codex's
+`docs/ARCHITECTURE.md` §10 and
+`src-tauri/src/agents/providers/codex.rs` for the full
+delivery contract and one known capability gap. Codex's
 documented hook surface has no structural failure signal, so this
-adapter never emits a Codex `failed` event).
+adapter never emits a Codex `failed` event.
 
-This file is the copyable setup snippet plan 143 (Settings' Agents
-section) surfaces to the user, plus the exact target file to add it to.
+This file contains the setup snippet shown in the Settings Agents section.
 
 ## target file
 
@@ -19,8 +18,7 @@ per-project and a TOML equivalent (`~/.codex/config.toml` /
 `<repo>/.codex/config.toml`) if you'd rather keep hooks alongside your
 other Codex config; the JSON form is shown below since it merges most
 predictably with an existing file. notchtap never edits this file itself
-(spec §4.6: "v7 does not silently edit a user's global provider
-configuration") — copy the snippet below in yourself.
+Copy the snippet below yourself.
 
 ## snippet
 

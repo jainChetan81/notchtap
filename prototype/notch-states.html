@@ -78,21 +78,12 @@
     isolation: isolate;
     transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
-    /* 2026-08-02 (animation audit, finding 1): the base rule is the plain
-       house curve. The bouncy `--ease-notchtap-pop` used to sit here and
-       was described as "reserved for a genuine arrival" — but a base-rule
-       curve is simply what plays when nothing more specific matches, so
-       REMOVING `.expanded` (hover-out on a showing card) resolved against
-       it and every un-hover overshot and rebounded. The pop moved to the
-       transient `.promoting` class below. There is no `transform` leg:
-       the hover "breathe" scale this shell used to ease was deleted
-       (operator removal, 2026-08-02 — choreography.css). */
+    /* Base width changes use the house curve. Arrival bounce is scoped to
+       the transient `.promoting` class below. */
     transition: width var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
-  /* plan 165: hover-expand grows the shell alongside the manifest's own
-     plain-eased disclosure — same duration, non-bouncy curve, so the two
-     halves of one disclosure finish together. */
+  /* Expanded width and manifest disclosure share one duration and curve. */
   .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); transition: width var(--expand-ms) var(--ease-notchtap); }
   /* the arrival pop, scoped: StatusRailCard.tsx arms `.promoting` in the
      same commit the width formula flips to showing geometry and clears it
@@ -100,11 +91,7 @@
      co-occur on a promotion that arrives expanded, and they tie on
      specificity, so source order is what lets the arrival win. */
   .card-root .card-assembly.promoting { transition: width var(--expand-ms) var(--ease-notchtap-pop); }
-  /* plan 164: the bare<->peek width change is HOVER-driven (many times a
-     session), so it must not inherit the arrival pop — and it rides
-     --reveal-ms to match the flank clock/status-dot fade on the same
-     gesture. Both directions carry the identical transition so the curve
-     doesn't depend on which rule happens to be matching. */
+  /* Bare and peek widths share the reveal timing used by the flank content. */
   .card-root .card-assembly.bare { --cw: min(var(--notchtap-cutout-width), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
   .card-root .card-assembly.bare:has(.idle-peek) { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
   .card-root .card-assembly.exiting { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--swap-exit-ms) var(--ease-notchtap); }
@@ -113,11 +100,8 @@
   .card-root .flank-left, .card-root .flank-right {
     box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
     background: #000; color: var(--overlay-fg); min-width: 0;
-    /* plan 166: the `border-radius` leg gives the ENTRANCE direction (a
-       below-block newly mounting, so the flank un-rounds) a real
-       transition instead of an instant snap. The exit direction is
-       unaffected — the rounding-law rules below have higher specificity
-       and still win the whole shorthand with their own --content-exit-ms. */
+    /* Border radius transitions on entrance. Higher-specificity exit rules
+       apply the content-exit timing below. */
     transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap), border-radius var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
@@ -160,18 +144,8 @@
     border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
   }
 
-  /* concave "gill" fillets where the idle/exiting shell meets the top edge
-     — a real border-radius can only bow OUTWARD, never carve a concave
-     dent, so the shipped app paints two corner-anchored radial-gradient
-     elements instead (card-chrome.css's own comment has the full "why").
-     Hidden whenever a below-block is mounted or the shell is bare.
-     plan 167: that hide/show is `opacity`-driven, not a `display` toggle —
-     `display` cannot be transitioned, so the gill now stays permanently in
-     the render tree (tiny, absolutely positioned, pointer-events: none)
-     and fades. The shipped file keeps a `display: none` base as the
-     "does this mode exist at all" gate for real notch hardware, flipped to
-     `display: block` by `:root[data-notchtap-mode="hud"]`; this static page
-     only ever renders the HUD case, so it starts from `display: block`. */
+  /* Concave gills use radial gradients because border radius cannot carve
+     inward. Opacity controls their transition in this HUD-only reference. */
   .card-root .notch-gill { display: block; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; opacity: 0; transition: opacity var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly:not(:has(.below-block)):not(.bare) .notch-gill,
   .card-root .card-assembly.exiting:not(.bare) .notch-gill { opacity: 1; }
@@ -195,10 +169,8 @@
   .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 
   /* ============== compact / masthead / title / body (masthead-content.css) ============== */
-  /* the 74 -> 82px floor step is declared on the BASE rule's transition so
-     BOTH directions of hover-expand animate it, on the same clock as the
-     shell width and the manifest disclosure (2026-08-02 audit finding 2 —
-     it used to teleport while those two glided). */
+  /* The base min-height transition keeps compact height, shell width, and
+     manifest disclosure aligned in both directions. */
   .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; transition: min-height var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly.expanded .compact { min-height: 82px; }
   .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
@@ -236,19 +208,10 @@
   .card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
   /* ============== ttl-bar / queue segments (ttl-bar.css) ============== */
-  /* plan 168: the explicit `grid-template-rows: 4px` + the fill's own
-     `grid-row: 1` keep every segment (and the live fill) pinned to ONE
-     4px row — without them an implicit second row could appear and the
-     bar would render at double height. */
+  /* Explicit row placement keeps every segment and the fill in one 4px row. */
   .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
-  /* 2026-08-02 (operator direction-alignment fix): brightness INVERTED —
-     an untouched segment is the BRIGHT "still to come" state and a
-     consumed one burns out DIM, so the sweep runs the same direction the
-     queue counts. The fill's `transform-origin` flipped to `right` with
-     it, so remaining time drains left-to-right too. The paused fill was
-     retuned in the same pass (2.55x the trough's effective accent alpha,
-     ~24% dimmer than the unpaused solid) — the old value was written
-     against a white-8% trough and nearly vanished into an accent-30% one. */
+  /* Untouched segments stay bright, consumed segments dim, and the fill
+     drains from the right in the queue direction. */
   .card-root .ttl-seg { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: background var(--reveal-ms) var(--ease-notchtap); }
   .card-root .ttl-seg.done { background: rgba(255,255,255,0.08); }
   .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: right; will-change: transform; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
@@ -279,7 +242,6 @@
   .card-root .src-opencode    { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
   .card-root .src-agent       { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); } /* runtime unknown */
   .card-root .src-football    { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
-  .card-root .src-weather     { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
   .card-root .src-manual      { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); } /* "CLI blue" */
 
   /* ============== status dots (status-dots.css) ============== */
@@ -292,17 +254,14 @@
   }
   .card-root .status-dot.football { background: var(--overlay-green); }
   .card-root .status-dot.news { background: var(--overlay-coral); }
-  .card-root .status-dot.weather { background: var(--overlay-amber); }
   .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
   .card-root .status-dot.football.active { color: var(--overlay-green); }
   .card-root .status-dot.news.active { color: var(--overlay-coral); }
-  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
   .card-root .status-dot.shape-disabled, .card-root .status-dot.shape-unavailable { background: transparent; }
   .card-root .status-dot.shape-disabled { border-radius: 2px; }
   .card-root .status-dot.football.shape-disabled { border: 1.5px solid var(--overlay-green); }
   .card-root .status-dot.news.shape-disabled { border: 1.5px solid var(--overlay-coral); }
-  .card-root .status-dot.weather.shape-disabled { border: 1.5px solid var(--overlay-amber); }
   .card-root .status-dot.shape-unavailable { border: 1.5px solid rgba(255,255,255,0.35); }
   .card-root .pause-glyph { display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .card-root .pause-glyph span { width: 2px; height: 9px; border-radius: 1px; background: rgba(255,255,255,0.5); }
@@ -311,29 +270,6 @@
   /* ============== idle hover-peek (idle-peek.css) ============== */
   .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 0; }
   .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
-  .card-root .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0; border-radius: 0 0 var(--card-radius) var(--card-radius); overflow: hidden; }
-  .card-root .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
-  .card-root .wx-peek-icon { width: 28px; height: 28px; flex: none; border-radius: 6px; }
-  .card-root .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
-  .card-root .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
-  .card-root .wx-peek-hilo::before { content: "·"; opacity: 0.5; }
-  .card-root .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
-  .card-root .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12); border: 1px solid rgba(180,210,255,0.35); }
-  .card-root .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
-  .card-root .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
-  .card-root .wx-forecast-icon { width: 10px; height: 10px; flex: none; border-radius: 3px; }
-  .card-root .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
-  .card-root .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
-  .card-root .media-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .card-root .media-track { display: flex; align-items: center; gap: 9px; min-width: 0; }
-  .card-root .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: var(--overlay-fg); }
-  .card-root .media-meta { min-width: 0; display: flex; flex-direction: column; }
-  .card-root .media-title { font-size: 12px; font-weight: 600; color: var(--overlay-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-root .media-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-root .media-transport { display: flex; align-items: center; gap: 6px; flex: none; font-size: 10.5px; color: rgba(255,255,255,0.85); }
-  .card-root .media-bar { width: 56px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
-  .card-root .media-bar-fill { display: block; height: 100%; background: #b6f5e5; transform-origin: left; }
-  .card-root .media-time { font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
   .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
   .card-root .sc-head { display: flex; align-items: center; gap: 6px; }
   .card-root .chip-live { color: var(--overlay-green); background: rgba(127,224,141,0.14); border: 1px solid rgba(127,224,141,0.35); display: inline-flex; align-items: center; gap: 4px; }
@@ -343,13 +279,6 @@
   .card-root .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px; background: rgba(255,255,255,0.14); }
   .card-root .idle-peek-timeline::before { content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%); width: 5px; height: 5px; transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75); }
 
-  /* weather-art.css mood backdrops — a representative subset (the real
-     table has 10: clear/partly-cloudy x day/night, overcast, rain,
-     rainy-night, thunderstorm, snow, fog). */
-  .card-root .wx-card.wx-clear-day { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
-  .card-root .wx-card.wx-rain { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
-  .card-root .wx-card.wx-rainy-night { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
-  .card-root .wx-card.wx-snow { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
 
   /* ============== this page's own control/demo chrome (not app UI) ============== */
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
@@ -377,9 +306,8 @@
     compiled build of the real component tree.
   </p>
   <p class="note">
-    This file used to carry a "historical prototype, deliberately diverged"
-    banner. That framing is retired: this version was written by reading
-    <code>src/App.tsx</code>, <code>StatusRailCard.tsx</code>,
+    This static reference follows <code>src/App.tsx</code>,
+    <code>StatusRailCard.tsx</code>,
     <code>useExitChoreography.ts</code>, <code>IdleHoverPeek.tsx</code>, and
     the <code>src/overlay/*.css</code> stylesheets directly, and pulls its
     widths/colors/timings from those files. It is still a static mock (no
@@ -445,7 +373,6 @@
             <span class="status-dots">
               <span class="status-dot football active"></span>
               <span class="status-dot news active"></span>
-              <span class="status-dot weather shape-disabled"></span>
             </span>
           </div>
         </div>
@@ -456,25 +383,19 @@
   <section>
     <h2>2 — idle rail (<code>resting_state: "rail"</code>, the default)</h2>
     <p class="section-sub">
-      Time on the left flank (<code>&lt;FlankClock&gt;</code>), three status
-      dots on the right (<code>&lt;StatusDots&gt;</code>) — football / news /
-      weather, fixed order. <b>Hover the card</b> to open the below-block
-      peek (<code>&lt;IdleHoverPeek&gt;</code>) — content precedence is
-      football-live &gt; media &gt; weather &gt; the day-progress timeline
-      alone. Pick a variant below, then hover.
+      Time sits on the left flank. Football and News status dots sit on the
+      right. <b>Hover the card</b> to open the below-block peek. Live football
+      takes precedence over the day-progress timeline.
     </p>
     <div class="controls">
       <label>Peek content</label>
       <select id="peek-variant">
-        <option value="football">Live football (highest precedence)</option>
-        <option value="media">Now playing</option>
-        <option value="weather" selected>Weather + 3h forecast</option>
+        <option value="football" selected>Live football</option>
         <option value="timeline">Nothing configured (timeline only)</option>
       </select>
       <label>Status dots</label>
       <select id="dot-state">
         <option value="normal" selected>All enabled</option>
-        <option value="mixed">Weather disabled</option>
         <option value="unavailable">Status unknown (settings preview)</option>
         <option value="paused">Notifications paused</option>
       </select>
@@ -488,7 +409,6 @@
           <div class="synthetic-cutout"></div>
           <div class="flank-right" id="idle-dots"></div>
           <div class="below-block idle-peek" id="idle-peek-block">
-            <div class="wx-peek-backdrop wx-card wx-clear-day" id="peek-backdrop"></div>
             <div class="peek-content" id="peek-content"></div>
           </div>
         </div>
@@ -612,7 +532,6 @@
               <span class="status-dots">
                 <span class="status-dot football active"></span>
                 <span class="status-dot news active"></span>
-                <span class="status-dot weather shape-disabled"></span>
               </span>
             </div>
           </div>
@@ -628,7 +547,6 @@
               <span class="status-dots">
                 <span class="status-dot football active"></span>
                 <span class="status-dot news active"></span>
-                <span class="status-dot weather shape-disabled"></span>
               </span>
             </div>
           </div>
@@ -669,7 +587,6 @@
   const dotStateSelect = document.getElementById("dot-state");
   const idleDotsHost = document.getElementById("idle-dots");
   const peekContent = document.getElementById("peek-content");
-  const peekBackdrop = document.getElementById("peek-backdrop");
 
   function statusDotsMarkup(mode) {
     // mirrors StatusDots.tsx's shape/active/dim logic for the four
@@ -678,66 +595,28 @@
       return `<span class="status-dots">
         <span class="status-dot football shape-unavailable"></span>
         <span class="status-dot news shape-unavailable"></span>
-        <span class="status-dot weather shape-unavailable"></span>
       </span>`;
     }
     if (mode === "paused") {
       return `<span class="status-dots">
         <span class="status-dot football dim"></span>
         <span class="status-dot news dim"></span>
-        <span class="status-dot weather dim"></span>
         <span class="pause-glyph"><span></span><span></span></span>
-      </span>`;
-    }
-    if (mode === "mixed") {
-      return `<span class="status-dots">
-        <span class="status-dot football active"></span>
-        <span class="status-dot news active"></span>
-        <span class="status-dot weather shape-disabled"></span>
       </span>`;
     }
     return `<span class="status-dots">
       <span class="status-dot football active"></span>
       <span class="status-dot news active"></span>
-      <span class="status-dot weather active"></span>
     </span>`;
   }
 
   function renderPeek() {
     const variant = peekVariantSelect.value;
-    peekBackdrop.style.display = variant === "weather" ? "block" : "none";
     let html = "";
     if (variant === "football") {
       html = `<div class="idle-reveal-scorecard">
         <div class="sc-head"><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="chip clock-pill">67'</span></div>
         <div class="idle-reveal-label">Arsenal 2 – 1 Chelsea</div>
-      </div>
-      <span class="idle-peek-timeline" style="--day-progress:64%"></span>`;
-    } else if (variant === "media") {
-      html = `<div class="media-row">
-        <div class="media-track">
-          <span class="media-art">♪</span>
-          <span class="media-meta"><span class="media-title">Discovery</span><span class="media-subtitle">Daft Punk</span></span>
-        </div>
-        <div class="media-transport">
-          <span>▶</span>
-          <span class="media-bar"><span class="media-bar-fill" style="width:38%"></span></span>
-          <span class="media-time">1:24</span>
-        </div>
-      </div>
-      <span class="idle-peek-timeline" style="--day-progress:64%"></span>`;
-    } else if (variant === "weather") {
-      html = `<div class="wx-peek-readout">
-        <span class="wx-peek-icon" style="background:rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center; font-size:14px;">☀︎</span>
-        <span class="wx-peek-temp">28°</span>
-        <span class="wx-peek-hilo"><span>H 31°</span><span>L 22°</span></span>
-        <span class="chip wx-peek-condition">Clear</span>
-        <span class="chip wx-peek-rain">Rain 10%</span>
-      </div>
-      <div class="wx-forecast-strip">
-        <span class="wx-forecast-point"><span class="wx-forecast-icon" style="background:rgba(255,255,255,.15)"></span><span class="wx-forecast-temp">27°</span><span class="wx-forecast-hour">4PM</span></span>
-        <span class="wx-forecast-point"><span class="wx-forecast-icon" style="background:rgba(255,255,255,.15)"></span><span class="wx-forecast-temp">24°</span><span class="wx-forecast-hour">6PM</span></span>
-        <span class="wx-forecast-point"><span class="wx-forecast-icon" style="background:rgba(255,255,255,.15)"></span><span class="wx-forecast-temp">21°</span><span class="wx-forecast-hour">8PM</span></span>
       </div>
       <span class="idle-peek-timeline" style="--day-progress:64%"></span>`;
     } else {

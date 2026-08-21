@@ -57,7 +57,7 @@ describe("entry-file CSS import order", () => {
     expect(appIdx).toBeGreaterThan(sharedIdx);
   });
 
-  it("keeps media-mint out of shared-ui (the token left with the now-playing vertical)", () => {
+  it("keeps the removed media-mint token out of both token layers", () => {
     const shared = readSource("../vendor/shared-ui/design/tokens.css");
     const local = readSource("./notchtap-tokens.css");
     expect(shared.includes("--media-mint")).toBe(false);

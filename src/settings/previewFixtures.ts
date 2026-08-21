@@ -7,7 +7,7 @@
 // Deliberately OUT: idle rail / idle hover-peek / bare notch — window-level
 // overlay states (idle clock, hover-driven peek, notchless-vs-notch shell
 // paint) a static per-sample `.preview-stage` box has no honest way to host.
-import type { EspnMeta, SlotState } from "../useSlotState";
+import type { EspnMeta, SlotState } from "../hooks/useSlotState";
 
 type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
 

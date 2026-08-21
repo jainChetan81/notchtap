@@ -1,5 +1,5 @@
 # notchtap task runner — mirrors .github/workflows/ci.yml exactly.
-# `just test-all` before calling any phase done (IMPLEMENTATION_PLAN.md §6).
+# Run `just test-all` before declaring repository work complete.
 # fresh clones: run `just setup` first — CI's web job runs the equivalent
 # `npm ci` before its own gates; `test-all` does not do this for you.
 
@@ -15,7 +15,7 @@ setup:
 dev:
     npm run tauri dev
 
-# rust gates (run from src-tauri, as CI does — `--locked` per plan 007)
+# Rust gates run from src-tauri with the locked dependency graph.
 test-rust:
     cd src-tauri && cargo test --locked
 
