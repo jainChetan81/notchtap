@@ -248,3 +248,15 @@ re-verify against current code before acting.
   `.card-assembly`'s `filter: drop-shadow` subtree, plausibly
   re-rasterizing the blurred surface per frame; needs Safari Web
   Inspector on a live card before restructuring.
+- Settings-window bundle (vercel-react-best-practices audit, all
+  settings-only; overlay verified clean): replace `lucide-react` and
+  consolidated `radix-ui` root imports with direct subpath/scoped
+  imports; lazy-load the nine non-default sections (`React.lazy` +
+  preload on sidebar hover); consider a react-dom/motion vendor split
+  in `vite.config.ts` for the 357KB shared chunk. Nits: hoist the
+  static decoration JSX/style consts in `AgentBoard.tsx` and
+  `StatusRailCard.tsx`, add `content-visibility: auto` to the history
+  list, hoist `abbreviateHome`'s regex literal (`presentation.ts`).
+- Reduced motion is intentionally unsupported: personal two-machine
+  app, owner runs without it; do not re-add `prefers-reduced-motion`
+  handling or re-flag its absence in audits.
