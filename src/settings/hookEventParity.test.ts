@@ -1,14 +1,3 @@
-// String-level parity pin between `doctor.rs`'s expected hook
-// event consts (what `notchtap-agent doctor` counts as "wired") and the
-// setup snippets AgentsSection.tsx tells the user to paste. The two lists
-// are hand-synced, so without this pin a runtime could gain or lose a hook
-// event in the UI and doctor would silently keep reporting the old count.
-//
-// Same cheap register as src/lib/sourceColors.test.ts — read the files as
-// text, no parser — but region-scoped rather than whole-file: the Claude
-// Code and Kimi event sets are IDENTICAL, so a whole-file scan could not
-// tell which list an event name belonged to. Each side is sliced down to
-// its own named constant first, then the two are compared as sets.
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -21,7 +10,6 @@ function readText(relativePath: string): string {
 const doctorRs = readText("../../src-tauri/src/agents/providers/doctor.rs");
 const agentsSectionTsx = readText("./sections/AgentsSection.tsx");
 
-/** The text between a region's opening marker and its closing one. */
 function region(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
   if (from === -1) throw new Error(`region start not found: ${start}`);
@@ -34,17 +22,10 @@ function captures(text: string, pattern: RegExp): string[] {
   return [...text.matchAll(pattern)].map((match) => match[1]);
 }
 
-/** Every double-quoted string inside a `pub const NAME: [&str; N] = [...];`. */
 function rustEvents(constName: string): string[] {
   return captures(region(doctorRs, `pub const ${constName}`, "];"), /"([^"]+)"/g);
 }
 
-/**
- * Every `"EventName": [{ "hooks"` key in a JSON setup snippet template
- * literal. The trailing `"hooks"` is required so the nested
- * `"hooks": [{ "type": ... }]` array — which shares the outer shape — is
- * not mistaken for an event name.
- */
 function jsonSnippetEvents(constName: string): string[] {
   return captures(
     region(agentsSectionTsx, `const ${constName} =`, "`;"),
@@ -52,7 +33,6 @@ function jsonSnippetEvents(constName: string): string[] {
   );
 }
 
-/** Every `event = "EventName"` value in the Kimi TOML setup snippet. */
 function tomlSnippetEvents(constName: string): string[] {
   return captures(region(agentsSectionTsx, `const ${constName} =`, "`;"), /event = "([^"]+)"/g);
 }

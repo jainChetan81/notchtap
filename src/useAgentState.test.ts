@@ -6,7 +6,6 @@ import { useAgentState } from "./useAgentState";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-// deliberately keeps `unknown` — this file exercises malformed payloads
 const emit = (payload: unknown) => act(() => emitTo("agent-state", payload));
 
 function session(overrides: Partial<AgentState["sessions"][number]> = {}) {
@@ -55,8 +54,6 @@ describe("useAgentState", () => {
       revision: 1,
       capturedAtMs: 1_000,
       sessions: [session()],
-      // the hook always resolves this field, so a fixture
-      // compared with `toEqual` has to carry it too.
       tabSessions: [],
       adapterHealth: [],
     };
@@ -122,10 +119,6 @@ describe("useAgentState", () => {
     expect(result.current.sessions).toHaveLength(1);
   });
 
-  // the wire view's
-  // new `history` field — optional at validation time (an older cached
-  // payload without it must not drop the session), sanitized down to an
-  // empty array rather than left `undefined`.
   it("defaults a session that omits history entirely to an empty array", async () => {
     const { result } = await renderReady();
     const { history, ...withoutHistory } = session();
@@ -135,8 +128,6 @@ describe("useAgentState", () => {
     expect(result.current.sessions[0].history).toEqual([]);
   });
 
-  // `subagent` follows the exact absent/null-tolerant
-  // idiom `project`/`host` already established above.
   it("accepts a session with a full subagent object", async () => {
     const { result } = await renderReady();
     emit({
@@ -199,8 +190,6 @@ describe("useAgentState", () => {
     expect(result.current.sessions).toEqual([]);
   });
 
-  // `tabSessions` — the ungated list the pulled agent tab
-  // renders, alongside the gated `sessions` the Board renders.
   it("parses a payload carrying tabSessions alongside a gated-empty sessions list", async () => {
     const { result } = await renderReady();
     emit({

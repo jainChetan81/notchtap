@@ -1,27 +1,5 @@
-//! Pure Claude Code hook-payload parser. [`normalize`] takes the raw
-//! JSON bytes Claude Code writes to a hook command's stdin and returns
-//! a [`super::wire::NormalizedEvent`]. Every native event name is read
-//! from the payload's own `hook_event_name` field, so one hook command
-//! entry registered against every event is enough.
-//!
-//! ## Sanitization
-//!
-//! What is safe to forward at all is decided at parse time — the
-//! server-side caps in `agents::adapter` bound length/count, but can't
-//! undo a forwarding decision made here. `super::wire`'s
-//! `safe_tool_name` and `safe_path_detail` cover tool names and paths;
-//! this parser's own arms add:
-//!
-//! - every `summary` is a fixed template plus already-sanitized
-//!   closed-enum fields — never `message`, `last_assistant_message`,
-//!   `error_message`, or any other free-text/model-authored field;
-//! - `tool_result` is never inspected at all — the
-//!   `tool_use_succeeded` boolean plus the tool name is the whole
-//!   PostToolUse(Failure) story.
-//!
-//! `Notification`'s `notification_type` is a closed enum;
-//! [`classify_notification`] switches on that field, never on `message`
-//! text — wording is never parsed to infer state.
+//! Pure Claude Code hook-payload parser. `super::wire`'s `safe_tool_name` and `safe_path_detail`
+//! cover tool names and paths.
 
 use thiserror::Error;
 
@@ -30,9 +8,8 @@ use super::wire::{
     RawHookPayload,
 };
 
-/// Claude Code's declared capability set (not `open_or_focus`, which
-/// is Host-dependent and not part of an event's own `capabilities`
-/// array). Sent unchanged on every event this parser produces.
+/// Claude Code's declared capability set (not `open_or_focus`, which is Host-dependent and not part
+/// of an event's own `capabilities` array).
 pub const CAPABILITIES: [&str; 7] = [
     "session_lifecycle",
     "permission_requests",
@@ -43,7 +20,6 @@ pub const CAPABILITIES: [&str; 7] = [
     "subagents",
 ];
 
-/// Typed parse errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ClaudeCodeParseError {
     #[error("malformed json: {0}")]
@@ -99,10 +75,6 @@ fn map_event(
             }
         }
         "Notification" => classify_notification(payload.notification_type.as_deref()),
-        // `Stop` fires once per turn, not once per session — the session
-        // stays live; the registry (not this parser) resolves this
-        // non-terminal `completed` into `WaitingForInput`
-        // (`agents::registry::next_state`).
         "Stop" => Mapped {
             kind: "completed",
             state: "completed",
@@ -111,11 +83,6 @@ fn map_event(
             details: Vec::new(),
             subagent: None,
         },
-        // `StopFailure` fires at the same per-turn point as `Stop`, not
-        // at session end. Terminal here would fragment one multi-turn
-        // session into a suffixed reuse key on every failed turn
-        // (`AgentRegistry::apply_event`'s terminal-reuse redirect) —
-        // only an explicit `SessionEnd` closes the session for good.
         "StopFailure" => {
             let error_type = payload
                 .error_type
@@ -149,8 +116,6 @@ fn map_event(
             let tool = safe_tool_name(payload.tool_name.as_deref());
             Mapped {
                 kind: "failed",
-                // Non-terminal tool failure keeps the session `Working`
-                // in the registry (`agents::registry::next_state`).
                 state: "working",
                 terminal: false,
                 summary: Some(format!("Tool failed: {tool}")),
@@ -206,7 +171,6 @@ fn map_event(
 }
 
 /// Parses one Claude Code hook stdin payload into a [`NormalizedEvent`].
-/// Pure — see this module's top doc.
 pub fn normalize(stdin: &[u8]) -> Result<NormalizedEvent, ClaudeCodeParseError> {
     let payload: RawHookPayload = serde_json::from_slice(stdin)
         .map_err(|e| ClaudeCodeParseError::MalformedJson(e.to_string()))?;
@@ -288,9 +252,6 @@ mod tests {
         }
     }
 
-    // --- fixture-per-hook-event tests: normalized kind/state/capabilities/
-    // sanitized fields -------------------------------------------------
-
     #[test]
     fn session_start_maps_to_informational_starting() {
         let event = normalize(fixture("session-start").as_bytes()).unwrap();
@@ -356,7 +317,6 @@ mod tests {
 
     #[test]
     fn stop_maps_to_completed_non_terminal() {
-        // Per-turn Stop must not be terminal — the session stays live.
         let event = normalize(fixture("stop").as_bytes()).unwrap();
         assert_eq!(event.kind, "completed");
         assert!(
@@ -368,8 +328,6 @@ mod tests {
 
     #[test]
     fn stop_failure_maps_to_failed_non_terminal_with_safe_error_type() {
-        // Same non-terminal treatment as `Stop` — see `map_event`'s
-        // `"StopFailure"` arm.
         let event = normalize(fixture("stop-failure").as_bytes()).unwrap();
         assert_eq!(event.kind, "failed");
         assert!(
@@ -429,9 +387,6 @@ mod tests {
         assert_eq!(state.as_deref(), Some("completed"));
     }
 
-    // --- sanitization: a fixture with a fake secret/full command line
-    // never emits it ----------------------------------------------------
-
     #[test]
     fn secret_and_full_command_line_never_appear_in_normalized_output() {
         let event = normalize(fixture("post-tool-use-with-secret").as_bytes()).unwrap();
@@ -457,14 +412,11 @@ mod tests {
                 "sanitized output must never contain {needle:?}, got {haystack:?}"
             );
         }
-        // The only detail this event should carry is the safe tool name.
         assert_eq!(
             event.details,
             vec![("Tool".to_string(), "Bash".to_string())]
         );
     }
-
-    // --- malformed input ------------------------------------------------
 
     #[test]
     fn garbage_json_is_rejected() {
@@ -501,10 +453,6 @@ mod tests {
         );
     }
 
-    // --- round-trip: every normalized+wire-built payload is accepted by
-    // `agents::adapter::parse_wire_event` (proves this parser emits
-    // exactly what the endpoint accepts) --------------------------------
-
     #[test]
     fn every_fixture_round_trips_through_the_wire_adapter() {
         let names = [
@@ -538,8 +486,6 @@ mod tests {
         }
     }
 
-    // --- declared capabilities vs. fixture suite must agree ------------
-
     #[test]
     fn declared_capabilities_are_the_claude_code_capability_set() {
         let expected: std::collections::BTreeSet<&str> = [
@@ -559,9 +505,6 @@ mod tests {
 
     #[test]
     fn fixture_suite_exercises_every_declared_capability() {
-        // Declaration and fixture suite must agree: every capability the
-        // parser declares needs at least one fixture demonstrating it,
-        // and no fixture needs an undeclared capability.
         let exercised: std::collections::BTreeSet<&str> = [
             ("session-start", "session_lifecycle"),
             ("session-end", "session_lifecycle"),
@@ -584,8 +527,6 @@ mod tests {
             "every declared capability must be exercised by the committed fixture suite, and vice versa"
         );
 
-        // And every event carries the full declared set on the wire —
-        // capabilities are sent on every event, not derived per-event.
         for name in [
             "session-start",
             "session-end",

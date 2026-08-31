@@ -7,8 +7,6 @@ import type { AgentSessionView } from "../useAgentState";
 import { AgentBoard, HERO_SWAP_TRANSITION, nowTickIntervalMs, ROW_TRANSITION } from "./AgentBoard";
 import { MAX_VISIBLE_DETAIL_PAIRS } from "./NotificationBody";
 
-// this project's vitest config doesn't set `test.globals`, so RTL's
-// auto-cleanup (hooked off a global `afterEach`) never registers.
 afterEach(cleanup);
 
 const CAPTURED_AT_MS = 1_000_000;
@@ -31,27 +29,12 @@ function session(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
   };
 }
 
-// resting render
-// coverage for each of the four+one non-alarming state families, plus
-// the "3+ sessions, never a +N collapse, Rust order preserved" contract.
 describe("AgentBoard resting render", () => {
   it("renders nothing when there are zero sessions (defense in depth)", () => {
     const { container } = render(<AgentBoard sessions={[]} capturedAtMs={CAPTURED_AT_MS} />);
     expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
   });
 
-  // the hero now renders through NotificationBody.tsx's shared
-  // template — the state drives a prose `.title.headline` (there is no
-  // more standalone `.agent-board-runtime`/`.agent-board-state-pill`
-  // pair), runtime + project become the subtitle row, summary becomes
-  // the notif-body. `waiting_for_permission` also maps to "high"
-  // priority (step 6's mapping) — the NEW `--accent`/Stamp channel on
-  // `.card-assembly`, a separate paint channel from the `--agent-accent`
-  // one `.agent-waiting` below already drives.
-  // title/subtitle are pinned to the
-  // mock's own strings (`prototype/agent-board.html`, proposal section) —
-  // per-state prose plus a `runtime · project` subtitle, replacing the
-  // old `"Codex — Needs approval"` / bare-project pair.
   it("waiting-for-permission: amber family, hero renders through the shared template (title/subtitle/body/priority)", () => {
     const { container, getByText } = render(
       <AgentBoard
@@ -110,25 +93,15 @@ describe("AgentBoard resting render", () => {
       session({ id: "d", runtime: "opencode", state: "completed" }),
     ];
     const { container } = render(<AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} />);
-    // the primary card carries the FIRST session (a) — the remaining
-    // three (b, c, d) are individual compact rows, in that exact order.
     const rows = container.querySelectorAll(".agent-row");
     expect(rows).toHaveLength(3);
     const rowRuntimes = Array.from(rows).map(
       (row) => row.querySelector(".agent-row-runtime")?.textContent,
     );
     expect(rowRuntimes).toEqual(["Codex", "Kimi", "OpenCode"]);
-    // never a "+N" collapse anywhere in the rendered output
     expect(container.textContent).not.toMatch(/\+\d/);
   });
 
-  // project is the hero's subtitle row now (`.notif-subtitle-row`,
-  // NotificationBody.tsx's shared template) — the old standalone
-  // `.agent-board-project` line is gone.
-  // the subtitle is `runtime · project` and the
-  // row ALWAYS renders for the hero — the runtime name lives only here
-  // now (the title is per-state prose), so a session with no project
-  // must still say which runtime it is, not drop the row.
   it("falls back to the runtime alone in the subtitle when a session has no project metadata", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ project: null })]} capturedAtMs={CAPTURED_AT_MS} />,
@@ -138,10 +111,6 @@ describe("AgentBoard resting render", () => {
     expect(subtitle?.textContent).toBe("Codex");
   });
 
-  // state accents (agent-waiting/agent-working/...) and
-  // runtime identity (src-claude-code/src-kimi/...) are two independent
-  // paint channels that must coexist on the same row — never one
-  // replacing the other.
   it("a compact row carries both the state class and the runtime class simultaneously", () => {
     const { container } = render(
       <AgentBoard
@@ -169,12 +138,6 @@ describe("AgentBoard resting render", () => {
     expect(board?.classList.contains("src-claude-code")).toBe(true);
   });
 
-  // the board's below-block also
-  // carries the SHIPPED runtime wash (`agent-origin` — card-chrome.css's
-  // corner radial off `--cat-deep`, plus the runtime-coloured hairline),
-  // which the mock's hero draws and the board never applied. Paired with
-  // the `src-<runtime>` class above, which is what actually supplies the
-  // `--cat`/`--cat-deep` pair that rule reads.
   it("the hero's below-block carries the runtime wash class", () => {
     const { container } = render(
       <AgentBoard
@@ -197,8 +160,6 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelectorAll(".agent-row .agent-runtime-tick")).toHaveLength(1);
   });
 
-  // the old bespoke `.agent-board-primary-head` is gone — the
-  // runtime tick glyph now lives in the hero's shared masthead.
   it("renders a runtime tick glyph on the hero's masthead", () => {
     const { container } = render(
       <AgentBoard sessions={[session()]} capturedAtMs={CAPTURED_AT_MS} />,
@@ -209,21 +170,7 @@ describe("AgentBoard resting render", () => {
   });
 });
 
-// the hero's fact-pill assembly — `session.details` (the same
-// capability-dependent facts `ExpandedAgentRow` already renders) plus a
-// synthesized elapsed-in-state fact for starting/completed/stale (the
-// Target table's "session"/"duration"/"last seen" examples), and the
-// Target table's own "(danger tone)" marking on exactly two states
-// (waiting_for_permission, failed). Covers the three states the earlier
-// per-state describe block didn't (waiting_for_input, starting, stale),
-// so all seven states have hero-render coverage somewhere in this file.
 describe("AgentBoard hero fact pills", () => {
-  // `liveElapsedMs` (AgentBoard.tsx) adds `Date.now() - capturedAtMs` on
-  // top of the fixture's own `elapsedMs` — with a real wall clock and the
-  // tiny fixed `CAPTURED_AT_MS` epoch every other test in this file uses,
-  // that diff is enormous, not zero. Pinning the system clock to exactly
-  // `CAPTURED_AT_MS` makes the diff 0, so the synthesized elapsed fact
-  // pills below assert the fixture's own `elapsedMs` value directly.
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(CAPTURED_AT_MS);
@@ -309,15 +256,10 @@ describe("AgentBoard hero fact pills", () => {
     expect(getByText("Exit code")).toBeTruthy();
     const pill = container.querySelector(".agent-board-primary .fact-pill");
     expect(pill?.classList.contains("tone-danger")).toBe(true);
-    // a nonzero exit also earns the mock's
-    // `ERROR` tag (`.fp-tag`) on that same pill.
     expect(pill?.querySelector(".fp-tag")?.textContent).toBe("error");
     expect(pill?.textContent).toBe("Exit code1error");
   });
 
-  // the tag is derived from the DATA, never from
-  // the state alone — a failed session reporting a clean exit code (or a
-  // non-numeric one) gets no `ERROR` tag.
   it("failed: a zero exit code carries no error tag", () => {
     const { container } = render(
       <AgentBoard
@@ -330,9 +272,6 @@ describe("AgentBoard hero fact pills", () => {
     expect(pill?.querySelector(".fp-tag")).toBeNull();
   });
 
-  // the mock's `Tool rm DESTRUCTIVE` pill — a
-  // declared `Risk` detail whose value reads destructive/blocked folds
-  // into the `Tool` pill as its tag instead of standing as its own pill.
   it("waiting-for-permission: a destructive Risk detail folds into the Tool pill as a tag", () => {
     const { container } = render(
       <AgentBoard
@@ -355,8 +294,6 @@ describe("AgentBoard hero fact pills", () => {
     expect(pills[0].textContent).toBe("Toolrmdestructive");
   });
 
-  // The same guard from the other direction: a risk the table doesn't
-  // flag stays an ordinary pill of its own, nothing is invented.
   it("waiting-for-permission: an unflagged Risk value stays its own untagged pill", () => {
     const { container } = render(
       <AgentBoard
@@ -377,9 +314,6 @@ describe("AgentBoard hero fact pills", () => {
     expect(container.querySelector(".agent-board-primary .fp-tag")).toBeNull();
   });
 
-  // every non-danger state's pills are
-  // `tone-accent` (the mock's own fixtures), not the neutral pill the
-  // generic branch uses.
   it("working: declared details (Progress/63%) render as an accent-toned fact pill", () => {
     const { getByText, container } = render(
       <AgentBoard
@@ -406,12 +340,6 @@ describe("AgentBoard hero fact pills", () => {
     expect(pill?.classList.contains("tone-accent")).toBe(true);
   });
 
-  // Overflow safety: the hero's facts are capped at the SAME
-  // MAX_VISIBLE_DETAIL_PAIRS limit the generic branch's own pills
-  // respect (NotificationBody.tsx) — a session with more declared
-  // details than the cap must never grow the card past a knowable
-  // height (see manifest.css's `.detail-facts`/`.fact-pill` truncation
-  // rules, verified statically).
   it("caps the hero's fact pills at MAX_VISIBLE_DETAIL_PAIRS even with more declared details", () => {
     const { container } = render(
       <AgentBoard
@@ -433,10 +361,6 @@ describe("AgentBoard hero fact pills", () => {
   });
 });
 
-// the hover-expanded
-// state's own render coverage — every retained session in the given
-// order, per-row history disclosure, capability-omitted cells, and a
-// bounded scroll container present.
 describe("AgentBoard expanded render", () => {
   function manySessions(count: number): AgentSessionView[] {
     return Array.from({ length: count }, (_, i) =>
@@ -448,12 +372,6 @@ describe("AgentBoard expanded render", () => {
     );
   }
 
-  // `sessions[0]` is the HERO in both the
-  // resting and the expanded state — only `sessions[1..]` become expanded
-  // rows. Every row-level assertion below therefore puts a filler primary
-  // ahead of the session actually under test, so that session is a ROW.
-  // The filler carries no summary/project/host/subagent/details of its
-  // own, so it can never satisfy a row assertion by accident.
   function withHero(...rows: AgentSessionView[]): AgentSessionView[] {
     return [session({ id: "hero-filler", runtime: "opencode" }), ...rows];
   }
@@ -464,7 +382,6 @@ describe("AgentBoard expanded render", () => {
       <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
     const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
-    // 9 sessions = 1 hero + 8 rows
     expect(rows).toHaveLength(8);
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
     expect(container.textContent).not.toMatch(/\+\d/);
@@ -510,10 +427,6 @@ describe("AgentBoard expanded render", () => {
     );
     expect(states).toEqual(["Starting", "Working", "Needs approval"]);
 
-    // motion's exit animation is async (a real spring, not instant) —
-    // assert the CLOSING intent (opacity/height animating toward 0)
-    // rather than an immediate unmount, which only `AnimatePresence`'s
-    // eventual (post-animation) removal would satisfy.
     fireEvent.mouseLeave(row);
     const closing = queryByTestId("agent-expanded-history");
     expect(closing === null || closing.getAttribute("style")?.includes("opacity: 0")).toBeTruthy();
@@ -554,12 +467,6 @@ describe("AgentBoard expanded render", () => {
     expect(getByText("Bash")).toBeTruthy();
   });
 
-  // The hero stays mounted in both states and the list carries
-  // `sessions[1..]` only, so each session renders exactly once at every
-  // N. Two failure modes this rules out: the hero and the list's first
-  // row both rendering `sessions[0]` (the same session twice at N=1),
-  // and unmounting the hero while expanded (hover would swap a big hero
-  // card for one skinny row, making the card SMALLER on hover).
   it("keeps the hero mounted while expanded, with no row at all for a one-session board", () => {
     const { container } = render(
       <AgentBoard
@@ -587,7 +494,6 @@ describe("AgentBoard expanded render", () => {
       <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
-    // 5 sessions = 1 hero + 4 rows; the primary is never also a row.
     expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(4);
     const rowRuntimes = Array.from(
       container.querySelectorAll('[data-testid="agent-expanded-row"] .agent-row-runtime'),
@@ -611,18 +517,9 @@ describe("AgentBoard expanded render", () => {
         expanded={false}
       />,
     );
-    // The hero never unmounts; only the rows below it swap shape, and
-    // that swap is behind a sync `AnimatePresence` overlap (both
-    // branches share one grid cell and crossfade in place), whose
-    // exit is async and spring-driven — same reason the
-    // history-disclosure test above asserts closing INTENT rather than an
-    // immediate DOM state. So only the hero's presence is asserted here.
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
   });
 
-  // richer expanded-row detail — project.cwd (home-
-  // abbreviated, and only when it says more than project.name already
-  // does), host.name, and a terminal-only "clears in" retention hint.
   it("renders an abbreviated cwd distinct from the project name", () => {
     const { getByText, queryByText } = render(
       <AgentBoard
@@ -646,7 +543,6 @@ describe("AgentBoard expanded render", () => {
       />,
     );
     expect(queryByText("notchtap")).toBeTruthy();
-    // no duplicate rendering of the (identical) cwd string as a second node
     expect(container.querySelectorAll(".agent-expanded-meta-item")).toHaveLength(0);
   });
 
@@ -705,9 +601,6 @@ describe("AgentBoard expanded render", () => {
     expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
   });
 
-  // expanded rows also carry both paint channels at
-  // once (state accent + runtime identity), and get their own runtime
-  // tick glyph in the row head.
   it("an expanded row carries both the state class and the runtime class simultaneously", () => {
     const { container } = render(
       <AgentBoard
@@ -728,9 +621,6 @@ describe("AgentBoard expanded render", () => {
     expect(container.querySelector(".agent-expanded-row-head .agent-runtime-tick")).not.toBeNull();
   });
 
-  // the subagent meta chip — label preferred, id
-  // fallback, state appended in parens when present, nothing rendered
-  // when the session has no active subagent.
   it("renders a subagent chip with label when present", () => {
     const { getByText } = render(
       <AgentBoard
@@ -767,19 +657,7 @@ describe("AgentBoard expanded render", () => {
   });
 });
 
-// Removal (and by symmetry insertion/reorder) of a session row must not
-// pop: an instant unmount makes siblings jump into place. `AgentRow` and
-// the expanded list's per-row wrapper go through `AnimatePresence` with
-// a shared `ROW_TRANSITION`, so these tests assert CLOSING INTENT (a
-// real, async spring) rather than an immediate unmount — the same way
-// the `agent-expanded-history` disclosure above does.
 describe("AgentBoard row removal/insertion/reorder fluidity", () => {
-  // Pins the one shared const so enter/exit/layout can never hand-copy-drift
-  // apart from each other (CLAUDE.md's `dedup_eq` desynced-clocks failure
-  // class, generalized to motion transitions) — critically damped
-  // (`bounce: 0`, no overshoot) because rows carry no gesture momentum to
-  // preserve on exit, per the apple-design "Designing Fluid Interfaces"
-  // derivation cited on the const itself.
   it("ROW_TRANSITION is a critically damped spring (no overshoot) shared by enter/exit/layout", () => {
     expect(ROW_TRANSITION).toEqual({ type: "spring", bounce: 0, duration: 0.35 });
   });
@@ -796,8 +674,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
     );
     expect(container.querySelectorAll(".agent-row")).toHaveLength(3);
 
-    // remove "b" (a stale-eviction / retention-expiry / snapshot-drop
-    // shaped update — the same session set minus one entry)
     rerender(
       <AgentBoard
         sessions={[sessions[0], sessions[1], sessions[3]]}
@@ -809,12 +685,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
     const runtimes = Array.from(rows).map(
       (row) => row.querySelector(".agent-row-runtime")?.textContent,
     );
-    // "b" (Codex) is either already gone (AnimatePresence's exit completed
-    // synchronously in this environment) or still present but rendered
-    // through the motion-controlled wrapper (an inline `style` attribute —
-    // jsdom doesn't run the actual spring, so the exact opacity/height
-    // mid-flight isn't assertable, but a plain instantly-popped `<div>`
-    // would carry no such style at all).
     if (runtimes.includes("Codex")) {
       expect(runtimes).toEqual(["Claude Code", "Codex", "Kimi"]);
       const exitingRow = Array.from(rows).find(
@@ -848,8 +718,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 
   it("a removed expanded row leaves its siblings' stable keys/content intact, and either unmounts or is visibly closing", () => {
-    // `sessions[0]` is the hero in BOTH states, so the three rows under
-    // test are sessions 1..3.
     const sessions = [
       session({ id: "primary", runtime: "opencode" }),
       session({ id: "a", runtime: "claude-code" }),
@@ -874,13 +742,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
       const exitingRow = Array.from(rows).find(
         (row) => row.querySelector(".agent-row-runtime")?.textContent === "Codex",
       );
-      // the motion-controlled `style` attribute lives on the row's
-      // motion.div WRAPPER, not the `agent-expanded-row` element itself
-      // (see `AgentBoard.tsx`'s `sessions.map` — the wrapper carries
-      // `initial`/`animate`/`exit`, `ExpandedAgentRow` renders the content
-      // inside it unchanged). jsdom doesn't run the actual spring, so only
-      // presence of that style (motion-controlled, not an instant pop) is
-      // assertable here.
       expect(exitingRow?.parentElement?.getAttribute("style")).toBeTruthy();
     } else {
       expect(rows).toHaveLength(2);
@@ -902,7 +763,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
       ),
     ).toEqual(["Claude Code", "Codex"]);
 
-    // rust re-ranked: "b" now outranks "a" among the `rest` sessions
     rerender(
       <AgentBoard
         sessions={[sessions[0], sessions[2], sessions[1]]}
@@ -917,12 +777,6 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 });
 
-// the four behaviours pinned here — a BOUNDED
-// dot pulse that restarts on state change, an accent that morphs instead
-// of snapping, a hero that swaps on IDENTITY change only, and a wall-clock
-// tick that adapts to what `elapsedLabel` can actually render. These pin
-// structure and const values, never mid-flight styles (jsdom runs no real
-// spring — same discipline as the row-fluidity block above).
 describe("AgentBoard motion vitals", () => {
   const AGENT_BOARD_TSX = readFileSync(
     fileURLToPath(new NodeURL("./AgentBoard.tsx", import.meta.url)),
@@ -934,9 +788,6 @@ describe("AgentBoard motion vitals", () => {
   );
 
   it("the dot's breathe animation is BOUNDED, never infinite", () => {
-    // an `infinite` opacity loop on a `waiting_for_input` session that
-    // persists for hours is the exact always-on pulse removed
-    // from the status dots. 4 iterations ≈ 8.8s per state change.
     expect(AGENT_BOARD_CSS).toMatch(
       /animation:\s*\n?\s*agent-dot-state-tick[^;]*agent-dot-breathe/,
     );
@@ -945,14 +796,6 @@ describe("AgentBoard motion vitals", () => {
   });
 
   it("the dot morphs its accent colour and the one-shot tick is scoped to .pulse only", () => {
-    // base rule: colour morph for every state (including completed/
-    // failed/stale); the scale tick lives under `.pulse` so quiet states
-    // stay quiet.
-    // The duration is `--reveal-ms`, not `--hover-ms`, so the dot lands
-    // on the SAME frame as every other accent consumer on a tier flip —
-    // see the next test for the rest of that set, and the rule's own
-    // comment for why the "direct response" family is the wrong one
-    // here.
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-dot \{[^}]*transition: background-color var\(--reveal-ms, 260ms\) var\(--ease-notchtap\);/s,
     );
@@ -960,12 +803,6 @@ describe("AgentBoard motion vitals", () => {
     expect(AGENT_BOARD_CSS).not.toMatch(/\.card-root \.agent-dot \{[^}]*agent-dot-state-tick/s);
   });
 
-  // A working -> needs-approval
-  // flip rebinds BOTH accent channels (`--accent` on the shell,
-  // `--agent-accent` on the below-block) at once. Every consumer the board
-  // owns has to move on ONE clock, or the flip reads as several unrelated
-  // things twitching. Asserted against the stylesheet text (jsdom computes
-  // no transitions), same technique as the dot rules above.
   it("every board-scoped accent consumer morphs on the same --reveal-ms clock", () => {
     const revealTransition = /var\(--reveal-ms, 260ms\) var\(--ease-notchtap\)/;
     for (const selector of [
@@ -979,16 +816,9 @@ describe("AgentBoard motion vitals", () => {
       expect(rule?.[1]).toMatch(/transition:/);
       expect(rule?.[1]).toMatch(revealTransition);
     }
-    // and none of them borrows the hover ("direct response") budget —
-    // nothing in this file responds to a pointer on a tier flip. (Matches
-    // a real `var()` consumer, not the prose in the rule comments that
-    // explain why the dot left that family.)
     expect(AGENT_BOARD_CSS).not.toMatch(/var\(--hover-ms/);
   });
 
-  // The hero renders through the shared `AgentHeroCard` template, so the
-  // bespoke hero-block selectors below have no .tsx consumer at all —
-  // rules for them could never match anything.
   it("carries no rules for the bespoke hero-block selectors, which have no .tsx consumer", () => {
     for (const dead of [
       "agent-board-primary-head",
@@ -1005,10 +835,7 @@ describe("AgentBoard motion vitals", () => {
   it("every disclosure uses the shared DISCLOSURE_SPRING — no hand-copied spring literals remain", () => {
     expect(AGENT_BOARD_TSX).not.toMatch(/stiffness:/);
     expect(AGENT_BOARD_TSX).not.toMatch(/opacity: \{ duration/);
-    // three sites: the per-row history disclosure, the expanded list, the
-    // resting rows block.
     expect(AGENT_BOARD_TSX.match(/transition=\{DISCLOSURE_SPRING\}/g)).toHaveLength(3);
-    // ...and it is genuinely the exported token, not a look-alike.
     expect(DISCLOSURE_SPRING).toEqual({ type: "spring", stiffness: 480, damping: 37 });
   });
 
@@ -1035,11 +862,7 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
 
-    // the hero block itself is keyed on `primary.id` ONLY — a state change
-    // must morph in place, not replay the whole swap.
     expect(container.querySelector(".agent-board-primary")).toBe(heroBefore);
-    // the DOT, though, is keyed on the state, so it genuinely remounts —
-    // that remount is what restarts the bounded pulse/tick.
     const dotAfter = container.querySelector(".agent-board-primary .agent-dot");
     expect(dotAfter).not.toBe(dotBefore);
     expect(dotAfter?.classList.contains("pulse")).toBe(false);
@@ -1057,8 +880,6 @@ describe("AgentBoard motion vitals", () => {
     rerender(<AgentBoard sessions={rows("waiting_for_input")} capturedAtMs={CAPTURED_AT_MS} />);
     const dotAfter = container.querySelector(".agent-row .agent-dot");
     expect(dotAfter).not.toBe(dotBefore);
-    // both states pulse, so the class is unchanged — only the remount
-    // (and the CSS colour morph) marks the change.
     expect(dotAfter?.classList.contains("pulse")).toBe(true);
   });
 
@@ -1070,10 +891,6 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
     const heroBefore = container.querySelector(".agent-board-primary");
-    // runtime is folded into the hero's shared template now
-    // (there is no more standalone `.agent-board-runtime`); the fidelity
-    // pass moved it specifically into the subtitle row, since the title
-    // is per-state prose that never names the runtime.
     expect(heroBefore?.querySelector(".notif-subtitle")?.textContent).toContain("Claude Code");
 
     rerender(
@@ -1083,9 +900,6 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
 
-    // `mode="wait"` means the outgoing hero holds the slot until its exit
-    // completes, so the new content arrives asynchronously — the swap is
-    // a real animation, not a same-frame content replacement.
     await waitFor(() => {
       const heroAfter = container.querySelector(".agent-board-primary");
       expect(heroAfter?.querySelector(".notif-subtitle")?.textContent).toContain("OpenCode");
@@ -1096,7 +910,6 @@ describe("AgentBoard motion vitals", () => {
   it("nowTickIntervalMs: fast while any session is inside elapsedLabel's second-granular window", () => {
     const now = CAPTURED_AT_MS;
     expect(nowTickIntervalMs([session({ elapsedMs: 5_000 })], CAPTURED_AT_MS, now)).toBe(1000);
-    // one slow session doesn't drag the board off the fast tick
     expect(
       nowTickIntervalMs(
         [session({ id: "a", elapsedMs: 900_000 }), session({ id: "b", elapsedMs: 1_000 })],
@@ -1115,8 +928,6 @@ describe("AgentBoard motion vitals", () => {
         now,
       ),
     ).toBe(15_000);
-    // and the LIVE elapsed is what counts, not the wire snapshot: a 59s
-    // snapshot captured 5s ago is already past the boundary.
     expect(
       nowTickIntervalMs([session({ elapsedMs: 59_000 })], CAPTURED_AT_MS, CAPTURED_AT_MS + 5_000),
     ).toBe(15_000);
@@ -1155,14 +966,6 @@ describe("AgentBoard motion vitals", () => {
   });
 });
 
-// The RESTING Board hugs its content: no dead black band under the
-// hero's fact pills, bottom padding on the unified skeleton's budget
-// (not 39px of stacked padding), and fact pills in a ROW rather than a
-// height-hungry right-aligned column. The mechanism is CSS-only
-// (agent-board.css), so most of it is pinned as source text — the same
-// discipline the "motion vitals" block above uses. The one genuinely
-// DOM-level half is the `:has()` condition the hero-only padding rule
-// keys on, which IS assertable here.
 describe("AgentBoard resting content-hug", () => {
   const AGENT_BOARD_CSS = readFileSync(
     fileURLToPath(new NodeURL("../overlay/agent-board.css", import.meta.url)),
@@ -1170,13 +973,6 @@ describe("AgentBoard resting content-hug", () => {
   );
 
   it("a one-session board mounts neither block the bottom-inset rule looks for", () => {
-    // this is the DOM half of the hug: `.agent-board:not(:has(
-    // .agent-board-rows, .agent-board-expanded-list))` drops the
-    // container's 12px bottom padding, so the hero's own `.compact`
-    // inset is the card floor exactly like every other card's is. If
-    // either block ever started mounting empty (rather than not at all)
-    // the selector would stop matching and the dead band would silently
-    // come back.
     const { container } = render(
       <AgentBoard sessions={[session({ id: "solo" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
@@ -1203,35 +999,18 @@ describe("AgentBoard resting content-hug", () => {
   });
 
   it("the hero's fact pills lay out as a wrapping ROW with no TTL-bar clearance", () => {
-    // the shared `.detail-facts` block (manifest.css) stacks pills in a
-    // right-aligned column and reserves 14px under them for the TtlBar.
-    // `AgentHeroCard` renders no TtlBar, so on this path both cost pure
-    // height. Scoped to `.agent-board-primary` — generic cards keep the
-    // shared block untouched.
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-board-primary \.detail-facts \{[^}]*flex-direction: row;[^}]*flex-wrap: wrap;[^}]*margin-bottom: 0;/s,
     );
   });
 
   it("the shell's permanent `expanded` class stops dragging in a taller compact", () => {
-    // `expanded` is the Board's 500px WIDTH lever (AgentBoard.tsx), not a
-    // hover state — `.expanded .compact`'s +8px min-height
-    // (masthead-content.css) is a rhythm the resting hero never asked for.
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-board-primary \.compact \{\s*min-height: 74px;/,
     );
   });
 });
 
-// The resting<->expanded swap must never run `AnimatePresence
-// mode="wait"`: serialising it collapses the outgoing list to height 0
-// before the incoming one grows from 0, a full pinch to nothing at
-// double the settle time. Both branches share one grid cell and overlap,
-// so the container's height is `max(outgoing, incoming)` — one
-// continuous size change. jsdom runs no compositor, so this pins the
-// STRUCTURE that produces the morph (the wrapper, the shared cell, the
-// shared spring) plus the stylesheet rules, never mid-flight geometry —
-// same discipline as the motion-vitals block above.
 describe("AgentBoard resting<->expanded morph", () => {
   const AGENT_BOARD_TSX = readFileSync(
     fileURLToPath(new NodeURL("./AgentBoard.tsx", import.meta.url)),
@@ -1250,8 +1029,6 @@ describe("AgentBoard resting<->expanded morph", () => {
     );
     const swap = container.querySelector(".agent-board-swap");
     expect(swap).not.toBeNull();
-    // the wrapper is a direct child of the board itself, so the parent
-    // flex `gap` separates it from the hero.
     expect(swap?.parentElement?.classList.contains("agent-board")).toBe(true);
 
     // SAFETY: the two-session fixture renders `.agent-board-rows` beneath the
@@ -1259,7 +1036,6 @@ describe("AgentBoard resting<->expanded morph", () => {
     const resting = container.querySelector(".agent-board-rows") as HTMLElement | null;
     expect(resting?.parentElement).toBe(swap);
     expect(resting?.style.gridArea).toBe("1 / 1");
-    // each branch keeps clipping its own collapsing content.
     expect(resting?.style.overflow).toBe("hidden");
 
     rerender(<AgentBoard sessions={twoSessions} capturedAtMs={CAPTURED_AT_MS} expanded />);
@@ -1271,15 +1047,10 @@ describe("AgentBoard resting<->expanded morph", () => {
     expect(expandedList?.parentElement).toBe(swap);
     expect(expandedList?.style.gridArea).toBe("1 / 1");
     expect(expandedList?.style.overflow).toBe("hidden");
-    // the bounded scroll surface is unchanged by the wrapper.
     expect(container.querySelector(".agent-board-expanded-scroll")).not.toBeNull();
   });
 
   it('does not serialise the swap — `mode="wait"` is absent from this block', () => {
-    // `mode="wait"` IS still correct for the hero above (a single block
-    // whose overlap would double its height), so this asserts that
-    // exactly ONE `AnimatePresence` still opts into it, not that the
-    // string is absent from the file (the prose comments name it too).
     expect(AGENT_BOARD_TSX.match(/<AnimatePresence[^>]*mode="wait"/g)).toHaveLength(1);
     expect(AGENT_BOARD_TSX).toMatch(
       /<div className="agent-board-swap">\s*<AnimatePresence initial=\{false\}>/,
@@ -1287,9 +1058,6 @@ describe("AgentBoard resting<->expanded morph", () => {
   });
 
   it("drives both branches' height off the SAME spring, so max() traces one curve", () => {
-    // the morph only reads as one continuous size change while the two
-    // heights animate on one clock — two configs here would be exactly
-    // the desynced-clocks drift this repo single-sources against.
     for (const cls of ["agent-board-expanded-list", "agent-board-rows"]) {
       const branch = AGENT_BOARD_TSX.match(
         new RegExp(`className="${cls}"[\\s\\S]{0,400}?/>|className="${cls}"[\\s\\S]{0,400}?>`),
@@ -1308,13 +1076,9 @@ describe("AgentBoard resting<->expanded morph", () => {
   });
 
   it("an empty wrapper is removed from layout so it can't collect the board's flex gap", () => {
-    // same `:has()` DOM-presence signal as the hero-only padding rule —
-    // an always-mounted wrapper would otherwise re-add an 8px dead band
-    // under a one-session hero.
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-board:not\(:has\(\.agent-board-rows, \.agent-board-expanded-list\)\)\s*\.agent-board-swap \{\s*display: none;/,
     );
-    // ...and the guard really does leave the wrapper empty at N=1.
     const { container } = render(
       <AgentBoard sessions={[session({ id: "solo" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );

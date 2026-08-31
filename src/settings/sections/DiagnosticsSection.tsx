@@ -4,19 +4,10 @@ import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
 
-// Read-only tail of the active log file. Fetched on section-open (this
-// component mounts only while the Diagnostics section is active), not on
-// app load — the same advisory, isolated-from-panel-load pattern as
-// get_default_config. No live tail; the Refresh button re-invokes
-// manually.
 export function DiagnosticsSection() {
   const [logLines, setLogLines] = useState<string[] | null>(null);
   const { status, run } = useActionStatus("diagnostics");
 
-  // `announce` is explicit per call, not a static prop: the mount-time read
-  // below is passive (announce: false), the Refresh button's own call
-  // further down is interactive (announce: true) — same operation, two
-  // distinct attempt origins.
   function refresh(announce: boolean) {
     void run(() => settingsInvoke("get_recent_log_lines").then((fetched) => setLogLines(fetched)), {
       announce,
@@ -42,10 +33,6 @@ export function DiagnosticsSection() {
       title="Recent log lines"
       description="The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app."
     >
-      {/* bg-black/25 gives the panel wash without a raw rgba literal.
-          fontSize stays a literal 11px (not the fs-body token) — it's
-          decoupled from the type-scale system, a fixed size for this
-          monospace log viewer. */}
       <pre className="m-0 max-h-[320px] overflow-auto rounded-lg bg-black/25 p-3 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap break-all select-text">
         {logText}
       </pre>

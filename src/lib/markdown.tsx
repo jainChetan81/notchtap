@@ -1,16 +1,5 @@
 import { Fragment, type ReactNode } from "react";
 
-// Inline-only markdown for card bodies: `code`,
-// **bold**, *italic*, and line breaks. This is a tokenizer, never
-// regex-into-HTML — the raw input is only ever emitted as React text
-// children (escaped by construction), so there is no
-// dangerouslySetInnerHTML anywhere and markup-looking input
-// ("<script>...") renders as visible text. Unclosed markers render
-// literally. No anchors, no block elements: the overlay is click-through
-// and ⌃⇧O already owns link opening. Future card-content renderers
-// (e.g. news summary) reuse this one path — do not fork a second
-// markdown renderer.
-
 type SegmentKind = "text" | "code" | "bold" | "italic";
 
 type Segment = {
@@ -18,11 +7,6 @@ type Segment = {
   text: string;
 };
 
-// Extraction order is semantic: code first (its contents stay literal —
-// no formatting inside a span), then bold (** before *, so the italic
-// pattern can't tear a bold marker apart), then italic. Each pattern's
-// negated character class means an unclosed marker simply never matches
-// and falls through as literal text.
 const INLINE_PATTERNS: ReadonlyArray<{ kind: SegmentKind; pattern: RegExp }> = [
   { kind: "code", pattern: /`([^`]+)`/ },
   { kind: "bold", pattern: /\*\*([^*]+)\*\*/ },

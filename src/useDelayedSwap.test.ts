@@ -34,8 +34,6 @@ describe("useDelayedSwap", () => {
     const { result, rerender } = renderSwap("old", "k1");
 
     rerender({ value: "new", key: "k2" });
-    // synchronously after the key change (useLayoutEffect): old value
-    // still shown, exit phase flagged.
     expect(result.current).toEqual({ value: "old", exiting: true });
 
     act(() => vi.advanceTimersByTime(EXIT_MS - 1));
@@ -53,11 +51,8 @@ describe("useDelayedSwap", () => {
 
     act(() => vi.advanceTimersByTime(EXIT_MS / 2));
     rerender({ value: "v3", key: "k3" });
-    // still frozen on the original snapshot — no intermediate swap to v2.
     expect(result.current).toEqual({ value: "v1", exiting: true });
 
-    // the k2 timer would have fired within this window if it hadn't been
-    // cleaned up; only k3's timer may fire, landing straight on v3.
     act(() => vi.advanceTimersByTime(EXIT_MS / 2));
     expect(result.current).toEqual({ value: "v1", exiting: true });
 
@@ -65,22 +60,13 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "v3", exiting: false });
   });
 
-  // a same-key update (e.g. a card's `expanded` flag auto-retracting
-  // mid-visible) must be what a subsequent key change freezes on, not
-  // the value from whenever this key was first promoted in:
-  // `shown.value` tracks the LAST-rendered value for the key, so the
-  // exit window replays what was on screen, never a mount-time snapshot.
   it("freezes the LAST-rendered same-key value on a key change, not the value from when the key first appeared", () => {
     const { result, rerender } = renderSwap("A", "k1");
     expect(result.current).toEqual({ value: "A", exiting: false });
 
-    // same-key update: passes through live, no state write, no timer —
-    // this is exactly the update that must not get lost.
     rerender({ value: "B", key: "k1" });
     expect(result.current).toEqual({ value: "B", exiting: false });
 
-    // key changes: the exit window must freeze on "B" (last rendered),
-    // not "A" (the stale mount-time snapshot).
     rerender({ value: "C", key: "k2" });
     expect(result.current).toEqual({ value: "B", exiting: true });
 
@@ -88,11 +74,6 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "C", exiting: false });
   });
 
-  // the incoming side: if the NEW key re-renders again with
-  // an updated value while its own exit timer is still pending (key
-  // unchanged, so the timer isn't reset), the eventual swap must land
-  // on that freshest value rather than the one captured when the timer
-  // was first scheduled.
   it("swaps to the freshest incoming value if the new key re-renders again before its exit timer fires", () => {
     const { result, rerender } = renderSwap("old", "k1");
 
@@ -100,8 +81,6 @@ describe("useDelayedSwap", () => {
     expect(result.current).toEqual({ value: "old", exiting: true });
 
     act(() => vi.advanceTimersByTime(EXIT_MS / 2));
-    // same key (k2), updated value — still mid-exit, frozen output
-    // unaffected, but this should become the eventual swap target.
     rerender({ value: "final", key: "k2" });
     expect(result.current).toEqual({ value: "old", exiting: true });
 

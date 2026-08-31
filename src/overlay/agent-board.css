@@ -1,25 +1,4 @@
-/* The Agent Board's below-block content — mounted by `AgentBoard.tsx`
-   inside the SAME `.card-assembly`/`.below-block` shell every other card
-   content uses (card-chrome.css), so it inherits the notch/HUD cutout
-   shape, the rounding law, the drop-shadow, and the
-   `--card-opacity`/`--card-radius` Appearance controls for free — this
-   stylesheet only adds the agent content's own layout and the state
-   accent colors, never touches the shell.
 
-   Color language reuses the shared overlay palette
-   (vendor/shared-ui/design/tokens.css) rather than minting new colors:
-   --overlay-amber (waiting), --overlay-coral (failure), --overlay-blue
-   (working — same blue as Settings' primary accent), --overlay-green
-   (completed). Stale reads as a dim desaturated neutral — deliberately
-   NOT one of the four accent colors: "provider went quiet" is a
-   different kind of fact than any active state. */
-
-/* NO horizontal or top padding on the board itself: the templated hero
-   renders through the shared `.compact` block, which carries its own
-   inset AND the 3px priority accent stripe flush against its left edge —
-   padding here would push that stripe into the card. The inset the rows
-   below want is carried by THOSE blocks
-   (`.agent-board-rows`/`.agent-board-expanded-list`). */
 .card-root .agent-board {
   display: flex;
   flex-direction: column;
@@ -27,47 +6,20 @@
   padding: 0 0 12px;
 }
 
-/* CONTENT-HUG: the 12px bottom padding exists to keep the session rows
-   (or expanded list) off the card's bottom edge, so it is only owed when
-   one of those blocks is actually mounted — a hero-only Board ends at
-   `.compact`'s own bottom inset, like every other card. `:has()` rather
-   than a class: the rows/list mount through `AnimatePresence`, and DOM
-   presence is the same signal card-chrome.css's rounding law reads. */
 .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) {
   padding-bottom: 0;
 }
 
-/* The single-cell grid stack the resting rows and the expanded list
-   share, so their swap is a sync crossfade IN PLACE rather than a
-   collapse-then-grow: both branches sit at `grid-area: 1 / 1`
-   (AgentBoard.tsx's `SWAP_CELL_STYLE`), so this wrapper's height is
-   `max(outgoing, incoming)` on one continuous curve.
-
-   `align-items: start`: grid items stretch by default, so a branch back
-   at `height: auto` would be stretched to the taller sibling mid-overlap.
-   Top-aligned — the card hangs from the notch, so size differences
-   resolve downward. */
 .card-root .agent-board-swap {
   display: grid;
   align-items: start;
 }
 
-/* ...and while the wrapper holds nothing (one-session Board, neither
-   branch mounted), it must not exist for layout at all — `.agent-board`'s
-   flex `gap` still collects an empty zero-height child, re-adding the
-   dead band under the hero. Same `:has()` DOM-presence signal as above:
-   an EXITING branch is still in the DOM, so the wrapper stays alive (and
-   animating) until the last row has finished leaving. */
 .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list))
   .agent-board-swap {
   display: none;
 }
 
-/* Same z-index rider card-chrome.css applies to `.compact`/`.manifest`
-   under `.below-block.agent-origin`, extended to the board's OWN blocks —
-   the runtime wash is a positioned `::before` on the below-block, so
-   plain in-flow content would paint behind it. Lives here because these
-   three classes are this stylesheet's own. */
 .card-root .below-block.agent-origin .agent-board-primary,
 .card-root .below-block.agent-origin .agent-board-rows,
 .card-root .below-block.agent-origin .agent-board-expanded-list {
@@ -81,23 +33,6 @@
   gap: 4px;
 }
 
-/* Hero-only box adjustments — same markup, same `renderFactPills`
-   renderer, same pill vocabulary as every other card; only the block's
-   own box changes, on the one path whose card floor is NOT a TTL bar.
-
-   min-height: the shell carries `expanded` permanently on the Board (it
-   is the 500px WIDTH lever there, not a hover state), which drags in
-   `.expanded .compact`'s +8px min-height — back to the unified
-   skeleton's own 74px so the width lever doesn't silently own a height.
-
-   .detail-facts margin-bottom: the shared 14px is clearance for the
-   TtlBar, which `AgentHeroCard` deliberately never renders — on this
-   path it cleared nothing and read as a dead band under the pills.
-
-   .detail-facts flex-direction: the shared block stacks pills one per
-   line; a wrapping right-aligned row lays the same pills on one line and
-   still wraps rather than widening the card, so the pill system's fixed
-   size discipline is unchanged. Generic cards keep the shared column. */
 .card-root .agent-board-primary .compact {
   min-height: 74px;
 }
@@ -110,16 +45,6 @@
   margin-bottom: 0;
 }
 
-/* ONE CLOCK FOR THE TIER FLIP. When the primary session changes state,
-   two paint channels swap at once — the shell's priority class rebinds
-   `--accent`/`--accent-soft` (card-chrome.css) and the below-block's
-   state class rebinds `--agent-accent` (below). Every consumer morphs
-   together over `--reveal-ms`, the house "a surface is changing what it
-   says about itself" budget. Scoped to the board — the SAME `.compact`/
-   `.stamp`/`.fact-pill` markup renders on notification cards, whose
-   accent never flips mid-life. The hero's TITLE text still hard-swaps:
-   it is a keyed remount (AgentBoard.tsx's `AGENT_HERO_TITLE`) with its
-   own identity-swap animation. Colour morphs, words cut. */
 .card-root .agent-board-primary .compact::before {
   transition:
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
@@ -132,10 +57,6 @@
     border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* Both halves of a fact pill: the box's own tint/border (`.tone-accent`
-   reads `--accent`, `.tone-danger` a fixed coral) and the tag glyph's
-   colour. A pill that only EXISTS in one of the two states mounts fresh
-   and correctly plays no transition at all. */
 .card-root .agent-board-primary .fact-pill,
 .card-root .agent-board-primary .fact-pill .fp-tag {
   transition:
@@ -144,22 +65,12 @@
     color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* Every OTHER session — individual compact rows, never a "+N" collapse.
-   One line each: dot, runtime, project (if any), state word, elapsed —
-   truncated, never wrapped, so N rows stay a fixed-height stack. */
 .card-root .agent-board-rows {
   display: flex;
   flex-direction: column;
   gap: 3px;
   border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent);
-  /* side inset lives here (not on `.agent-board`) so the hero above
-     reaches the card edge. */
   padding: 6px 14px 0;
-  /* Bounded to the resting window frame — rust's fixed resting canvas
-     (`hover::WINDOW_HEIGHT`/`expand.rs`'s `RESTING_WINDOW_HEIGHT`, 300px)
-     minus the hero/shell chrome above it (`expand.rs`'s `HEADER_HEIGHT`,
-     150px). Not a scroll surface (the expanded state is); rows past the
-     cap are simply clipped rather than overflowing the fixed frame. */
   max-height: 150px;
   overflow: hidden;
 }
@@ -173,23 +84,12 @@
   white-space: nowrap;
 }
 
-/* Runtime IDENTITY colour, a separate paint channel from the state
-   accents — `--cat` comes from the `src-*` runtime class
-   (source-identity.css) on the row container, never from
-   `--agent-accent`. Falls back to plain overlay foreground when `--cat`
-   isn't set. Kimi's `--cat` resolves to `var(--overlay-fg)` itself —
-   the deliberate mono brand treatment, not a missed case. */
 .card-root .agent-row-runtime {
   font-weight: 600;
   color: var(--cat, var(--overlay-fg));
   flex-shrink: 0;
 }
 
-/* The runtime identity glyph — a small SQUARE tick, deliberately NOT
-   round, so it never reads as a second state dot next to `.agent-dot`'s
-   circle on the same row (WHAT is running vs WHAT STATE it's in: two
-   distinct glyph shapes). Subtle glow mirrors the masthead category
-   dot's idiom, scaled down. */
 .card-root .agent-runtime-tick {
   width: 4px;
   height: 4px;
@@ -204,9 +104,6 @@
   color: color-mix(in srgb, var(--overlay-fg) 55%, transparent);
 }
 
-/* the row's own accent consumer, on the same `--reveal-ms` clock as the
-   hero's — a session flipping working -> waiting morphs its state word
-   alongside its dot instead of snapping. */
 .card-root .agent-row-state {
   margin-left: auto;
   flex-shrink: 0;
@@ -222,12 +119,6 @@
   text-align: right;
 }
 
-/* The status dot — solid fill in the state's accent color. The accent
-   MORPHS rather than snaps (`--agent-accent` is rebound by a state-class
-   flip on the container), on `--reveal-ms` alongside the accent edge,
-   stamp, pills and state words — nothing here responds to a pointer;
-   this is a state change announcing itself. `.pulse` (below) is scoped
-   to the actively-doing-something states only. */
 .card-root .agent-dot {
   width: 6px;
   height: 6px;
@@ -242,19 +133,6 @@
   height: 8px;
 }
 
-/* The breathe is BOUNDED — 4 cycles ≈ 8.8s per state change, then the
-   dot rests steady: waiting can persist for hours, and an `infinite`
-   opacity loop inside the card's `filter: drop-shadow` subtree burns
-   compositor work all day. The information value of a pulse is "this
-   just changed", not "this is still true 40 minutes later" — AgentBoard.tsx
-   keys every `.agent-dot` span on the session state, so a genuine state
-   change REMOUNTS the span and restarts this bounded run.
-
-   The one-shot tick is stacked BEFORE the breathe on the same remount: a
-   240ms scale settle from 1.35 reads as "something happened here" and
-   hands off into the breathing. Outside the base rule so non-pulse
-   states (completed/failed/stale) get only the colour morph — a
-   failed/finished session isn't still happening. */
 .card-root .agent-dot.pulse {
   animation:
     agent-dot-state-tick 240ms var(--ease-notchtap),
@@ -280,11 +158,6 @@
   }
 }
 
-/* The accent bindings — set `--agent-accent` once per row/card via a
-   class on that element, consumed by the dot/pill/state text above.
-   `agent-waiting` covers both waiting_for_permission and
-   waiting_for_input (agentStatePresentationFor, lib/presentation.ts) —
-   one "waiting" visual family. */
 .card-root .agent-waiting {
   --agent-accent: var(--overlay-amber);
 }
@@ -302,21 +175,10 @@
 }
 
 .card-root .agent-stale {
-  /* visibly dimmer/more desaturated than the four active-state accents
-     (Stale is deliberately not one of them), but still legible. */
   --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent);
 }
 
-/* The hover-expanded scrollable session list. Rust has already grown the
-   real window frame to `agents::expand::expanded_board_frame`'s
-   screen-bounded size by the time `expanded` flips true (`lib.rs`'s
-   `try_expand_board_for_hover`) — `calc(100vh - ...)` therefore tracks
-   the ACTUAL (larger) window, so the scrollbar only engages past that
-   same screen-bounded cap. Momentum scrolling is the webview's own
-   native behavior — no JS scroll handling here. */
 .card-root .agent-board-expanded-list {
-  /* 14px top so the list sits clear of the hero; side inset matches the
-     rows' — the hero, not this list, reaches the card edge. */
   margin-top: 14px;
   padding: 0 14px;
 }
@@ -325,10 +187,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* the hero card stays mounted while expanded, so the reserve above
-     this scroll area is the shell's cutout row PLUS the hero PLUS this
-     list's own top margin — the block `agents::expand::HEADER_HEIGHT`
-     budgets for. Lockstep pair with that constant: change both together. */
   max-height: calc(100vh - 210px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -362,9 +220,6 @@
   overflow: hidden;
 }
 
-/* A restrained line of small muted mono chips for `project.cwd`/
-   `host.name`/terminal "clears in" — same visual language as the detail
-   chips below, monospace because these are path/host-like tokens. */
 .card-root .agent-expanded-row-meta {
   display: flex;
   flex-wrap: wrap;
@@ -374,9 +229,6 @@
   color: color-mix(in srgb, var(--overlay-fg) 45%, transparent);
 }
 
-/* Capability-dependent detail cells: a wrapped row of label/value chips,
-   present only for whatever the adapter actually declared+observed
-   (`AgentBoard.tsx` never renders a placeholder for an absent one). */
 .card-root .agent-expanded-row-details {
   display: flex;
   flex-wrap: wrap;
@@ -395,10 +247,6 @@
   color: color-mix(in srgb, var(--overlay-fg) 72%, transparent);
 }
 
-/* The per-row transition history disclosure — opens on the ROW's own
-   mouse-enter (real pointer events, not a rust `hover-changed` boolean;
-   see `ExpandedAgentRow`'s own doc). Oldest first, exactly the order the
-   wire sent it. */
 .card-root .agent-expanded-history {
   margin-top: 2px;
   border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 12%, transparent);

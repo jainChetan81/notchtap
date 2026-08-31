@@ -35,7 +35,6 @@ describe("formatBytePair", () => {
   });
 
   it("scales both values to the unit derived from the total", () => {
-    // 12.4 GB used / 16 GB total (approx, in binary GB)
     expect(formatBytePair(13_300_000_000, 17_179_869_184)).toBe("12.4 / 16.0 GB");
   });
 

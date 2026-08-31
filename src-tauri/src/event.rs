@@ -12,10 +12,8 @@ pub struct Event {
     #[serde(default)]
     pub meta: EventMeta,
     pub signal: EventSignal,
-    /// Which source produced this event (rotation-order tie-break) —
-    /// orthogonal to `Priority`, which decides cross-tier order first.
-    /// Always server-assigned, never accepted from the `/notify` wire
-    /// (same rule as `rotation`/`topic`).
+    /// Always server-assigned, never accepted from the `/notify` wire (same rule as
+    /// `rotation`/`topic`).
     pub origin: SourceKind,
 }
 
@@ -35,18 +33,8 @@ impl Event {
 
 pub const EXPANDED_MULTIPLIER: u64 = 3;
 
-/// Event type on the `/notify` wire, snake_case.
-/// Unknown types are rejected at deserialization — never silently
-/// coerced to [`EventType::Generic`]:
-///
-/// ```
-/// use notchtap_lib::event::EventType;
-///
-/// let t: EventType = serde_json::from_str(r#""score_update""#).unwrap();
-/// assert!(matches!(t, EventType::ScoreUpdate));
-///
-/// assert!(serde_json::from_str::<EventType>(r#""posture_alert""#).is_err());
-/// ```
+/// Unknown types are rejected at deserialization — never silently coerced to
+/// [`EventType::Generic`]:
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
@@ -54,10 +42,6 @@ pub enum EventType {
     ScoreUpdate,
     MatchState,
     NewsItem,
-    /// A noteworthy Agent Event promoted into the Notification
-    /// Slot. Always paired with `origin:
-    /// SourceKind::Agent` and a populated `EventMeta.agent` — see
-    /// `agents::notification::build_notification`, the one constructor.
     AgentEvent,
 }
 
@@ -69,23 +53,16 @@ pub enum Priority {
     High,
 }
 
-/// The source that produced an [`Event`] (`Config.rotation_order`
-/// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
-/// unknown values are rejected at deserialization, never silently coerced.
+/// A closed set, same rigor as [`EventType`]/[`EventSignal`] — unknown values are rejected at
+/// deserialization, never silently coerced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     Football,
     News,
     Manual,
-    /// The provider-neutral Agent Adapter origin. `#[serde(alias =
-    /// "cmux")]` accepts the legacy literal `"cmux"` as an alternate
-    /// spelling on deserialization only — serialization always writes
-    /// `"agent"`, never `"cmux"` (serde aliases are deserialize-only, so
-    /// the `Serialize` impl needs no special case). One alias covers
-    /// every spot a `SourceKind` is deserialized: `config.toml`'s
-    /// `rotation_order` entries, persisted `history.jsonl` `Origin`
-    /// values, and the `/notify` wire.
+    /// `#[serde(alias = "cmux")]` accepts the legacy literal `"cmux"` as an alternate spelling on
+    /// deserialization only — serialization always writes `"agent"`.
     #[serde(alias = "cmux")]
     Agent,
 }
@@ -97,24 +74,8 @@ pub enum RotationSpec {
     Recurring { display_secs: u64 },
 }
 
-/// Which icon/animation the frontend plays — orthogonal to [`EventType`]
-/// and [`Priority`]: this never touches queue/rotation/priority
-/// semantics, it's presentation-only. Unknown values are rejected at
-/// deserialization, same rigor as `EventType`:
-///
-/// ```
-/// use notchtap_lib::event::EventSignal;
-///
-/// let s: EventSignal = serde_json::from_str(r#""goal""#).unwrap();
-/// assert!(matches!(s, EventSignal::Goal));
-///
-/// assert!(serde_json::from_str::<EventSignal>(r#""confetti""#).is_err());
-/// ```
-///
-/// Sources that can't know a specific signal (the CLI, the Agent Adapter
-/// layer) omit the field on the
-/// wire and get `Generic` via `#[serde(default)]` on the containing
-/// struct — see `http.rs`'s `NotifyRequest`.
+/// Which icon/animation the frontend plays — orthogonal to [`EventType`] and [`Priority`]: this
+/// never touches queue/rotation/priority semantics, it's presentation-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum EventSignal {
@@ -126,9 +87,6 @@ pub enum EventSignal {
     Kickoff,
     Halftime,
     Fulltime,
-    /// Richer event kinds, sourced from ESPN's `summary`/`plays` fallback
-    /// chain rather than the scoreboard feed. Presentation-only, same
-    /// rigor as every other variant here.
     Foul,
     Offside,
     VarCheck,
@@ -141,50 +99,27 @@ pub struct EventPayload {
     pub body: String,
 }
 
-/// A single label/value pair rendered as one manifest cell.
-/// Display-only, like the rest of [`EventMeta`] — never consulted by
-/// queue/rotation/priority logic. `details` come from untrusted hook
-/// input, so the `/notify` handler caps label/value length (and the
-/// pair count) before they land here.
+/// Display-only, like the rest of [`EventMeta`] — never consulted by queue/rotation/priority logic.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetailItem {
     pub label: String,
     pub value: String,
 }
 
-/// Presentation metadata for a noteworthy Agent Event's Notification:
-/// runtime, session hash, kind, and sanitized summary, carried on an
-/// `EventType::AgentEvent` `Event`. Built exactly once, by
-/// `agents::notification::build_notification`.
-///
-/// `runtime`/`kind` are the same wire tokens an adapter itself would send
-/// (`agents::adapter::runtime_wire_label`/`kind_wire_label` — the inverse
-/// of `parse_runtime`/`parse_kind`), not a display label; a display label
-/// is a frontend/Settings concern, not this backend struct's job.
-///
-/// `session_key` is deliberately NOT the raw `AgentSessionKey`: raw
-/// provider identity must never be persisted, and this struct rides on
-/// `Event`, which `history.rs` serializes to disk verbatim when
-/// `history_enabled`. `session_hash` is the same stable, non-reversible,
-/// per-process hash used for the `agent.session_hash` log field
-/// (`agents::model::session_hash_hex`) — safe to persist/display because
-/// it never round-trips back to the provider's own session id.
+/// `session_key` is deliberately NOT the raw `AgentSessionKey`: raw provider identity must never be
+/// persisted, and this struct rides on `Event`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSignal {
     pub runtime: String,
     pub kind: String,
     pub session_hash: String,
-    /// Already sanitized/capped upstream by `agents::adapter::parse_wire_event`
-    /// — this struct never re-derives or further truncates it.
+    /// Already sanitized/capped upstream by `agents::adapter::parse_wire_event` — this struct never
+    /// re-derives or further truncates it.
     pub summary: Option<String>,
 }
 
-/// News-source metadata plus the rich-relay fields
-/// (`subtitle`/`details`): the rss poller populates source/category/
-/// published/link, and `/notify` callers populate subtitle/details;
-/// every other source leaves them default. Presentation-only — never
-/// consulted by queue/rotation/priority logic.
+/// Presentation-only — never consulted by queue/rotation/priority logic.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EventMeta {
@@ -192,49 +127,17 @@ pub struct EventMeta {
     pub category: Option<String>,
     pub published_at_ms: Option<i64>,
     pub link: Option<String>,
-    /// A first-class optional subtitle, carrying the CLI's `--subtitle`
-    /// as its own wire field.
     pub subtitle: Option<String>,
-    /// Label/value detail pairs, capped server-side.
     pub details: Vec<DetailItem>,
-    /// Structured live-match fields, not pre-joined into `matchup()`'s
-    /// display string. Populated by the espn poller only when
-    /// `espn_live_card` is on (the same gate as the `details` Clock/Cards
-    /// cells above); every other source, and espn itself with the flag
-    /// off, leaves this `None`. `skip_serializing_if` is deliberate here
-    /// (unlike every other `Option` field above, which serializes explicit
-    /// `null`): without it, EVERY payload — manual, agent, news, flag-off
-    /// espn — would gain a literal `"espn": null` key on the wire,
-    /// breaking the flag-off byte-identical pin at the JSON level (see
-    /// `espn_field_is_omitted_from_wire_when_absent` below).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub espn: Option<EspnMeta>,
-    /// Populated only on an Agent-originated Notification's `Event` (see
-    /// [`AgentSignal`]'s own doc). `skip_serializing_if` for the same
-    /// reason as `espn` above — every non-agent payload must keep an
-    /// identical wire shape, no literal `"agent": null` key.
-    /// Mirrored onto `SlotState::Showing.agent_runtime` so the
-    /// overlay can style/label agent-originated cards by runtime; see that
-    /// field's doc for the wire shape.
+    /// `skip_serializing_if` for the same reason as `espn` above — every non-agent payload must
+    /// keep an identical wire shape, no literal `"agent": null` key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentSignal>,
 }
 
-/// Structured live-match fields, not pre-joined into a display
-/// string. Present only on Football events when
-/// the live-card flag is on; everything else leaves it `None` and the
-/// wire is unchanged. Display-only, like the rest of `EventMeta` — never
-/// consulted by queue/rotation/priority logic.
-///
-/// `home_crest`/`away_crest` are the raw absolute filesystem path to a
-/// cached crest PNG under the crest cache dir
-/// (`~/.config/notchtap/crests/`), present only on a cache hit; `None`
-/// means no crest cached yet (first sighting, still fetching, or the
-/// fetch failed) — the frontend renders the text-abbrev fallback. This
-/// is deliberately NOT a servable `asset://`/`crest://` URL: the
-/// frontend converts the raw path via tauri's `convertFileSrc` (see
-/// `poller.rs`'s crest-serving doc), keeping this struct
-/// serving-route-agnostic.
+/// Display-only, like the rest of `EventMeta` — never consulted by queue/rotation/priority logic.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EspnMeta {
@@ -243,24 +146,15 @@ pub struct EspnMeta {
     pub away_abbrev: String,
     pub home_score: u32,
     pub away_score: u32,
-    /// espn's own clock text ("45'"), same value as `poller.rs`'s Clock
-    /// detail cell.
     pub clock: String,
-    /// per-side (yellow, red) card counts — same values as the Cards
-    /// detail cell, structured instead of pre-formatted text.
     pub home_cards: (u32, u32),
     pub away_cards: (u32, u32),
     pub home_crest: Option<String>,
     pub away_crest: Option<String>,
 }
 
-/// The rust-authoritative slot state pushed to the frontend whenever it
-/// changes (promotion, rotation-to-empty, expand toggle). camelCase on
-/// the wire so the TS `SlotState` type mirrors this shape exactly.
-// `rename_all` alone only renames the variant tag ("Showing" -> "showing");
-// struct-variant field names need `rename_all_fields` too, or `event_type`
-// would serialize as-is instead of `eventType` (caught by
-// slot_state_showing_serializes_camel_case_and_tag's own assertion).
+/// The rust-authoritative slot state pushed to the frontend whenever it changes (promotion,
+/// rotation-to-empty, expand toggle).
 // `Showing` is inherently large (it mirrors the whole wire payload) while
 // `Empty` is a trivial sentinel — the asymmetry clippy's large_enum_variant
 // flags is by design. Boxing wouldn't help honestly here: this enum is
@@ -279,115 +173,33 @@ pub enum SlotState {
         event_type: EventType,
         priority: Priority,
         signal: EventSignal,
-        /// Which source produced this item — mirrors `Event.origin`
-        /// (rotation-order tie-break) onto the wire so the frontend can
-        /// style/label cards by their origin; its one consumer is the
-        /// agent accent in `StatusRailCard.tsx`, but any future
-        /// per-source presentation can key off this without another wire
-        /// change. Time-invariant: it's assigned once when the event
-        /// is accepted and never changes for that item's lifetime, so
-        /// unlike `remaining_ms` it stays IN `dedup_eq`'s comparison below
-        /// (see that method's doc for the general rule).
+        /// Time-invariant: it's assigned once when the event is accepted and never changes for that
+        /// item's lifetime.
         origin: SourceKind,
         expanded: bool,
         source: Option<String>,
         category: Option<String>,
         published_at_ms: Option<i64>,
         link: Option<String>,
-        /// Rich-relay fields, mirrored from `EventMeta` — the
-        /// manifest renders `subtitle` as its own cell and one cell per
-        /// `details` pair. Display-only, camelCase on the wire.
         subtitle: Option<String>,
         details: Vec<DetailItem>,
-        /// Structured live-match fields, mirrored from
-        /// `EventMeta.espn` — see that field's doc for the gate and the
-        /// `skip_serializing_if` rationale (applies here identically: an
-        /// absent block must be an absent JSON key, not an explicit
-        /// `null`, or the flag-off byte-identical pin fails at the JSON
-        /// level).
         #[serde(skip_serializing_if = "Option::is_none")]
         espn: Option<EspnMeta>,
-        /// Queue-slider position within the current batch:
-        /// `queue_total` is the batch size (never below 1 while Showing),
-        /// `queue_done` how many items completed (capped at
-        /// `queue_total - 1` so the current segment stays lit).
+        /// Queue-slider position within the current batch: `queue_total` is the batch size (never
+        /// below 1 while Showing).
         queue_total: u32,
         queue_done: u32,
-        /// Total rotation window for this showing, milliseconds — includes
-        /// `extension_secs` and resolves OneShot ttl vs Recurring
-        /// display_secs exactly as `rotation_window(self.window_expanded)`
-        /// does. Time-free: it only changes at discrete
-        /// lifecycle moments (promotion, supersede top-up, manual expand),
-        /// which is exactly what makes it safe to keep in the dedup
-        /// comparison below — see `dedup_eq`.
         ttl_ms: u64,
-        /// Milliseconds remaining until rotate-out AT EMISSION TIME,
-        /// computed from the same `promoted_at` Instant math as
-        /// `next_deadline` (saturating at 0). The frontend anchors its
-        /// countdown at receipt — `Instant` isn't wall-clock and can't
-        /// cross the wire, so remaining-at-emit + local elapsed is the
-        /// honest shape. Deliberately EXCLUDED from the dedup comparison
-        /// (`dedup_eq`) — it's a pure function of wall-clock time and so
-        /// never matches between two calls even microseconds apart, which
-        /// would defeat deduping entirely (two emissions per `accept()`).
+        /// Deliberately EXCLUDED from the dedup comparison (`dedup_eq`) — it's a pure function of
+        /// wall-clock time and so never matches between two calls even microseconds apart.
         remaining_ms: u64,
-        /// The agent runtime wire token ("claude-code"|"codex"|"kimi"|
-        /// "opencode") for an Agent-originated item, mirrored from
-        /// `Event.meta.agent.runtime`; `None` for every non-agent origin. Serializes plainly like `source`/`category`
-        /// above (explicit `null` when absent, no `skip_serializing_if`) —
-        /// unlike `espn`/`agent` on `EventMeta`, this field is cheap and
-        /// common enough on agent payloads that an omitted-key special case
-        /// isn't worth the asymmetry.
         agent_runtime: Option<String>,
     },
 }
 
 impl SlotState {
-    /// Dedup-only equality for `queue.rs::slot_state_if_changed`.
-    ///
-    /// Identical to the derived `PartialEq` above EXCEPT it ignores
-    /// `remaining_ms`, which is a pure function of `Instant::now()` and can
-    /// never be equal between two calls even milliseconds apart — see the
-    /// rotation loop's post-wake recheck in `engine.rs::spawn_rotation`,
-    /// which re-locks the queue and calls `slot_state_if_changed()` again
-    /// after every mutation's own emit. Without this exclusion that second,
-    /// structurally-unavoidable call always sees a "changed" state (because
-    /// `remaining_ms` ticked down) and always re-emits, doubling emission
-    /// volume system-wide.
-    ///
-    /// `ttl_ms` stays IN the comparison on purpose: it only changes at real
-    /// lifecycle events (promotion, supersede extension, manual expand),
-    /// exactly the moments a fresh emission is wanted, so keeping it means
-    /// the gate still fires — with a fresh `remaining_ms` — right when the
-    /// bar needs to re-anchor.
-    ///
-    /// `origin` stays IN the comparison for the same reason as
-    /// `ttl_ms`: it is set once per item and never varies on its own, so
-    /// normalizing it away here would be pure risk (masking a genuine
-    /// origin change, which cannot happen today but would be a silent bug
-    /// if it ever could) for zero benefit (there is no re-emit storm to
-    /// prevent, since it never ticks like `remaining_ms` does).
-    ///
-    /// `agent_runtime` stays IN the comparison for the same reason as
-    /// `origin`: it is set once at `build_notification` time and
-    /// never ticks for that item's lifetime, so — unlike `remaining_ms` —
-    /// there is no re-emit storm to guard against by normalizing it away.
-    ///
-    /// This does NOT replace the derived `PartialEq`, which stays intact
-    /// and honest — several tests assert full `SlotState` equality
-    /// (`assert_eq!`), and a hand-rolled `PartialEq` that quietly ignored a
-    /// field would make those assertions silently meaningless. Any
-    /// continuously-varying wire field must extend this method, never
-    /// rely on the derived `PartialEq`.
-    ///
-    /// The `Showing` pattern below names every field explicitly — no `..`
-    /// wildcard. That is a deliberate compile-time guard, not tidiness: a
-    /// wildcard would let a future continuously-varying field (another
-    /// `remaining_ms`-shaped `_ms` wire value) join the struct and this
-    /// match unchanged, silently exempting it from the dedup comparison
-    /// and reintroducing the per-tick emission storm this method exists to
-    /// prevent. With every field named, adding one here is a compile error
-    /// until the author visits this method and decides in/out.
+    /// Dedup-only equality for `queue.rs::slot_state_if_changed`. Identical to the derived
+    /// `PartialEq` above EXCEPT it ignores `remaining_ms`.
     pub(crate) fn dedup_eq(&self, other: &SlotState) -> bool {
         fn normalized(s: &SlotState) -> SlotState {
             let mut s = s.clone();
@@ -424,14 +236,10 @@ impl SlotState {
     }
 }
 
-/// The one event channel into the overlay — the frontend listens for
-/// exactly this string (`src/useSlotState.ts`). Change both together.
+/// The one event channel into the overlay — the frontend listens for exactly this string
+/// (`src/useSlotState.ts`). Change both together.
 pub const SLOT_STATE_EVENT: &str = "slot-state";
 
-/// The single emit path: one `slot-state` event whenever the displayed
-/// slot changes. Emit failure is logged, never propagated — by
-/// this point the queue state has already changed, so failing the caller
-/// would report a notification as lost when it may still display.
 pub fn emit_slot_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: SlotState) {
     use tauri::Emitter;
     if let Err(e) = app.emit(SLOT_STATE_EVENT, &state) {
@@ -446,17 +254,11 @@ mod tests {
 
     #[test]
     fn slot_state_event_name_is_pinned() {
-        // The frontend listens for exactly this literal (src/useSlotState.ts).
-        // A rename on either side compiles clean and passes every other test,
-        // shipping an overlay that never updates — this pins the seam so a
-        // rename fails loudly and names the file that must change in lockstep.
         assert_eq!(SLOT_STATE_EVENT, "slot-state");
     }
 
     #[test]
     fn unknown_type_string_is_rejected_at_deserialization() {
-        // score_update and match_state are real variants; pick something
-        // that is not a variant to exercise the unknown-type path.
         let result: Result<EventType, _> = serde_json::from_str(r#""posture_alert""#);
         assert!(result.is_err());
     }
@@ -509,9 +311,6 @@ mod tests {
         assert!(serde_json::from_str::<SourceKind>(r#""pigeon""#).is_err());
     }
 
-    // the legacy `"cmux"` literal is a deserialize-only alias for `Agent`
-    // — it must parse successfully but must never come back out of
-    // `Serialize`.
     #[test]
     fn legacy_cmux_string_deserializes_as_agent_but_never_serializes_back() {
         let parsed: SourceKind = serde_json::from_str(r#""cmux""#).unwrap();
@@ -556,11 +355,6 @@ mod tests {
             event_type: EventType::ScoreUpdate,
             priority: Priority::High,
             signal: EventSignal::Goal,
-            // origin deliberately doesn't match event_type/source
-            // here — this test pins the WIRE SHAPE (every field's JSON key
-            // and value), not a semantically-coherent payload; Manual is
-            // chosen because it's a variant unrelated to the
-            // ScoreUpdate/NDTV fixture around it.
             origin: SourceKind::Manual,
             expanded: false,
             source: Some("NDTV".to_string()),
@@ -593,17 +387,12 @@ mod tests {
         assert_eq!(json["eventType"], "score_update");
         assert_eq!(json["priority"], "high");
         assert_eq!(json["signal"], "goal");
-        // origin joins the wire, camelCase key (no rename needed —
-        // the field name is already one word), snake_case value per
-        // SourceKind's own serde attr.
         assert_eq!(json["origin"], "manual");
         assert_eq!(json["expanded"], false);
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
         assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
         assert_eq!(json["link"], "https://example.com/story");
-        // subtitle is a first-class string field; details is an
-        // array of {label, value} pairs (own field names, not camelCased).
         assert_eq!(json["subtitle"], "Permission request");
         assert_eq!(json["details"][0]["label"], "Tool");
         assert_eq!(json["details"][0]["value"], "Bash");
@@ -611,10 +400,8 @@ mod tests {
         assert_eq!(json["details"][1]["value"], "git push");
         assert_eq!(json["queueTotal"], 5);
         assert_eq!(json["queueDone"], 2);
-        // timing fields, camelCase, milliseconds.
         assert_eq!(json["ttlMs"], 8000);
         assert_eq!(json["remainingMs"], 6000);
-        // agent_runtime is present, camelCase, non-skipped.
         assert_eq!(json["agentRuntime"], "claude-code");
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
@@ -654,21 +441,13 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
-        // absent agent_runtime serializes explicit null (no
-        // skip_serializing_if), matching source/category above.
         assert!(json["agentRuntime"].is_null());
-        // timing fields are always present (never optional).
         assert_eq!(json["ttlMs"], 4000);
         assert_eq!(json["remainingMs"], 4000);
-        // absent subtitle serializes null; absent details is an
-        // empty array (never null/absent), so the frontend can map over it.
         assert!(json["subtitle"].is_null());
         assert_eq!(json["details"], serde_json::json!([]));
         assert_eq!(json["queueTotal"], 1);
         assert_eq!(json["queueDone"], 0);
-        // unlike every other Option field above, an absent espn
-        // block must be an ABSENT KEY, not an explicit null — the
-        // flag-off byte-identical pin depends on this at the JSON level.
         assert!(
             !json.as_object().unwrap().contains_key("espn"),
             "absent espn must be an omitted key, not a null value"
@@ -729,8 +508,6 @@ mod tests {
 
     #[test]
     fn detail_item_round_trips_with_own_field_names() {
-        // DetailItem fields are `label`/`value` on the wire (no
-        // camelCase rename — the frontend reads exactly these keys).
         let item = DetailItem {
             label: "Command".to_string(),
             value: "git push origin master".to_string(),
@@ -746,42 +523,24 @@ mod tests {
 
     #[test]
     fn event_meta_default_has_no_subtitle_and_empty_details() {
-        // back-compat: every non-relay source leaves the rich-relay fields
-        // at their default (None / empty), covered by EventMeta's derived
-        // Default.
         let meta = EventMeta::default();
         assert_eq!(meta.subtitle, None);
         assert!(meta.details.is_empty());
-        // same back-compat rule for the structured block —
-        // every non-football source, and football itself with
-        // `espn_live_card` off, leaves this `None`.
         assert_eq!(meta.espn, None);
     }
 
     #[test]
     fn event_meta_espn_field_is_omitted_from_wire_when_absent() {
-        // the one deliberate house-style deviation — every other
-        // Option field on EventMeta serializes explicit null (see
-        // `event_meta_deserializes_subtitle_and_details_from_wire` and the
-        // slot-state sibling test above), but `espn` must be an omitted
-        // key entirely, or every non-football/flag-off payload gains a
-        // stray `"espn": null` and the byte-identical pin fails at the
-        // JSON level.
         let json = serde_json::to_value(EventMeta::default()).unwrap();
         assert!(
             !json.as_object().unwrap().contains_key("espn"),
             "absent espn must be an omitted key, not a null value"
         );
-        // sibling fields keep serializing explicit null, unchanged:
         assert!(json["subtitle"].is_null());
     }
 
     #[test]
     fn dedup_eq_treats_a_changed_espn_block_as_a_real_change() {
-        // EspnMeta must participate in dedup_eq normally (it is
-        // NOT time-varying — it only changes at real match-state moments,
-        // exactly when a re-emit is wanted) — unlike `remaining_ms`, which
-        // dedup_eq deliberately normalizes away.
         fn showing_with_score(home_score: u32) -> SlotState {
             SlotState::Showing {
                 id: Uuid::nil(),
@@ -832,10 +591,6 @@ mod tests {
         );
     }
 
-    // `origin` is time-invariant (constant per queued item), so
-    // — unlike `remaining_ms` — it must stay IN `dedup_eq`'s comparison.
-    // Tripwire: if two SlotStates differing ONLY in origin ever dedup_eq
-    // as equal, the field is not behaving as assumed.
     #[test]
     fn dedup_eq_treats_a_changed_origin_as_a_real_change() {
         fn showing_with_origin(origin: SourceKind) -> SlotState {
@@ -877,9 +632,6 @@ mod tests {
         );
     }
 
-    // agent_runtime mirrors the origin tripwire above — it is
-    // also time-invariant (set once at build_notification), so it must
-    // stay IN dedup_eq's comparison too.
     #[test]
     fn dedup_eq_treats_a_changed_agent_runtime_as_a_real_change() {
         fn showing_with_agent_runtime(agent_runtime: Option<&str>) -> SlotState {
@@ -957,9 +709,6 @@ mod tests {
     }
 }
 
-/// Shared test fixture builder: the ONE place tests build `Event`s, so a
-/// new field is a one-file test change. Production code
-/// must never use this — `#[cfg(test)]` enforces it.
 #[cfg(test)]
 pub(crate) mod test_fixtures {
     use super::*;
@@ -1015,7 +764,4 @@ pub(crate) mod test_fixtures {
         e.payload.body = body.to_string();
         e
     }
-
-    // add more with_* combinators ONLY if the sweep actually needs one that
-    // isn't here — no speculative API beyond what the sweep below uses.
 }

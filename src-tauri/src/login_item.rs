@@ -1,10 +1,6 @@
 use smappservice_rs::{AppService, ServiceType};
 
 /// Registers the app as a login item via SMAppService (macOS 13+).
-///
-/// Only meaningful when running as a bundled .app — `tauri dev` runs an
-/// unbundled binary, where registration is skipped with a log line
-/// instead of erroring.
 pub fn register() {
     if !running_as_bundle() {
         tracing::info!("login item registration skipped (not running as a bundled .app)");

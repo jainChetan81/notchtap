@@ -21,9 +21,6 @@ pub fn presentation_mode(safe_area_top_inset: f64) -> Mode {
     }
 }
 
-/// the notch cutout's horizontal bounds, reported by the swift
-/// shim alongside the safe-area inset. only meaningful when `width > 0.0` —
-/// see [`DetectOutput::cutout`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CutoutGeometry {
     pub left_x: f64,
@@ -50,8 +47,6 @@ struct DetectOutput {
 }
 
 impl DetectOutput {
-    /// `None` for an older shim binary's output (fields absent, defaulted to
-    /// 0.0), a non-notch screen, or any other zero-width report.
     fn cutout(&self) -> Option<CutoutGeometry> {
         if self.cutout_width > 0.0 {
             Some(CutoutGeometry {
@@ -81,11 +76,8 @@ pub fn detect_mode(config: &Config) -> (Mode, f64, Option<CutoutGeometry>) {
     }
 }
 
-/// The probe runs synchronously during boot, before the event loop, so a
-/// wedged one (e.g. blocked on a WindowServer call at login) would hang
-/// the whole app forever. Bound the wait: on timeout, kill the child and
-/// return Err, which `detect_mode`'s Err arm turns into the HUD fallback,
-/// same as a missing/failing binary.
+/// Bound the wait: on timeout, kill the child and return Err, which `detect_mode`'s Err arm turns
+/// into the HUD fallback, same as a missing/failing binary.
 const DETECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn run_detect(detect_path: &Path) -> anyhow::Result<DetectOutput> {
@@ -122,8 +114,6 @@ fn run_detect_with_timeout(detect_path: &Path, timeout: Duration) -> anyhow::Res
         ));
     }
 
-    // The child has exited, so its (small, single-line JSON) output is
-    // already buffered in the pipe — read it to completion now.
     let mut stdout = String::new();
     if let Some(mut out) = child.stdout.take() {
         out.read_to_string(&mut stdout)?;
@@ -150,8 +140,6 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn run_detect_times_out_on_a_hanging_probe_instead_of_blocking() {
-        // a probe that spawns but never exits must return Err promptly,
-        // not hang boot — detect_mode then falls back to HUD.
         use std::io::Write;
         use std::os::unix::fs::PermissionsExt;
 
@@ -198,7 +186,6 @@ mod tests {
 
     #[test]
     fn well_formed_stdout_without_cutout_defaults_to_zero() {
-        // old-shim-binary shape: no cutout fields at all
         let parsed = parse_detect_output(r#"{ "safe_area_top_inset": 32.5 }"#).unwrap();
         assert_eq!(parsed.cutout_left_x, 0.0);
         assert_eq!(parsed.cutout_right_x, 0.0);

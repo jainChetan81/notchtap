@@ -5,9 +5,6 @@ import { isNonNegativeInteger } from "../lib/guards";
 type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
 type UnparsedObject = { [key: string]: UnparsedValue };
 
-// Idle source-status rail — same delivery discipline as useSlotState.ts
-// (validator + eval-planted global seed + listener + dead-listener
-// console.error) on the `status-state` channel. Overlay stays receive-only.
 export type LiveMatchSummary = {
   label: string;
   minute: string;
@@ -16,15 +13,10 @@ export type LiveMatchSummary = {
 export type StatusState = {
   paused: boolean;
   waiting: number;
-  /// Live Agent Session count — the agent icon's present/live source
-  /// (present iff > 0; for agent, present IS live).
   agent: { activeSessions: number };
   football: { enabled: boolean; live: LiveMatchSummary | null };
   news: {
     enabled: boolean;
-    // The news-charge cycle: chargeFraction 0..=1 fill, chargeCount items
-    // waiting, isCharged held while "cycle ended with a full batch"
-    // (cleared on visiting the news tab).
     chargeFraction: number;
     chargeCount: number;
     isCharged: boolean;
@@ -37,8 +29,6 @@ declare global {
   }
 }
 
-// Before the first valid payload (and after any invalid one): every gate
-// off, nothing queued, engine unpaused.
 const FALLBACK_STATUS: StatusState = {
   paused: false,
   waiting: 0,
@@ -56,8 +46,6 @@ function isValidLiveMatch(v: unknown): v is LiveMatchSummary {
   return typeof obj.label === "string" && typeof obj.minute === "string";
 }
 
-// Every field checked, not just the top level: a well-shaped-but-partial
-// payload falls back, never renders undefined fields.
 function isValidStatusState(v: unknown): v is StatusState {
   if (typeof v !== "object" || v === null) {
     return false;
@@ -116,8 +104,6 @@ export function useStatusState(): StatusState {
         }
       })
       .catch((error) => {
-        // A dead listener means a permanently stale rail — make it loud
-        // in the webview console since the overlay can't write to the file log.
         console.error("status-state listener failed to register", error);
       });
     return () => {

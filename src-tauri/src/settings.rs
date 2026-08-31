@@ -1,14 +1,5 @@
-//! Settings window backend. Owns the
-//! app's only invoke commands — every one is settings-window-scoped:
-//! gated declaratively by the `build.rs` `AppManifest::commands` opt-in +
-//! `capabilities/settings.json`, and defensively by [`ensure_settings_window`]
-//! (the tauri acl does not protect against scope bugs in handlers, so the
-//! label check stays even though the acl should make it unreachable).
-//!
-//! Everything decision-shaped in here is a pure function (validate);
-//! the commands are thin wrappers. Write paths are atomic
-//! (same-dir temp file + rename) because a half-written `config.toml` is
-//! a bricked boot given `Config::load`'s fail-fast rule.
+//! Settings window backend. Write paths are atomic (same-dir temp file + rename) because a
+//! half-written `config.toml` is a bricked boot given `Config::load`'s fail-fast rule.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
@@ -25,17 +16,6 @@ use crate::event::{
 };
 use tauri::Manager;
 
-// ---------------------------------------------------------------------------
-// validation (pure, unit-tested)
-// ---------------------------------------------------------------------------
-
-/// Normalized match key for a feed url (mirrors the frontend's
-/// `feedKey` in `SettingsApp.tsx`): clear the fragment and trim a single
-/// trailing slash so a cosmetic variant (trailing "/", a `#anchor`) is
-/// recognized as the same feed for duplicate rejection. Falls back to the
-/// trimmed raw string on parse failure — malformed urls already get their
-/// own error from the per-feed parse check above, so this loop only needs
-/// "close enough" grouping for parse failures, not correctness.
 fn feed_key(url: &str) -> String {
     match reqwest::Url::parse(url) {
         Ok(mut parsed) => {
@@ -46,21 +26,9 @@ fn feed_key(url: &str) -> String {
     }
 }
 
-/// SSRF guard: true for a literal loopback/link-local/private-network
-/// ip, `localhost`, or any `.local` domain. Literal-ip checks use std's
-/// own `is_loopback`/`is_link_local`/`is_private` (the latter is exactly
-/// RFC 1918: 10/8, 172.16/12, 192.168/16) rather than hand-rolled range
-/// math. A bare domain check (not a resolve-and-check) is deliberate —
-/// resolving here would add a network call to a pure validation function
-/// and still not close the TOCTOU gap a determined attacker could exploit
-/// via DNS rebinding; this is a best-effort save-time guard, not a
-/// runtime fetch-time sandbox.
+/// SSRF guard: true for a literal loopback/link-local/private-network ip, `localhost`, or any
+/// `.local` domain.
 fn feed_host_is_internal(url: &reqwest::Url) -> bool {
-    // `host_str()` over `host()` deliberately: the typed
-    // `url::Host` enum isn't nameable here — `url` is only a transitive
-    // dependency via reqwest, which re-exports `Url` but not `Host` — so
-    // this works off the string form instead. An IPv6 literal comes back
-    // bracketed (`"[::1]"`); strip the brackets before the `IpAddr` parse.
     let Some(host) = url.host_str() else {
         return false;
     };
@@ -68,9 +36,6 @@ fn feed_host_is_internal(url: &reqwest::Url) -> bool {
     if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
         return match ip {
             std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
-            // IPv4-mapped v6 (`::ffff:a.b.c.d`) unmapped to its v4 form,
-            // else native-v6 loopback / link-local (fe80::/10) / ULA
-            // (fc00::/7) — `is_loopback()` alone missed all of these.
             std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
                 Some(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
                 None => {
@@ -84,8 +49,8 @@ fn feed_host_is_internal(url: &reqwest::Url) -> bool {
     domain == "localhost" || domain.ends_with(".local")
 }
 
-/// Every rule violated contributes one human-readable message — the
-/// settings form renders the whole list, not just the first failure.
+/// Every rule violated contributes one human-readable message — the settings form renders the whole
+/// list, not just the first failure.
 pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
 
@@ -125,12 +90,8 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             c.agent_ttl_secs
         ));
     }
-    // The asymmetry below is deliberate, not an oversight. Zero RETENTION
-    // is a legitimate choice ("drop a finished or stale session on the
-    // next board tick"). A zero stale THRESHOLD is never meaningful — it
-    // marks every Agent Session Stale on the first tick, including one
-    // that is actively Working, which empties the Agent Board with no
-    // error. Do not "tidy" these into one shared range.
+    // A zero stale THRESHOLD is never meaningful — it marks every Agent Session Stale on the first
+    // tick, including one that is actively Working, which empties the Agent Board with no error.
     if !(1..=86400).contains(&c.agents.stale_after_secs) {
         errors.push(format!(
             "agents.stale_after_secs must be 1–86400 seconds (got {}) — 0 marks every Agent Session Stale on the first board tick",
@@ -150,12 +111,8 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for league in &c.espn_leagues {
-        // leagues feed straight into an ESPN scoreboard url path
-        // segment (poller.rs) — beyond "non-empty, no whitespace", reject
-        // anything outside `^[A-Za-z0-9._-]+$` so a slug can't smuggle a
-        // path traversal (`../`) or a query/fragment break-out (`?`, `#`,
-        // `/`). Implemented as a manual char scan rather than pulling in
-        // the `regex` crate for one anchored character-class check.
+        // leagues feed straight into an ESPN scoreboard url path segment (poller.rs) — beyond
+        // "non-empty, no whitespace".
         let valid = !league.is_empty()
             && league
                 .chars()
@@ -189,10 +146,6 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for feed in &c.rss_feeds {
-        // full parse, not a prefix check: "https://"
-        // alone or a host-less url would pass a starts_with test and then
-        // fail on every poll. whitespace is rejected explicitly because
-        // the url parser is lenient enough to percent-encode some of it.
         let parsed = if feed.url.chars().any(char::is_whitespace) {
             None
         } else {
@@ -208,12 +161,8 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
                 feed.url
             ));
         } else if let Some(parsed) = &parsed {
-            // M2 SSRF guard: the rss poller fetches this url from the
-            // rust core itself (server-side), so an internal/loopback
-            // target would let a settings-window caller use the poller as
-            // a probe against localhost services or cloud metadata
-            // endpoints (169.254.169.254) — reject at save time rather
-            // than trusting the network layer to refuse.
+            // M2 SSRF guard: the rss poller fetches this url from the rust core itself
+            // (server-side).
             if feed_host_is_internal(parsed) {
                 errors.push(format!(
                     "feed {:?} is invalid — loopback, link-local, and private-network hosts are not allowed",
@@ -227,9 +176,6 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     }
 
     {
-        // Duplicate feeds double the poll's network work per tick even
-        // though the SeenStore hides the duplicate notifications — reject
-        // rather than silently pay that cost.
         let mut seen_keys = std::collections::HashSet::new();
         for feed in &c.rss_feeds {
             if !seen_keys.insert(feed_key(&feed.url)) {
@@ -238,9 +184,8 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         }
     }
 
-    // rotation_order must be a permutation of all four SourceKind variants
-    // — the ui is a fixed 4-row reorder list, never add/remove, so any
-    // other shape means the ipc caller bypassed it.
+    // rotation_order must be a permutation of all four SourceKind variants — the ui is a fixed
+    // 4-row reorder list, never add/remove, so any other shape means the ipc caller bypassed it.
     let expected_sources = [
         crate::event::SourceKind::Football,
         crate::event::SourceKind::Manual,
@@ -262,11 +207,8 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.append(&mut appearance_errors);
     }
 
-    // `prefix_shortcut`'s doc comment
-    // (config.rs) has the full rationale — this is the save-time
-    // backstop, mirroring the frontend's own inline
-    // `isValidPrefixShortcut` (ShortcutsSection.tsx), which must stay in
-    // exact sync with `is_valid_prefix_shortcut` below.
+    // `prefix_shortcut`'s doc comment (config.rs) has the full rationale — this is the save-time
+    // backstop, mirroring the frontend's own inline `isValidPrefixShortcut`
     if !is_valid_prefix_shortcut(&c.prefix_shortcut) {
         errors.push(format!(
             "prefix_shortcut must be \"⌃⇧\" followed by one more key name with no whitespace (got {:?})",
@@ -281,10 +223,6 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     }
 }
 
-/// See [`crate::config::Config::prefix_shortcut`]'s doc for the exact
-/// rule this enforces. Kept as its own pure function (rather than inline
-/// in `validate`) so its own unit tests can exercise the boundary
-/// directly, the same split `feed_host_is_internal`/`feed_key` above get.
 fn is_valid_prefix_shortcut(value: &str) -> bool {
     const PREFIX: &str = "⌃⇧";
     match value.strip_prefix(PREFIX) {
@@ -296,8 +234,8 @@ fn is_valid_prefix_shortcut(value: &str) -> bool {
     }
 }
 
-// ranges live in `config::CARD_*_RANGE` so this save-path check
-// and `Config::parse`'s load-path self-heal can never drift apart.
+// ranges live in `config::CARD_*_RANGE` so this save-path check and `Config::parse`'s load-path
+// self-heal can never drift apart.
 pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     if !CARD_SCALE_RANGE.contains(&a.card_scale) {
@@ -322,15 +260,7 @@ pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// write paths (atomic; integration-tested against temp dirs, never $HOME)
-// ---------------------------------------------------------------------------
-
-/// A fresh, never-before-existing temp path in `dir`:
-/// a *fixed* temp name could pre-exist with permissive permissions, and
-/// `OpenOptions::mode` only applies at creation — writing 0600 content
-/// into a stale world-readable temp file would void the guarantee. Unique
-/// name + `create_new` makes creation (and therefore the mode) certain.
+// write paths (atomic; integration-tested against temp dirs, never $HOME) A fresh.
 fn unique_tmp(dir: &Path, base: &str) -> PathBuf {
     dir.join(format!("{base}.tmp.{}", uuid::Uuid::new_v4()))
 }
@@ -357,21 +287,13 @@ fn write_then_rename(
         Ok(())
     })();
     if attempt.is_err() {
-        // best-effort: don't leave a half-written temp file behind
         let _ = std::fs::remove_file(tmp);
     }
     attempt
 }
 
-/// Create `dir` (config/history share `Config::dir_from_home`)
-/// and pin it to `0700`: `create_dir_all` only applies the
-/// umask-derived default, which on a stock macOS install is world-
-/// readable+executable — mirrors `history.rs`'s `HistoryStore::with_limits`
-/// posture exactly, except that store only runs (and so only locks the
-/// dir down) when `history_enabled` is set. Calling this from both
-/// the write path below means the dir is locked down the first time
-/// config.toml is written, not conditionally on history ever having been
-/// turned on.
+/// Create `dir` (config/history share `Config::dir_from_home`) and pin it to `0700`:
+/// `create_dir_all` only applies the umask-derived default.
 fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(dir)?;
@@ -379,13 +301,8 @@ fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Serialize the whole config and atomically replace `config.toml` in
-/// `dir`. Same-dir temp file + rename — rename across filesystems isn't
-/// atomic, and a torn `config.toml` is a bricked boot. Known, accepted
-/// loss: hand-written comments in the file don't survive.
-///
-/// Written `0600` — config.toml can carry feed urls,
-/// coordinates, etc; there's no reason to leave it world-readable.
+/// Serialize the whole config and atomically replace `config.toml` in `dir`. Same-dir temp file +
+/// rename — rename across filesystems isn't atomic, and a torn `config.toml` is a bricked boot.
 pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
     ensure_config_dir(dir)?;
     let serialized = toml::to_string_pretty(config)?;
@@ -403,14 +320,6 @@ fn notchtap_config_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "could not determine home directory".to_string())
 }
 
-// ---------------------------------------------------------------------------
-// invoke commands (thin; scope-checked; untested by design — the logic
-// they call is tested above, `TESTING_STRATEGY.md` §4.11)
-// ---------------------------------------------------------------------------
-
-/// Defense-in-depth behind the acl: app commands are window-agnostic
-/// without the `build.rs` `AppManifest::commands` opt-in, so a
-/// `generate_handler` edit that forgets that list fails closed here.
 fn ensure_settings_window<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
 ) -> Result<(), String> {
@@ -421,18 +330,8 @@ fn ensure_settings_window<R: tauri::Runtime>(
     }
 }
 
-/// IPC payload for `appearance-changed`: sent to the overlay whenever the
-/// user updates card styling, or any other overlay-behavior field on the
-/// appearance channel. The field names stay camelCase-free; the frontend's
-/// listener mirrors this shape directly.
-///
-/// `resting_state` widened this beyond pure card styling — it's a
-/// top-level `Config` field, not part of `Appearance`, so this payload is
-/// always built from the whole `Config` (`from_config`), never from
-/// `Appearance` alone. That matters even for a pure appearance-only change
-/// (`set_appearance`): the emitted event must still carry the *current*
-/// `resting_state`, or the frontend's tracked value would fall back to its
-/// default on every unrelated scale/radius/opacity tweak.
+/// IPC payload for `appearance-changed`: sent to the overlay whenever the user updates card
+/// styling, or any other overlay-behavior field on the appearance channel.
 #[derive(Clone, serde::Serialize)]
 pub struct AppearanceChangedPayload {
     pub scale: f64,
@@ -524,13 +423,6 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
         },
-        // this preview arm reads the flat
-        // `agent_priority`/`agent_ttl_secs` config directly. A REAL
-        // `PermissionRequested`/`InputRequired`/terminal `Failed` mapping
-        // instead reads `[agents]`'s four kind-specific priorities via
-        // `NotificationPolicy` (`agents/notification.rs`) — this settings
-        // preview has no kind of its own to pick one of those four, so it
-        // stays on the flat field.
         SourceKind::Agent => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::AgentEvent,
@@ -543,8 +435,6 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 title: "Test · agent event".into(),
                 body: "This is how agent notifications look".into(),
             },
-            // preview mirrors what a real claude-code completion carries
-            //
             meta: EventMeta {
                 subtitle: Some("notchtap".into()),
                 details: vec![DetailItem {
@@ -565,8 +455,6 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
     }
 }
 
-/// Returns the **booted** config (managed state) — "what is running",
-/// which save-and-relaunch makes true of the file again after every save.
 #[tauri::command]
 pub fn get_config(
     window: tauri::WebviewWindow,
@@ -581,8 +469,8 @@ pub fn get_config(
     Ok(config)
 }
 
-/// Serves Config::default() so the frontend never mirrors defaults
-/// — the "Reset to defaults" source of truth is config.rs.
+/// Serves Config::default() so the frontend never mirrors defaults — the "Reset to defaults" source
+/// of truth is config.rs.
 #[tauri::command]
 pub fn get_default_config<R: tauri::Runtime>(
     window: tauri::WebviewWindow<R>,
@@ -591,22 +479,13 @@ pub fn get_default_config<R: tauri::Runtime>(
     Ok(Config::default())
 }
 
-/// The panel never edits `detect_path` (ARCHITECTURE.md §17: file-only) —
-/// but the ui not *showing* a field is not a boundary: it's an executed
-/// subprocess path, the one config field with code-exec consequences.
-/// Pin it server-side to the booted value so the ipc surface enforces
-/// that rule regardless of what the webview submits.
+/// Pin it server-side to the booted value so the ipc surface enforces that rule regardless of what
+/// the webview submits.
 pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted.detect_path = booted.detect_path.clone();
     submitted
 }
 
-/// Best-effort pre-flight: the relaunched app `exit(1)`s on a
-/// taken port with no UI — catch the common collision before writing. A
-/// race remains possible (port taken between check and relaunch); this
-/// narrows the window, it doesn't close it — accepted. The `new != booted`
-/// guard matters: the app itself holds the booted port, so binding it
-/// would false-positive against our own listener.
 pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
     if new != booted {
         if let Err(e) = std::net::TcpListener::bind(("127.0.0.1", new)) {
@@ -618,21 +497,7 @@ pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate → atomic write → relaunch. The `Err` arm carries the whole
-/// per-field message list for the form; on success the process is gone
-/// before a reply could matter.
-///
-/// C9: ONE guard held across clone(booted) -> validate -> preflight ->
-/// disk write -> memory mutate, matching `set_appearance`'s
-/// discipline — two separate lock/unlock pairs let a concurrent
-/// `set_appearance` call (which already holds the lock across its own
-/// clone->write->mutate) interleave between this command's read of
-/// `booted` and its write, so the loser's disk write could land after the
-/// winner's memory mutate, leaving disk and memory disagreeing about
-/// which caller's change is current. `save_config_and_relaunch` is a
-/// plain sync fn (not `async`) and `app.restart()` never returns
-/// (`-> !`), so there is no `.await` point the guard could be held across
-/// — it's dropped explicitly right before the restart call regardless.
+/// Validate → atomic write → relaunch.
 #[tauri::command]
 pub fn save_config_and_relaunch(
     window: tauri::WebviewWindow,
@@ -671,27 +536,11 @@ pub async fn send_test_notification(
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let event = build_test_event(&config, source);
-    // Engine::accept performs the enqueue with the one
-    // mutate→wake→emit protocol, so a test notification pushed from the
-    // Settings window rotates out on schedule by construction, not by
-    // convention.
     engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
-/// On-the-go news search: expands `query` via the SAME
-/// `rss_poller::expand_topic_url` a configured topic line uses (one
-/// shared path, no fork), fetches it ONCE, dedups against the SAME
-/// `SeenStore` the continuous poller shares (app-managed state — see
-/// `lib.rs`'s `.setup()`), and enqueues every new story through the SAME
-/// `Engine::accept` ingest path — never persisted anywhere, works live
-/// with no relaunch, and works even when `rss_enabled` is off.
-///
-/// Concurrency (executor decision, sanctioned by the plan): a second
-/// call arriving while one is already in flight errors "already
-/// searching" rather than queueing behind it or racing the same
-/// SeenStore/http client — simpler and safer than either, and a second
-/// click is rare enough that surfacing the error (the button re-enables
-/// the instant the first call settles) costs nothing in practice.
+/// On-the-go news search: expands `query` via the SAME `rss_poller::expand_topic_url` a configured
+/// topic line uses (one shared path, no fork), fetches it ONCE.
 #[tauri::command]
 pub async fn search_news_now(
     window: tauri::WebviewWindow,
@@ -710,9 +559,8 @@ pub async fn search_news_now(
     if in_flight.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return Err("already searching".to_string());
     }
-    // Resets the flag on every exit path — the early-return error arms
-    // above included, since a fetch error must not wedge the flag
-    // permanently "in flight".
+    // Resets the flag on every exit path — the early-return error arms above included, since a
+    // fetch error must not wedge the flag permanently "in flight".
     struct ResetInFlight<'a>(&'a std::sync::atomic::AtomicBool);
     impl Drop for ResetInFlight<'_> {
         fn drop(&mut self) {
@@ -743,10 +591,6 @@ pub async fn search_news_now(
     .await
     .map_err(|e| e.to_string())?;
 
-    // R4: `.is_ok()` alone silently discarded a queue-full/rejected story
-    // with no trace anywhere — mirror the continuous pollers' per-drop
-    // warn (rss_poller.rs, poller.rs) so a search that under-delivers
-    // shows up in the log instead of just a lower-than-expected count.
     let mut enqueued = 0usize;
     for event in events {
         if let Err(e) = engine.accept(event, false).await {
@@ -761,9 +605,6 @@ pub async fn search_news_now(
 #[tauri::command]
 pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
     ensure_settings_window(&window)?;
-    // no content-based redaction layer here on purpose — logging.rs
-    // keeps secrets out of the log file itself, so the file is safe to
-    // surface read-only in the settings window.
     crate::logging::read_recent_lines(200).map_err(|e| e.to_string())
 }
 
@@ -784,13 +625,6 @@ pub fn set_appearance(
     };
     validate_appearance(&appearance).map_err(|errors| errors.join("; "))?;
 
-    // ONE guard held across clone -> disk write -> memory mutate,
-    // not two separate lock/unlock pairs — two rapid calls could otherwise
-    // interleave into a stale disk write (the second call's disk write
-    // landing between the first call's write and its memory update).
-    // Disk-write-first is preserved: a failed write returns before
-    // `managed` is ever mutated, so a write failure leaves managed state
-    // untouched, matching the pre-existing failure semantics.
     let dir = notchtap_config_dir()?;
     let mut managed = state.inner().lock().unwrap_or_else(|e| e.into_inner());
     let mut config = managed.clone();
@@ -802,16 +636,8 @@ pub fn set_appearance(
     Ok(())
 }
 
-// Both commands below prefer `engine.history_store()` — the SAME
-// `Arc<HistoryStore>` the accept path appends through (see that method's
-// doc comment in engine.rs) — over opening a fresh `HistoryStore` for
-// this one call. A fresh instance per call is a real race:
-// `HistoryStore`'s serialization is an instance-level `Mutex`, so a
-// second instance over the same file shares no lock with the engine's,
-// and a `clear_history` call could interleave with an in-flight
-// accept-path append with no mutual exclusion at all. The `None`
-// fallback (history disabled) does construct per call — with no
-// engine-held store there is no second writer to race against.
+// A fresh instance per call is a real race: `HistoryStore`'s serialization is an instance-level
+// `Mutex`, so a second instance over the same file shares no lock with the engine's.
 #[tauri::command]
 pub async fn get_history(
     window: tauri::WebviewWindow,
@@ -844,12 +670,8 @@ pub async fn clear_history(
     }
 }
 
-// The three Queue-section commands: read-only visibility plus
-// clear/skip, none of which need a bespoke Engine method — `engine.read`/
-// `engine.apply` (engine.rs) are already the async-caller door for exactly
-// this shape. Titles/bodies inside `QueueItemSummary` are UNTRUSTED wire
-// data (same rule as History's link-as-literal-text precedent) — the
-// frontend must render them as plain text only.
+// Titles/bodies inside `QueueItemSummary` are UNTRUSTED wire data (same rule as History's
+// link-as-literal-text precedent) — the frontend must render them as plain text only.
 #[tauri::command]
 pub async fn get_queue(
     window: tauri::WebviewWindow,
@@ -859,9 +681,6 @@ pub async fn get_queue(
     Ok(engine.read(|q| q.waiting_summaries()).await)
 }
 
-/// Drops every WAITING item (visible card untouched — it finishes its
-/// normal ttl/rotation). Returns the count dropped so the section can
-/// report an outcome message.
 #[tauri::command]
 pub async fn clear_queue(
     window: tauri::WebviewWindow,
@@ -871,9 +690,6 @@ pub async fn clear_queue(
     Ok(engine.apply(|q, _now| q.clear_waiting()).await)
 }
 
-/// Dismisses the visible card now (routes through `skip_visible`'s
-/// existing semantics: a Recurring item requeues to the back of its own
-/// tier, a OneShot drops), promoting the next waiting item immediately.
 #[tauri::command]
 pub async fn skip_current(
     window: tauri::WebviewWindow,
@@ -884,12 +700,6 @@ pub async fn skip_current(
     Ok(())
 }
 
-/// System/build info for the settings window's About section. Data
-/// gathering itself (bundle-root
-/// derivation, the recursive size walk, the `sw_vers` shell-out, sysinfo
-/// reads) lives in `about.rs` as pure/near-pure functions so it's
-/// unit-testable without a live window — this wrapper only adds the
-/// standard settings-window gate.
 #[tauri::command]
 pub async fn get_about_info(
     window: tauri::WebviewWindow,
@@ -900,18 +710,8 @@ pub async fn get_about_info(
     Ok(crate::about::gather_about_info(&app, *started_at.inner()))
 }
 
-/// the Agents section's
-/// four adapter cards read Adapter Health through this command — a live
-/// [`crate::agents::health::HealthTracker::snapshot`] read, mapped
-/// through the exact same [`crate::agents::board::health_to_view`]
-/// conversion the `agent-state` overlay channel uses, so both surfaces
-/// describe one Adapter Health, never two independently-derived views.
-/// `[agents.runtimes.*]` is read from the BOOTED config (same "what is
-/// running" rule `get_config` documents) rather than the four-runtime
-/// snapshot cached at process start, since a runtime's enable toggle
-/// can't change without `save_config_and_relaunch` restarting the whole
-/// process anyway — reading it fresh here costs nothing and avoids a
-/// second stale-config source of truth.
+/// the Agents section's four adapter cards read Adapter Health through this command — a live
+/// [`crate::agents::health::HealthTracker::snapshot`] read.
 #[tauri::command]
 pub fn get_agent_health(
     window: tauri::WebviewWindow,
@@ -934,16 +734,6 @@ pub fn get_agent_health(
         .collect())
 }
 
-/// The adapter card's "send a test event" action; mirrors
-/// `notchtap-agent test <runtime>` (`src/bin/notchtap_agent.rs`) exactly
-/// — the same synthetic terminal `completed` schema-v1 event, not a
-/// fabricated `informational` one that the default policy suppresses.
-/// Deliberately does NOT loop back over HTTP the way a real hook does:
-/// this command already runs inside the same process that owns the Agent
-/// Registry/Notification Engine, so it drives them directly through the
-/// identical wire-parse -> apply -> publish -> notify path `http.rs`'s
-/// `agent_events_handler` uses for a real `/agent/events` POST, rather
-/// than making the app POST to itself.
 #[tauri::command]
 pub async fn send_agent_test_event(
     window: tauri::WebviewWindow,
@@ -978,13 +768,6 @@ pub async fn send_agent_test_event(
         "state": "completed",
         "summary": format!("Test event from Settings — {runtime} session completed"),
         "capabilities": ["session_lifecycle", "completion"],
-        // Deliberately TERMINAL: the whole point of this button is
-        // "click it, see a card", and only a terminal `Completed` is
-        // carded under the default policy — a non-terminal one is a
-        // per-turn stop, quiet unless `informational_notifications` is
-        // on (`agents::notification`). Terminal also means the
-        // throwaway test session retires on `terminal_retention_secs`
-        // instead of lingering on the Agent Board as a live session.
         "terminal": true,
     })
     .to_string();
@@ -996,17 +779,9 @@ pub async fn send_agent_test_event(
     let terminal = event.terminal;
     let session_key = event.session_key.clone();
     let summary = event.summary.clone();
-    // clone before `event` moves into `apply_event` below, same
-    // as `http.rs`'s real `/agent/events` handler — mending this call site
-    // for the signature change only, no behavioural edit.
     let project_name = event.project.as_ref().and_then(|p| p.name.clone());
     let details = event.details.clone();
 
-    // a test event is exactly the "adapter is delivering"
-    // signal Adapter Health's own last-accepted-event field means — the
-    // Agents section card should reflect a manual test the same way it
-    // would a real hook delivery, not go stale until the next real
-    // `/agent/events` POST.
     health
         .inner()
         .record_accepted(session_key.runtime, occurred_at_ms);
@@ -1057,20 +832,14 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    // --- validate: every rule's accept/reject boundary ---
-
     #[test]
     fn default_config_validates_clean() {
         assert!(validate(&Config::default()).is_ok());
     }
 
-    // --- prefix_shortcut ---
-
     #[test]
     fn prefix_shortcut_accepts_the_shipped_default_and_the_existing_combo_family() {
         assert!(is_valid_prefix_shortcut("⌃⇧Space"));
-        // a single glyph, matching the existing seven shortcuts' own
-        // shape (`⌃⇧N`, `⌃⇧]`, `⌃⇧,`, ...).
         assert!(is_valid_prefix_shortcut("⌃⇧N"));
     }
 
@@ -1084,49 +853,19 @@ mod tests {
         assert!(!is_valid_prefix_shortcut("⇧⌃Space")); // glyphs in the wrong order
     }
 
-    // --- the shared whitespace fixture table ---
-    //
-    // THIS FUNCTION IS ONE HALF OF A TWO-LANGUAGE TEST. The identical
-    // strings run against `isValidPrefixShortcut` in
-    // `src/settings/sections/ShortcutsSection.test.ts`; that TS mirror
-    // decides whether the Settings field looks valid, this one decides
-    // whether the config actually saves. A disagreement shows up as a
-    // field that reads "valid" and a save that quietly refuses it.
-    //
-    // The two languages disagree by default: rust's `char::is_whitespace`
-    // is Unicode `White_Space`, while JavaScript's `\s` misses U+0085
-    // (NEL) and adds U+FEFF (ZWNBSP). Both are in the table below.
-    // Change either validator and you must run BOTH tables.
     #[test]
     fn prefix_shortcut_whitespace_table_matches_the_ts_mirror() {
-        // --- accept ---
-        // a single glyph, the shape the shipped seven shortcuts use
         assert!(is_valid_prefix_shortcut("⌃⇧K"));
-        // a spelled-out key name, the shipped default
         assert!(is_valid_prefix_shortcut("⌃⇧Space"));
-        // U+FEFF is NOT Unicode White_Space — both sides accept it
         assert!(is_valid_prefix_shortcut("⌃⇧K\u{FEFF}"));
-        // 24 chars of key name — the inclusive upper bound
         assert!(is_valid_prefix_shortcut(&format!("⌃⇧{}", "K".repeat(24))));
 
-        // --- reject ---
-        // an ordinary space inside the key name
         assert!(!is_valid_prefix_shortcut("⌃⇧K L"));
-        // U+0085 (NEL) IS White_Space — rejected by both validators
         assert!(!is_valid_prefix_shortcut("⌃⇧K\u{0085}"));
-        // the prefix with no key name at all
         assert!(!is_valid_prefix_shortcut("⌃⇧"));
-        // 25 chars — one past the upper bound
         assert!(!is_valid_prefix_shortcut(&format!("⌃⇧{}", "K".repeat(25))));
     }
 
-    /// The exact rust twin of the TS mirror's own BMP sweep ("rejects a
-    /// key name containing any BMP White_Space code point, and no
-    /// others"). Unicode has no `White_Space` code point above U+3000,
-    /// so the BMP is the whole set; `from_u32` skips the surrogates,
-    /// which the TS sweep skips too, so both runs cover the same domain.
-    /// Together the two sweeps are what make "exact sync" a checked
-    /// claim rather than a comment.
     #[test]
     fn prefix_shortcut_rejects_exactly_the_unicode_white_space_code_points() {
         for code in 0u32..=0xFFFF {
@@ -1238,9 +977,6 @@ mod tests {
 
     #[test]
     fn agents_retention_boundaries() {
-        // Zero retention is legitimate ("drop it on the next board
-        // tick"), unlike a zero stale threshold above — hence the
-        // deliberately different lower bound.
         let mut c = Config::default();
         c.agents.terminal_retention_secs = 0;
         assert!(validate(&c).is_ok());
@@ -1271,14 +1007,12 @@ mod tests {
     fn rotation_order_must_be_a_permutation() {
         use crate::event::SourceKind;
 
-        // missing entries
         let mut c = Config {
             rotation_order: vec![SourceKind::Football, SourceKind::Manual],
             ..Config::default()
         };
         assert!(validate(&c).is_err());
 
-        // duplicate entry (still length 4, but News is missing)
         c.rotation_order = vec![
             SourceKind::Football,
             SourceKind::Football,
@@ -1287,7 +1021,6 @@ mod tests {
         ];
         assert!(validate(&c).is_err());
 
-        // correct permutation, any order
         c.rotation_order = vec![
             SourceKind::News,
             SourceKind::Football,
@@ -1325,9 +1058,6 @@ mod tests {
 
     #[test]
     fn league_entries_must_match_the_allowed_character_set() {
-        // leagues feed straight into an ESPN scoreboard url path
-        // segment — reject anything that could smuggle a path traversal
-        // or break out of the path into a query/fragment.
         for junk in ["../etc/passwd", "eng.1/../../x", "eng?1", "eng#1"] {
             let c = Config {
                 espn_leagues: vec![junk.into()],
@@ -1401,13 +1131,8 @@ mod tests {
         assert_eq!(high.len(), 3);
     }
 
-    // --- appearance-changed payload ---
-
     #[test]
     fn appearance_changed_payload_carries_resting_state_from_config() {
-        // the payload is built from the whole Config, not just
-        // Appearance — a pure appearance change (set_appearance) must still
-        // report the config's actual resting_state, not a default.
         let mut config = Config {
             resting_state: crate::config::RestingState::Notch,
             ..Config::default()
@@ -1430,13 +1155,8 @@ mod tests {
         };
         let payload = AppearanceChangedPayload::from_config(&config);
         let json = serde_json::to_value(&payload).unwrap();
-        // no camelCase rename on this payload (the frontend listener
-        // mirrors the shape directly) — snake_case wire field, snake_case
-        // value, matching the frontend's `"rail" | "notch"` union exactly.
         assert_eq!(json["resting_state"], serde_json::json!("notch"));
     }
-
-    // --- rss rules ---
 
     #[test]
     fn rss_poll_interval_boundaries() {
@@ -1496,10 +1216,6 @@ mod tests {
 
     #[test]
     fn rss_feeds_require_a_real_parsed_host_not_just_a_prefix() {
-        // a prefix check would let "https://" and host-less urls through
-        // to fail on every poll instead of at save time.
-        // note "https:///x" is NOT a rejectable case: the whatwg parser
-        // skips extra slashes after a special scheme and yields host "x".
         for junk in ["https://", "notaurl", "http://["] {
             let c = Config {
                 rss_feeds: vec![junk.into()],
@@ -1567,8 +1283,6 @@ mod tests {
 
     #[test]
     fn feed_urls_reject_loopback_link_local_and_private_hosts() {
-        // M2: the poller fetches these server-side — an internal target
-        // would let the settings window use the app as an SSRF probe.
         for internal in [
             "http://127.0.0.1/feed",
             "http://127.0.0.1:8080/feed",
@@ -1594,8 +1308,6 @@ mod tests {
         };
         assert!(validate(&c).is_ok());
     }
-
-    // --- config round-trip: pins the Serialize derive against drift ---
 
     #[test]
     fn non_default_config_survives_serialize_then_parse() {
@@ -1632,8 +1344,6 @@ mod tests {
         assert_eq!(original, reparsed);
     }
 
-    // --- write paths (temp dirs, never $HOME) ---
-
     fn temp_dir() -> PathBuf {
         std::env::temp_dir().join(format!("notchtap-settings-test-{}", Uuid::new_v4()))
     }
@@ -1653,10 +1363,6 @@ mod tests {
         let reparsed = Config::parse(&on_disk).unwrap();
         assert_eq!(reparsed.port, 4242);
 
-        // config.toml is 0600, and the shared
-        // config dir is 0700 like history.rs's HistoryStore — locked down
-        // the first time config.toml is written, not only when history is
-        // enabled.
         let file_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(file_mode, 0o600, "config.toml must not be world-readable");
         let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
@@ -1679,8 +1385,6 @@ mod tests {
             .unwrap_or(true)
     }
 
-    // --- detect_path pinning, label gate ---
-
     #[test]
     fn detect_path_is_pinned_to_the_booted_value() {
         let booted = Config::default();
@@ -1699,11 +1403,6 @@ mod tests {
 
     #[test]
     fn preflight_port_never_trips_when_the_submitted_port_is_unchanged() {
-        // Bind an ephemeral port ourselves and make it BOTH the booted and
-        // submitted value — this simulates the app's own listener already
-        // holding the booted port. The `new != booted` guard must skip the
-        // bind attempt entirely, so this must pass even though the port is
-        // held right now.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(preflight_port(port, port).is_ok());
@@ -1713,8 +1412,6 @@ mod tests {
     fn preflight_port_rejects_a_port_held_by_a_live_listener() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let held_port = listener.local_addr().unwrap().port();
-        // distinct booted port (ephemeral ports are always well above 1)
-        // so the `new != booted` guard doesn't skip the check
         let booted_port = held_port - 1;
         let err = preflight_port(held_port, booted_port).unwrap_err();
         assert!(err.contains(held_port.to_string().as_str()), "{err:?}");
@@ -1722,8 +1419,6 @@ mod tests {
 
     #[test]
     fn preflight_port_accepts_a_free_port() {
-        // Bind-then-drop to get a free ephemeral port number, then confirm
-        // preflight can still bind it (it dropped the listener already).
         let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let free_port = probe.local_addr().unwrap().port();
         drop(probe);
@@ -1781,13 +1476,6 @@ mod tests {
         );
     }
 
-    // --- build_test_event: one test per SourceKind branch ---
-    //
-    // Guards against the copy-paste failure mode a 5-way match like this
-    // is prone to — a branch silently reading a sibling's config field.
-    // NOTE for future editors: if a 6th SourceKind is ever added,
-    // build_test_event gains a 6th match arm — add its matching test here.
-
     #[test]
     fn build_test_event_football_uses_espn_config() {
         use crate::event::{EventType, Priority, RotationSpec, SourceKind};
@@ -1795,10 +1483,6 @@ mod tests {
         let config = Config {
             espn_priority: Priority::High,
             espn_ttl_secs: 42,
-            // pin every sibling to a contrasting value so this assertion
-            // fails if the arm reads someone else's priority field (espn
-            // and agent share the same High default, so without this the
-            // swap is invisible)
             rss_priority: Priority::Low,
             agent_priority: Priority::Low,
             manual_default_priority: Priority::Low,
@@ -1818,8 +1502,6 @@ mod tests {
         let config = Config {
             rss_priority: Priority::Low,
             rss_ttl_secs: 17,
-            // pin every sibling to a contrasting value (see Football's
-            // test for why) so a swap onto any of them is caught
             espn_priority: Priority::High,
             agent_priority: Priority::High,
             manual_default_priority: Priority::High,
@@ -1840,8 +1522,6 @@ mod tests {
         let config = Config {
             agent_priority: Priority::High,
             agent_ttl_secs: 23,
-            // pin every sibling to a contrasting value (see Football's
-            // test for why) so a swap onto any of them is caught
             espn_priority: Priority::Low,
             rss_priority: Priority::Low,
             manual_default_priority: Priority::Low,
@@ -1858,14 +1538,9 @@ mod tests {
     fn build_test_event_manual_uses_default_ttl_and_manual_priority() {
         use crate::event::{EventType, Priority, RotationSpec, SourceKind};
 
-        // Manual has no manual_ttl_secs field of its own — it reads the
-        // shared default_ttl. Assert it lands on the event so a
-        // copy-paste swap (e.g. reading espn_ttl_secs instead) is caught.
         let config = Config {
             manual_default_priority: Priority::Low,
             default_ttl: 99,
-            // pin every sibling to a contrasting value (see Football's
-            // test for why) so a swap onto any of them is caught
             espn_priority: Priority::High,
             rss_priority: Priority::High,
             agent_priority: Priority::High,
@@ -1877,17 +1552,4 @@ mod tests {
         assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 99 });
         assert_eq!(event.origin, SourceKind::Manual);
     }
-
-    // `get_history`/`clear_history` themselves are untested here by the
-    // same design note above this module's invoke-commands section: they
-    // take the concrete (Wry) `tauri::WebviewWindow`, not a
-    // `R: tauri::Runtime` generic like `get_default_config` does, so
-    // `tauri::test::mock_app()`'s `MockRuntime` windows are the wrong
-    // type and there is no seam to call them from a unit test. The
-    // testable seam for this fix is `Engine::history_store()` — see
-    // `engine::tests::history_store_returns_a_clone_of_the_same_arc_the_accept_path_writes_through`
-    // in `engine.rs`, which proves the accessor hands back the identical
-    // `Arc<HistoryStore>` (same allocation, `Arc::ptr_eq`) that
-    // `Engine::accept` appends through, i.e. the actual fix: one lock,
-    // not two.
 }

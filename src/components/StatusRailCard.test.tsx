@@ -15,26 +15,12 @@ import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { contentExitVariants, StatusRailCard } from "./StatusRailCard";
 
-// `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself —
-// the real tauri implementation isn't available under vitest/jsdom, so
-// every test asserting on the crest <img> src needs this mocked. The fake
-// prefix makes "the src actually went through convertFileSrc, not the
-// raw path" assertable rather than assumed.
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://converted${path}`,
 }));
 
-// this project's vitest config doesn't set `test.globals`, so RTL's
-// auto-cleanup (which hooks a global `afterEach`) never registers —
-// without this, DOM from one test's render leaks into the next and
-// screen.getByText finds duplicates across tests.
 afterEach(cleanup);
 
-// jsdom has no AnimationEvent constructor at all, and fireEvent.animationEnd
-// silently drops non-standard init properties (confirmed: it produces a
-// plain Event with animationName === undefined) — so simulate a real
-// browser's animationend by patching the property directly onto a plain
-// Event before dispatch, which React's synthetic event reads through fine.
 function fireAnimationEnd(el: HTMLElement, animationName: string) {
   const event = new Event("animationend", { bubbles: true });
   Object.defineProperty(event, "animationName", { value: animationName });
@@ -43,13 +29,6 @@ function fireAnimationEnd(el: HTMLElement, animationName: string) {
   });
 }
 
-// the same-signal pulse replay re-applies its class
-// inside a `requestAnimationFrame` callback (clear-then-reapply is what
-// actually restarts a CSS animation past React's identity bailout), so
-// tests for it have to let one real frame pass. jsdom under vitest runs
-// with `pretendToBeVisual`, so rAF genuinely fires (~16ms) — no fake
-// timers here, deliberately: this describe block uses none, and vitest's
-// default `toFake` set doesn't cover rAF anyway.
 async function flushFrame() {
   await act(async () => {
     await new Promise<void>((resolve) => {
@@ -127,8 +106,6 @@ const AGENT_NEEDS_INPUT: SlotState = {
   remainingMs: 8000,
 };
 
-// a live-match card — the rust core attaches Clock + per-side
-// Cards detail pairs when `espn_live_card` is on.
 const LIVE_MATCH: SlotState = {
   state: "showing",
   id: "match-1",
@@ -178,8 +155,6 @@ const NEWS: SlotState = {
   remainingMs: 6000,
 };
 
-// a generic (agent/claude-relay) card carrying a subtitle and
-// detail pairs — the manifest renders each as its own cell (Layout A).
 const AGENT_RICH: SlotState = {
   state: "showing",
   id: "n5",
@@ -207,9 +182,6 @@ const AGENT_RICH: SlotState = {
   remainingMs: 8000,
 };
 
-// the structured espn meta (POST-083 contract) — a base fixture
-// plus a small helper to build a showing slot around it, one event/state
-// at a time, so each scorecard test only overrides what it's about.
 const ESPN_BASE: EspnMeta = {
   league: "UCL",
   homeAbbrev: "ARS",
@@ -252,28 +224,18 @@ function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> =
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
-    // The celebration is 's pure-CSS confetti burst + ring on
-    // `.card-assembly.pulse-goal`'s ::after/::before PLUS 's mounted
-    // three-ring ripple (.cele-ripple). Signal-keying coverage: the pulse
-    // class lands and the ripple mounts — goal-signal only.
     it("applies pulse-goal (CSS burst + mounted three-ring ripple) on a goal signal", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
       expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
     });
 
-    // The ripple rides the pulse state, and the pulse lives until the
-    // LAST of the three staggered rings finishes — NOT until the 1240ms
-    // shell keyframe (`goal-overshoot`) ends, which would tear ring 3 out
-    // mid-expansion at 62% of its life. Each ring reports its own
-    // `ripple-out` end; only the third retires the layer.
     it("keeps the ripple mounted until the THIRD ripple-out ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-ripple")).not.toBeNull();
 
-      // the shell finishing first must not retire anything
       fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".cele-ripple")).not.toBeNull();
 
@@ -285,11 +247,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
-    // The pulse clears on the CSS animation's own animationend, not a
-    // JS-side timer — there's no duration to keep in sync with styles.css
-    // this way. jsdom never runs the animation itself, so tests simulate
-    // its natural completion. for the goal pulse that endpoint
-    // is the third `ripple-out`, per the test above.
     it("clears pulse-goal when its last ripple ring ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       // SAFETY: test helper guarantees element exists for this selector.
@@ -301,18 +258,10 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
-    // two goals in a row compute the SAME class
-    // string, so `setPulse("pulse-goal")` on the second one is a React
-    // `Object.is` bailout — the class attribute is never rewritten and
-    // the CSS animation never replays. The fix clears the class and
-    // re-applies it on the next frame; this pins both halves (gone for a
-    // frame, back after it) rather than just the end state, which the
-    // buggy no-op would also satisfy.
     it("replays the goal pulse for a second goal arriving during the first", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
 
-      // a NEW item id, same goal signal, while the first is still pulsing
       rerender(<StatusRailCard slot={{ ...GOAL, id: "n2", body: "Arsenal 3-0" }} />);
       expect(container.querySelector(".card-assembly.pulse-goal")).toBeNull();
       expect(container.querySelector(".cele-ripple")).toBeNull();
@@ -321,8 +270,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
       expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
 
-      // and the restarted celebration counts its OWN three rings from
-      // scratch — no partial tally inherited from the interrupted one
       // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "ripple-out");
@@ -355,10 +302,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".pulse-goal")).not.toBeNull();
     });
 
-    // The counterpart to the same-signal REPLAY test above: a new id
-    // replays, a mere re-render of the same id must not — the rAF
-    // restart is keyed on the effect firing, and the effect is keyed on
-    // [currentId, currentSignal] only.
     it("does not replay the pulse on an unrelated re-render of the same notification", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       // SAFETY: test helper guarantees element exists for this selector.
@@ -368,7 +311,6 @@ describe("StatusRailCard", () => {
       fireAnimationEnd(card, "ripple-out");
       expect(container.querySelector(".pulse-goal")).toBeNull();
 
-      // same id + signal, only `expanded` flips — must not replay the burst
       rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} />);
       expect(container.querySelector(".pulse-goal")).toBeNull();
       await flushFrame();
@@ -376,9 +318,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // The actual reason EventSignal exists: a High-priority alert from a
-  // non-football source (agent) must never be mistaken for a goal just
-  // because both happen to be High priority.
   it("never plays a goal or red-card pulse for a High-priority generic signal", () => {
     const { container } = render(<StatusRailCard slot={AGENT_NEEDS_INPUT} />);
     expect(container.querySelector(".pulse-goal")).toBeNull();
@@ -386,10 +325,6 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".cele-ripple")).toBeNull();
   });
 
-  // The right flank's idle furniture is the icon strip, not the status
-  // dots — the dots are not on this surface at all (the component itself
-  // lives on, mounted by AgentBoard). The contract under test is "idle
-  // paints its right-flank furniture".
   it("renders the idle clock, not a card, when the slot is empty", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
     expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
@@ -399,10 +334,6 @@ describe("StatusRailCard", () => {
     expect(screen.queryByText("GOAL")).toBeNull();
   });
 
-  // The idle shell has ONE width formula regardless of status-rail
-  // activity: the status dots carry that signal, so nothing needs to
-  // widen for it. No "status" modifier class exists at all — active
-  // status or not, status prop present or not.
   it("never applies a width-modifier class for status-rail activity", () => {
     const active: StatusState = {
       paused: false,
@@ -429,36 +360,13 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     expect(container.querySelector(".card-assembly.status")).toBeNull();
 
-    // no status prop at all (settings preview, older hosts): same, no
-    // status-modifier class either way.
     rerender(<StatusRailCard slot={{ state: "empty" }} />);
     expect(container.querySelector(".card-assembly.status")).toBeNull();
 
-    // and a showing card never carried it either, before or after.
     rerender(<StatusRailCard slot={GOAL} status={active} />);
     expect(container.querySelector(".card-assembly.status")).toBeNull();
   });
 
-  // The idle clock re-renders every 30s (useClock) — a live region there
-  // would re-announce the time to assistive tech on every tick, which
-  // isn't what an arrival-alert live region is for.
-  //
-  // The live region must NOT sit on `.card-assembly` (the card ROOT also
-  // encloses FlankClock's 30s tick and, for a live-match card, the
-  // scorecard's constantly-updating chrome — both would re-announce on
-  // every routine wire tick). It must NOT sit on `.below-block` either:
-  // that wrapper mounts ~175ms after a promotion (the exit-choreography
-  // settle) already carrying its title/body in the same commit, which is
-  // the pre-populated-region bug.
-  //
-  // StatusRailCard.tsx's own `liveRegionActive` doc has the full
-  // mechanism: role/aria-live live on an always-mounted `display:
-  // contents` wrapper one level up, flipping at t=0 of the promotion.
-  // The three tests below are tripwires against that placement —
-  // asserting on `.below-block`'s own attributes would vacuously pass,
-  // since it carries none. The DOM condition asserted here is: absent
-  // while idle, present while a (non-live-match) card shows, present
-  // before content arrives.
   describe("live region placement", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -473,22 +381,8 @@ describe("StatusRailCard", () => {
       expect(container.querySelector('[role="status"], [aria-live]')).toBeNull();
     });
 
-    // FlankClock/StatusDots are structurally OUTSIDE
-    // the below-block (they live in `.flank-left`/`.flank-right`) — the
-    // wrapper the region now lives on (K2) is a sibling of those too, so
-    // this still holds under the new placement.
-    // the dots half of that pair is gone from this
-    // surface, and its replacement (the icon strip) doesn't mount while
-    // showing at all — so the assertion becomes "the strip isn't in the
-    // tree", which is a strictly stronger version of "it sits outside
-    // the region". The clock half is unchanged.
     it("is exactly one live region while showing (non-live-match), and the clock sits outside it", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      // content mounts ~175ms after a fresh-mount promotion too (the
-      // exit-choreography settle applies from the initial idle->showing
-      // transition, not just a later rerender) — advance past it so the
-      // below-block's own content is actually in the tree for this
-      // "sits outside it" check to mean anything.
       act(() => vi.advanceTimersByTime(175));
 
       const regions = container.querySelectorAll('[role="status"]');
@@ -502,10 +396,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".status-dots")).toBeNull();
     });
 
-    // a live-match card's own chrome (clock/score,
-    // ticking on every wire update) is excluded from the region entirely
-    // — `liveRegionActive`'s own `!isLiveCard` gate — rather than being
-    // included and re-announcing on every tick.
     it("a live-match card's own scorecard chrome is not a live region", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
       act(() => vi.advanceTimersByTime(175));
@@ -513,25 +403,16 @@ describe("StatusRailCard", () => {
       expect(container.querySelector("[aria-live]")).toBeNull();
     });
 
-    // The actual K2 fix, pinned directly: the region must exist BEFORE
-    // its content, not in the same commit as it.
     it("the live-region attribute is present at t=0 of a promotion, before the below-block content mounts ~175ms later", () => {
       const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
       rerender(<StatusRailCard slot={GOAL} />);
 
-      // t=0: `showing` has already flipped, so the static wrapper's
-      // role/aria-live are already in the DOM — but `belowBlockOpen`
-      // hasn't settled yet, so there is no `.below-block` content node
-      // at all yet. A real screen reader would see an EMPTY,
-      // already-live region here, never a pre-populated one.
       expect(container.querySelector('[role="status"]')).not.toBeNull();
       expect(container.querySelector('[aria-live="polite"]')).not.toBeNull();
       expect(container.querySelector(".below-block")).toBeNull();
 
       act(() => vi.advanceTimersByTime(175));
 
-      // content now mounts INTO the already-established region — the
-      // region itself was never re-created, just gained a child.
       expect(container.querySelector(".below-block")).not.toBeNull();
       expect(container.querySelector('[role="status"]')).not.toBeNull();
     });
@@ -541,17 +422,9 @@ describe("StatusRailCard", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
     expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
     expect(screen.getByText("GOAL")).toBeTruthy();
-    // "Arsenal 2-0" legitimately appears twice while expanded — once in
-    // the compact preview, once in the manifest's "Message" detail.
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
   });
 
-  // the TTL bar exists only in the "showing" state (no card, no
-  // bar) and is the LAST child of the card-content block, after both the
-  // compact content and the manifest wrap — it's the card's bottom edge
-  // (absolutely positioned, styles.css), not static-flow content between
-  // sections (that was 's position; moved it to fix the
-  // double-border artifact against the manifest wrap's own border-top).
   it("renders no ttl-bar while idle", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
     expect(container.querySelector(".ttl-bar")).toBeNull();
@@ -559,12 +432,6 @@ describe("StatusRailCard", () => {
 
   it("renders the ttl-bar last, after the compact content and the manifest wrap, when showing", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
-    // StatusDots stays mounted THROUGH `showing`
-    // (railRevealed, see StatusRailCard.tsx), in its own
-    // `.card-content.idle` wrapper — so a plain `.card-content` query
-    // here would find THAT one first (flank-right precedes below-block
-    // in DOM order), not the below-block's swapped content this test is
-    // actually about. Scoped to `.below-block .card-content`.
     // SAFETY: test helper guarantees element exists for this selector.
     const cardContent = container.querySelector(".below-block .card-content") as HTMLElement;
     const children = Array.from(cardContent.children);
@@ -586,36 +453,19 @@ describe("StatusRailCard", () => {
     expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
     expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
     expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
-    // The category pill is `.chip.chip-category`; the age label sits
-    // outside the chip row entirely, in the plain `.notif-time-inline`
-    // slot, and is never chip-shaped. "Politics" appears exactly once —
-    // the expanded manifest never repeats it.
     // SAFETY: test helper guarantees element exists for this selector.
     const categoryChip = container.querySelector(".chip-category") as HTMLElement;
     expect(categoryChip.textContent).toBe("Politics");
     expect(categoryChip.classList.contains("chip")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("notif-time-inline")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("chip")).toBe(false);
-    // priority accent (`low`) stays on the outer shell;
-    // news-shade/category mood classes moved to `.below-block` — required
-    // for the mood gradient to paint at all (a `.card-assembly::before`
-    // pseudo-element there would paint BEHIND below-block's own opaque
-    // fill in stacking order, making the gradient invisible), and matches
-    // the locked prototype's own placement (`wx-block`/mood classes sit
-    // on `.below-block`, never on `.card-wrap`).
     expect(container.querySelector(".card-assembly.low")).not.toBeNull();
     expect(container.querySelector(".below-block.news-shade.cat-politics")).not.toBeNull();
-    // deleted the tier chip — priority reads from the CSS-only
-    // .compact::before accent edge (a pseudo-element, not assertable in
-    // jsdom), so the coverage here is absence: no chip markup, no code text.
     expect(container.querySelector(".tier-code")).toBeNull();
     expect(screen.queryByText("L1")).toBeNull();
     expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
     expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
     expect(container.querySelector(".manifest-inner.news")).toBeNull();
-    // The expanded manifest carries no source/published/category footer
-    // — that metadata lives in the compact masthead + meta row above
-    // (already asserted), never repeated here.
     expect(container.querySelector(".manifest-meta")).toBeNull();
     expect(container.querySelector(".manifest-footer")?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
@@ -638,27 +488,15 @@ describe("StatusRailCard", () => {
       />,
     );
 
-    // the manifest stays mounted (aria-hidden) when collapsed, so
-    // "RSS" also appears in its meta row — assert on the masthead
-    // specifically, and on the collapsed mechanism for the collapse
-    // control.
     expect(container.querySelector(".masthead")?.textContent).toContain("RSS");
-    // hotkey key-cap styling: the hint's "⌃⇧N" is now a <kbd> child, so
-    // its text is split across elements — match on the container's
-    // normalized textContent rather than an exact getByText.
     expect(container.querySelector(".compact-hint")?.textContent).toBe("⌃⇧N more");
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
     expect(container.querySelector(".chip-category")).toBeNull();
     expect(container.querySelector(".notif-time-inline")).toBeNull();
     expect(container.querySelector(".pub-meta")).toBeNull();
-    // news-shade/category classes moved to `.below-block` (see
-    // the comment on the same assertion above for why).
     expect(container.querySelector(".below-block.news-shade.cat-generic")).not.toBeNull();
   });
 
-  // The compact row shows exactly ONE time expression — the relative age
-  // — and never a `.pub-meta` "published HH:MM" node duplicating it. The
-  // expanded Manifest is covered by the dedicated pin below.
   it("renders exactly one time expression (relative age) in the compact news card's meta row — no duplicate published time", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={{ ...NEWS, expanded: false }} />);
@@ -670,18 +508,11 @@ describe("StatusRailCard", () => {
     expect(ageNode).not.toBeNull();
     expect(ageNode?.textContent).toBe("5m ago");
     expect(container.querySelector(".pub-meta")).toBeNull();
-    // the age node is the only time expression in the row, and its last
-    // child.
     expect(metaRow.lastElementChild).toBe(ageNode);
 
     now.mockRestore();
   });
 
-  // The compact row owns the single time expression (pinned above); the
-  // expanded manifest carries no "published HH:MM" segment and no
-  // `.manifest-meta` at all. Source, category and published time are
-  // compact-only, never repeated in the expanded panel — the expanded
-  // manifest is summary + hints only.
   it("renders the expanded news manifest as a full-width summary with no meta duplication", () => {
     const { container } = render(<StatusRailCard slot={{ ...NEWS, link: null }} />);
 
@@ -698,10 +529,6 @@ describe("StatusRailCard", () => {
     expect(footer.textContent).not.toContain("⌃⇧O read");
   });
 
-  // item D4 / Change C: the rust side now sends an empty `body` for a
-  // redundant Google-News summary — the expanded manifest falls back to
-  // the full (untruncated) title as the summary text rather than showing
-  // an empty panel.
   it("renders the news title as the summary when body is empty (redundant-summary fallback)", () => {
     const { container } = render(<StatusRailCard slot={{ ...NEWS, body: "" }} />);
     // SAFETY: test helper guarantees element exists for this selector.
@@ -711,12 +538,6 @@ describe("StatusRailCard", () => {
     expect(summary.classList.contains("manifest-text")).toBe(true);
   });
 
-  // The generic manifest uses news's full-width `.manifest-block`
-  // vocabulary and carries no `.manifest-meta` source label (that is
-  // compact-only — see the `agent accent` masthead-kicker tests below).
-  // The hotkey hint lives in `.manifest-footer` (like news's), so these
-  // two assertions read directly off it, mirroring the news manifest
-  // test above.
   it("shows only the collapse control in an expanded manifest without a link", () => {
     const { container } = render(<StatusRailCard slot={{ ...AGENT_NEEDS_INPUT, link: null }} />);
 
@@ -742,11 +563,6 @@ describe("StatusRailCard", () => {
     expect(footer.textContent).toContain("⌃⇧O read · ⌃⇧N collapse");
   });
 
-  // Subtitle and detail pairs are compact-only — metadata belongs in the
-  // compact card (see NotificationBody.tsx). Manifest carries no
-  // `.manifest-fields`, Subtitle or detail cells at all, so they render
-  // identically whether the card is expanded or not. Exercised through
-  // StatusRailCard, the real render path, not a bare <Manifest>.
   it("renders the subtitle and each detail pair as compact cells, not duplicated in the manifest", () => {
     const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
     // SAFETY: test helper guarantees element exists for this selector.
@@ -756,13 +572,10 @@ describe("StatusRailCard", () => {
     expect(within(compact).getByText("Tool")).toBeTruthy();
     expect(within(compact).getByText("Bash")).toBeTruthy();
     expect(within(compact).getByText("Command")).toBeTruthy();
-    // detail values are plain text (not markdown) — the literal string shows.
     expect(within(compact).getByText("git push origin master")).toBeTruthy();
     expect(within(compact).getByText("Project")).toBeTruthy();
     expect(within(compact).getByText("/Users/x/proj")).toBeTruthy();
 
-    // the expanded manifest is summary-only now — no Subtitle cell, no
-    // detail cells, nothing duplicated from the compact card above.
     // SAFETY: test helper guarantees element exists for this selector.
     const manifest = container.querySelector(".manifest") as HTMLElement;
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
@@ -771,10 +584,6 @@ describe("StatusRailCard", () => {
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
   });
 
-  // Detail pairs render below the body regardless of expansion (a
-  // live-match card's Clock/Cards must be readable without expanding).
-  // The subtitle follows the same "always compact" rule — it has no
-  // expanded-only manifest cell.
   it("shows the same subtitle and detail pairs in the compact card whether collapsed or expanded", () => {
     const { container } = render(<StatusRailCard slot={{ ...AGENT_RICH, expanded: false }} />);
 
@@ -789,10 +598,6 @@ describe("StatusRailCard", () => {
     expect(within(compact).getByText("Project")).toBeTruthy();
   });
 
-  // item D2: the expanded manifest for an agent slot (even a "rich" one
-  // carrying a subtitle and detail pairs) contains only the message body
-  // and the keyboard-hint footer — no subtitle cell, no meta line, no
-  // detail cells. Those are all compact-card metadata now.
   it("renders only the message body and hints in an agent slot's expanded manifest", () => {
     const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
     // SAFETY: test helper guarantees element exists for this selector.
@@ -802,23 +607,16 @@ describe("StatusRailCard", () => {
     expect(within(manifest).getByText(AGENT_RICH.body)).toBeTruthy();
     expect(manifest.querySelector(".manifest-meta")).toBeNull();
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
-    // detail pairs render as fact pills now (`.detail-facts`/
-    // `.fact-pill`), not the old stacked `.detail-label`/`.detail-value`
-    // — same "compact-only, never duplicated into the manifest" contract.
     expect(manifest.querySelector(".detail-facts")).toBeNull();
     expect(manifest.querySelector(".fact-pill")).toBeNull();
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
 
-    // AGENT_RICH has no link, so the footer shows only the collapse hint.
     // SAFETY: test helper guarantees element exists for this selector.
     const footer = manifest.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧N collapse");
     expect(footer.textContent).not.toContain("⌃⇧O read");
   });
 
-  // The manifest stays mounted while collapsed, so `aria-hidden` is what
-  // keeps collapsed content out of the accessibility tree; expanded
-  // content must stay in it.
   it("carries aria-hidden on the manifest wrapper only while collapsed", () => {
     const { container, rerender } = render(
       <StatusRailCard slot={{ ...AGENT_RICH, expanded: false }} />,
@@ -829,9 +627,6 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("false");
   });
 
-  // the whole point — Clock + per-side Cards readable without
-  // expanding. (Scoped to the compact view: keeps the collapsed
-  // manifest mounted, so its cells carry the same labels.)
   it("renders Clock and per-side Cards in the collapsed view for a live-match card", () => {
     const { container } = render(<StatusRailCard slot={LIVE_MATCH} />);
     // SAFETY: test helper guarantees element exists for this selector.
@@ -849,14 +644,9 @@ describe("StatusRailCard", () => {
     );
 
     expect(screen.getByText("GOAL")).toBeTruthy();
-    // body text also renders in the mounted-but-collapsed
-    // manifest's Message cell — the "no detail lines" contract is about
-    // the compact view, so assert there.
     // SAFETY: test helper guarantees element exists for this selector.
     const compact = container.querySelector(".compact") as HTMLElement;
     expect(within(compact).getByText("Arsenal 2-0")).toBeTruthy();
-    // fact pills (`.detail-facts`/`.fact-pill`), not the old
-    // `.detail-label`/`.detail-value` stack.
     expect(compact.querySelector(".detail-facts")).toBeNull();
     expect(compact.querySelector(".fact-pill")).toBeNull();
   });
@@ -873,25 +663,12 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("FOO=bar make build")).toBeTruthy();
   });
 
-  // The agent accent is a hairline on `.below-block`, gated strictly on
-  // the wire `origin` field (`.agent-origin`). There is no accent chip:
-  // it would duplicate the masthead kicker, which reads an origin-derived
-  // label (`GENERIC_MASTHEAD_KICKER` in NotificationBody.tsx) directly.
-  // Byte-absent for the other four SourceKind values; must never touch
-  // the priority accent channel (origin and priority are orthogonal).
   describe("agent accent", () => {
-    // cast to the narrower "showing" branch before spreading: spreading a
-    // `SlotState`-typed (union) variable and overriding one field produces
-    // a spurious excess-property error against the `{ state: "empty" }`
-    // branch — a TS quirk with union spreads.
     function genericSlot(origin: SourceKind): SlotState {
       // SAFETY: validated via preceding checks; type assertion safe here.
       return { ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
     }
 
-    // item D1: agent slot compact card renders the masthead kicker
-    // "agent" and no Agent chip (the chip was pure duplication once the
-    // kicker said it).
     it('renders the masthead kicker "agent" (no Agent chip) and the below-block hairline for origin: agent', () => {
       const { container } = render(<StatusRailCard slot={genericSlot("agent")} />);
       expect(container.querySelector(".masthead")?.textContent).toContain("agent");
@@ -900,8 +677,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".below-block.agent-origin")).not.toBeNull();
     });
 
-    // The generic branch serves every non-news origin. The kicker maps each
-    // SourceKind explicitly, including the defensive generic-news fixture.
     it("shows the origin-derived kicker (never the removed Agent chip) for every non-agent origin", () => {
       const expectedKicker = {
         football: "football",
@@ -919,10 +694,6 @@ describe("StatusRailCard", () => {
       }
     });
 
-    // the sharpest STOP condition in the plan: the accent must never touch
-    // the priority accent channel. Same priority (high), different origin
-    // — the shell's class list (which is exactly where the priority accent
-    // classes live, `.card-assembly.low/medium/high`) must be identical.
     it("never touches the priority accent channel — same priority, different origin, identical shell classes", () => {
       const { container: agentContainer } = render(<StatusRailCard slot={genericSlot("agent")} />);
       const { container: manualContainer } = render(
@@ -937,11 +708,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // `sourceClass` (lib/presentation.ts) — the below-block's
-  // source-identity colour class (source-identity.css's `.src-*`
-  // family), replacing the flat `cat-generic` fallback for every
-  // non-news origin. News keeps `categoryClass`/`cat-*` untouched and
-  // gains no `src-*` class of its own.
   describe("source identity class", () => {
     function belowBlockClasses(container: HTMLElement): string[] {
       return (container.querySelector(".below-block")?.className ?? "").split(" ").filter(Boolean);
@@ -996,11 +762,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // resting_state "notch" — idle renders zero app-drawn pixels, but the
-  // shell itself still mounts, bare, so hovering can reveal the peek;
-  // only the painted chrome (clock, dots, below-block) is absent.
-  // Mounting no shell at all is a dead end (nothing painted AND nothing
-  // hoverable), so the contract is the narrower "no painted chrome".
   describe("resting_state: notch", () => {
     it("renders bare — no below-block, no clock text, no status dots — while idle and not hovered", () => {
       const { container } = render(
@@ -1014,8 +775,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".status-dots")).toBeNull();
     });
 
-    // hovering bare mode must reveal the peek — the mode is never a dead
-    // end.
     it("reveals the idle-peek below-block when hovered, even though nothing painted while not hovered", () => {
       const { container } = render(
         <StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />,
@@ -1031,9 +790,6 @@ describe("StatusRailCard", () => {
       expect(screen.getByText("GOAL")).toBeTruthy();
     });
 
-    // Step C's DOM-identity requirement: a showing card in notch mode must
-    // render byte-identical content to the same card in rail mode — the
-    // bare modifier only ever applies to the settled-idle state.
     it("renders identical DOM to rail mode while showing", () => {
       const { container: notchContainer } = render(
         <StatusRailCard slot={GOAL} restingState="notch" />,
@@ -1049,9 +805,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
-      // the outgoing card keeps playing its normal exit animation for the
-      // same SWAP_EXIT_MS window as "rail" mode — it must not vanish
-      // abruptly.
       expect(container.querySelector(".below-block")).not.toBeNull();
 
       await vi.waitFor(() => {
@@ -1061,38 +814,16 @@ describe("StatusRailCard", () => {
       });
     });
 
-    // FlankClock/StatusDots must not stay
-    // mounted, fully opaque, for the WHOLE exit-to-bare window — gating
-    // them off only once `.bare` lands at the window's end leaves white
-    // text sitting on a see-through flank mid-window, because the flank
-    // paint underneath is already animating to transparent from t=0
-    // (overlay-card.css's `.exiting.exit-to-bare` rule). The
-    // fix (`railRevealed && !exitToBare`) drops their own mount the
-    // instant `exitToBare` goes true, before `.bare` ever lands — this
-    // pins that ordering directly: the chrome must already be gone while
-    // the shell is still `.exiting.exit-to-bare` (not yet `.bare`), not
-    // only after. Rail mode is the untouched control: it never sets
-    // `exitToBare`, so the same exit must leave the clock mounted
-    // throughout.
-    // the "dots" half of this pin is the icon strip, which additionally
-    // never mounts while SHOWING at all (a pushed card is unaffected by
-    // tab selection), so it can only be asserted on at the idle end of
-    // each leg, not at the start.
     it("an unhovered showing->idle exit unmounts the clock before `.bare` lands (not just once it does); rail mode keeps it mounted, and brings the icon strip back, across the same exit", async () => {
       const notch = render(<StatusRailCard slot={GOAL} restingState="notch" />);
       expect(notch.container.querySelector(".time-only")).not.toBeNull();
-      // never mounted while showing, in either resting mode
       expect(notch.container.querySelector(".icon-strip")).toBeNull();
 
       notch.rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
       await vi.waitFor(() => {
         expect(notch.container.querySelector(".time-only")).toBeNull();
       });
-      // the strip is gated off for the exit-to-bare window too — the
-      // same `!exitToBare` narrowing the clock above carries.
       expect(notch.container.querySelector(".icon-strip")).toBeNull();
-      // the chrome left BEFORE the shell settled bare — proves the gate is
-      // `exitToBare` (window start), not `bare` (window end).
       expect(notch.container.querySelector(".card-assembly.bare")).toBeNull();
       expect(notch.container.querySelector(".card-assembly.exit-to-bare")).not.toBeNull();
 
@@ -1102,13 +833,10 @@ describe("StatusRailCard", () => {
         expect(rail.container.querySelector(".card-assembly.idle")).not.toBeNull();
       });
       expect(rail.container.querySelector(".time-only")).not.toBeNull();
-      // back at idle, the right flank's furniture is present again
       expect(rail.container.querySelector(".icon-strip")).not.toBeNull();
     });
   });
 
-  // explicit regression pin: the default and unset cases must both
-  // render the idle clock/status rail.
   describe("resting_state: rail (default) and unset", () => {
     it('renders the idle clock/status rail when restingState is "rail"', () => {
       const { container } = render(
@@ -1127,14 +855,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // the queue slider — an enqueue while the card is visible
-  // re-renders the segments (the rust core re-emits the slot state with
-  // new queueTotal/queueDone), but the card itself must not re-animate:
-  // the motion key is the item id, unchanged by a waiting-count change.
-  // The queue slider IS the ttl-bar: `.ttl-bar` carries `n` `.ttl-seg`
-  // children (one fewer than the segment count is "done", the current one
-  // is plain since it hosts `.ttl-fill` instead of a `.done` class of its
-  // own) plus the single `.ttl-fill` node.
   it("updates the queue segments on a waiting-count change without remounting the card", () => {
     const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
     const barBefore = container.querySelector(".ttl-bar");
@@ -1142,46 +862,22 @@ describe("StatusRailCard", () => {
     expect(barBefore?.querySelectorAll(".ttl-seg.done")).toHaveLength(0);
     expect(barBefore?.querySelector(".ttl-fill")).not.toBeNull();
 
-    // same id, deeper queue — the bar re-renders in place
     rerender(<StatusRailCard slot={{ ...GOAL, queueTotal: 5, queueDone: 1 }} />);
     const barAfter = container.querySelector(".ttl-bar");
     expect(barAfter).toBe(barBefore);
     expect(barAfter?.querySelectorAll(".ttl-seg")).toHaveLength(5);
     expect(barAfter?.querySelectorAll(".ttl-seg.done")).toHaveLength(1);
-    // the fill node itself is stable across the update too (see
-    // TtlBar.tsx's own doc on why it's placed via `grid-column` rather
-    // than nested inside the mapped-segment array).
     expect(barAfter?.querySelector(".ttl-fill")).toBe(barBefore?.querySelector(".ttl-fill"));
   });
 
-  // The compact card must not carry a standalone queue-slider row
-  // (`.compact .track`) on top of the ttl-bar floor — two thin strips
-  // read as a double border. `.ttl-bar`'s own segments do that job (see
-  // the test above).
   it("never renders a standalone .track row in the compact card", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
     expect(container.querySelector(".track")).toBeNull();
     expect(container.querySelector(".compact .track")).toBeNull();
-    // the compact block itself is still there, just without that child.
     expect(container.querySelector(".compact")).not.toBeNull();
   });
 
-  // a
-  // showing->showing content swap (a same-slot rotation — a different id
-  // arrives while the card is already showing, e.g. a news item rotating
-  // ~10s, or one live-match signal replacing another) must use the
-  // lighter rotation timings; promotion (idle->showing) and exit
-  // (showing->idle) must stay byte-untouched. Pinned via
-  // `data-rotation-swap` (see `contentExitVariants`'/the JSX's own doc in
-  // StatusRailCard.tsx for why: motion's own transition/variant props
-  // aren't otherwise inspectable from rendered DOM output in jsdom).
   describe("same-slot rotation uses lighter timings", () => {
-    // real timers + `vi.waitFor`: `mode="wait"` holds the NEW child back
-    // until the OLD child's own exit animation actually finishes (same
-    // AnimatePresence-driven-removal idiom as the "resting_state: notch"
-    // describe block and the Step 2 tests above) — an assertion made
-    // synchronously right after `rerender` would still find the OLD
-    // (exiting) node, not the new one.
     it("a showing(A)->showing(B) key change marks the new content as a rotation", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(
@@ -1197,11 +893,6 @@ describe("StatusRailCard", () => {
       ).toBe("true");
     });
 
-    // fake timers, same pattern as the "compact->idle geometry" describe
-    // block: the entrance itself needs the SWAP_EXIT_MS delayed-swap to
-    // settle before the below-block (and its `.card-content`) mounts at
-    // all — nothing to do with rotation detection, just the existing
-    // "width-leads-content" entrance choreography.
     describe("idle->showing promotion", () => {
       beforeEach(() => {
         vi.useFakeTimers();
@@ -1228,10 +919,6 @@ describe("StatusRailCard", () => {
       });
 
       rerender(<StatusRailCard slot={{ ...GOAL, id: "n4" }} />);
-      // wait for RED_CARD's own content to actually be gone (not merely
-      // for the attribute to read "true", which the still-exiting RED_CARD
-      // node would already satisfy on its own — a vacuous pass risk) so
-      // this is provably reading the NEW (n4) node, not the old one.
       await vi.waitFor(() => {
         expect(screen.queryByText("Red Card")).toBeNull();
       });
@@ -1245,30 +932,12 @@ describe("StatusRailCard", () => {
       const before = container.querySelector(".below-block .card-content");
       rerender(<StatusRailCard slot={{ ...GOAL, queueDone: 1 }} />);
       const after = container.querySelector(".below-block .card-content");
-      // no remount — same node, same pattern as the queue-slider test
-      // above.
       expect(after).toBe(before);
-      // the node itself proving stable
-      // (above) doesn't, on its own, prove `isRotation` stayed false for
-      // it — `wasShowingRef`'s own guard-on-key-change doc (StatusRailCard.tsx)
-      // exists specifically to stop an unrelated same-key re-render like
-      // this one from corrupting that cached value. Pin the attribute
-      // directly, on top of the node-identity check.
       // SAFETY: test helper guarantees element exists for this selector.
       expect((after as HTMLElement | null)?.getAttribute("data-rotation-swap")).toBe("false");
     });
   });
 
-  // a strictly-higher-priority arrival now
-  // cuts the Visible card's turn short instead of waiting it out — the
-  // handover must read as "yanked", not as an ordinary end-of-turn
-  // rotation. The wire carries no explicit "preempted" flag (see
-  // StatusRailCard.tsx's own doc on `isInterrupt`), so the frontend infers
-  // it from priority + the outgoing item's own estimated remaining time:
-  // strictly-higher incoming priority AND the outgoing item still had real
-  // time left. Both conditions are required — a plain priority increase
-  // across an ordinary rotation (the queue always drains its
-  // highest-priority Waiting item next) must NOT be marked an interrupt.
   describe("Priority Preemption interrupt detection", () => {
     const LOW_WITH_TIME_LEFT: SlotState = {
       ...GOAL,
@@ -1384,14 +1053,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // pins `contentExitVariants` (exported
-  // test-only, same precedent as `iconForBundleId` in IdleHoverPeek.tsx)
-  // directly, rather than only through rendered `data-rotation-swap`
-  // output above — jsdom/motion don't expose a committed exit
-  // animation's `transition` object back onto the DOM, so this is the
-  // only way to check the actual duration/ease values the rotation vs.
-  // non-rotation exit legs use, not just whether the boolean that picks
-  // between them landed correctly.
   describe("contentExitVariants", () => {
     it("the rotation exit uses ROTATION_EXIT_MS, in seconds, with the house ease", () => {
       // SAFETY: validated via preceding checks; type assertion safe here.
@@ -1417,16 +1078,7 @@ describe("StatusRailCard", () => {
       expect(variant.transition.ease).toEqual(NOTCHTAP_EASE);
     });
 
-    // the interrupt leg wins outright over the plain rotation
-    // branch — faster (INTERRUPT_EXIT_MS < ROTATION_EXIT_MS), its own
-    // sharp ease (not NOTCHTAP_EASE), and a small y/scale "yank" so the
-    // handover reads as cut short, not just quicker.
     it("the interrupt exit uses INTERRUPT_EXIT_MS with its own sharp ease and a yank, even when isRotation is also true", () => {
-      //
-      // the yank is a single full `transform` string, never separate
-      // `y`/`scale` shorthand fields (those are not guaranteed
-      // hardware-accelerated under Motion), so this test asserts on that
-      // string rather than two numeric fields.
       // SAFETY: validated via preceding checks; type assertion safe here.
       const variant = contentExitVariants.exit({
         isRotation: true,
@@ -1446,20 +1098,10 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // the recurring live-match scorecard — detected by the
-  // structured `espn` block's presence (POST-083 contract), rendered
-  // through a wholly different branch than the generic/news layouts
-  // above (no Track, no TtlBar, no Manifest, no compact-hint).
   describe("live-match football scorecard", () => {
     it("renders the title (slot.body) and stamp, plus the league chip, live-pill, clock, crests-as-abbrev, and score", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
-      // `.notif-block` is gone — the live card now renders
-      // through the shared `.title.headline`/`.stamp` template
-      // (`FootballHeroCard`, NotificationBody.tsx), with the league/
-      // live-pill/clock/crests/score row kept as an additive block below
-      // it (assertions further down).
       expect(container.querySelector(".title.headline")?.textContent).toBe("Goal — K. Havertz 78'");
-      // signal "goal" -> SIGNAL_STAMPS["goal"] === "Live" (lib/presentation.ts).
       expect(container.querySelector(".stamp")?.textContent).toBe("Live");
       expect(screen.getByText("UCL")).toBeTruthy();
       const pill = container.querySelector(".chip-live");
@@ -1475,12 +1117,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".score")?.textContent).toBe("1–1");
     });
 
-    // the old `.event-line` icon+tint (`ev-ico`/`tint-*`,
-    // `eventPresentation`) is gone — `slot.body` now renders verbatim as
-    // `.title.headline` with no icon slot (see `FootballHeroCard`'s own
-    // doc for why). The celebration classes on `.card-assembly` are a
-    // shell-level effect independent of the content template underneath
-    // them, so those assertions carry over unchanged.
     it("goal: title is the body text, plays cele-goal (not pulse-goal), never the ripple", () => {
       const { container } = render(
         <StatusRailCard slot={liveSlot({ signal: "goal", body: "Goal — K. Havertz 78'" })} />,
@@ -1610,12 +1246,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".clock-pill")?.textContent).toBe("HT");
     });
 
-    // The dot does NOT unmount at full-time — it stays in the DOM and
-    // fades/collapses under `.chip-live.final .live-dot`
-    // (live-scorecard.css) so it leaves in step with the chip's colour
-    // morph instead of blinking out a frame early. The user-visible
-    // contract ("no live dot on a finished match") is therefore asserted
-    // on the CSS rule, not on the node's absence.
     it("full-time: Final pill (live-dot fades out, not unmounted) and the FT clock", () => {
       const { container } = render(
         <StatusRailCard
@@ -1633,26 +1263,11 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".clock-pill")?.textContent).toBe("FT");
     });
 
-    // No "Soon" (pre-match) variant: there is no wire signal for it (see
-    // StatusRailCard.tsx's live-match branch doc) — every wire EventSignal
-    // maps to Live/Break/Final only. This is coverage-by-exhaustion, not a
-    // single assertion: `livePillVariantFor` (lib/presentation.ts) is
-    // exhaustive over the full EventSignal union with no "soon" arm, so a
-    // wire signal can never resolve to a fourth variant this component
-    // would need to render.
-
     it("omits the cards line on a clean match (no cards either side)", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
       expect(container.querySelector(".cards-line")).toBeNull();
     });
 
-    // Queue segmentation lives inside `.ttl-bar` itself (TtlBar.tsx's
-    // `total`/`done` props), never in a standalone `.track` row. The
-    // live card renders no `.ttl-bar` at all
-    // (see the "renders no TtlBar" test right below, and
-    // LiveMatchScorecard.tsx's own doc on why), so it necessarily carries
-    // no queue segments either; a generic card in the same run still gets
-    // a segmented bar (GOAL's queueTotal: 3 → 3 `.ttl-seg` children).
     it("renders no ttl-bar (queue segments included) on the live card, while a generic card in the same run still gets segments", () => {
       const { container: liveContainer } = render(<StatusRailCard slot={liveSlot()} />);
       expect(liveContainer.querySelector(".ttl-bar")).toBeNull();
@@ -1725,11 +1340,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // The hover primitive's one frontend consumer — a diagnostic
-  // `.hovered` class proving `hover-changed` reaches the webview. The
-  // hover FEATURES themselves live in the "idle hover-expanded
-  // peek/reveal" describe block below; this block only pins the
-  // prop/class wiring.
   describe("hovered prop", () => {
     it("toggles the .hovered class when hovered is true", () => {
       const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
@@ -1744,9 +1354,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // Hovering alone must never open the manifest or add `.expanded` —
-  // only `slot.expanded` (the `⌃⇧N` keyboard toggle) does. See
-  // useExitChoreography.ts's own comment on `expanded`.
   describe("manifest expand is keyboard-only, not hover-driven", () => {
     const COLLAPSED: SlotState = { ...GOAL, expanded: false };
     const EXPANDED: SlotState = { ...GOAL, expanded: true };
@@ -1775,16 +1382,6 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // The shell's bouncy width curve (`--ease-notchtap-pop`) must NOT sit
-  // on `.card-assembly`'s BASE rule — that is "whatever plays when
-  // nothing more specific matches", so a hover-out removing `.expanded`
-  // would resolve against it and every un-hover would overshoot and
-  // rebound. The pop rides a transient `.promoting` class
-  // (card-chrome.css), and these pin the lifecycle that scoping depends
-  // on: on for a genuine promotion entrance, off for everything else.
-  // The class is on `.card-assembly` itself (never AnimatePresence-
-  // gated), so every assertion here is synchronous — no `vi.waitFor`
-  // needed, unlike the content-swap blocks.
   describe("arrival-pop marker (`promoting`)", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -1798,10 +1395,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
 
       rerender(<StatusRailCard slot={GOAL} />);
-      // The whole point of arming this in the render body rather than an
-      // effect: CSS keeps a running transition's original timing function
-      // even if the rule under it changes, so the class has to be in the
-      // SAME commit that flips the width formula to showing geometry.
       expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
       expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
     });
@@ -1815,8 +1408,6 @@ describe("StatusRailCard", () => {
 
       act(() => vi.advanceTimersByTime(1));
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
-      // the shell itself is untouched by the disarm — only the curve was
-      // ever scoped, never the geometry.
       expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
     });
 
@@ -1825,8 +1416,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
 
       rerender(<StatusRailCard slot={RED_CARD} />);
-      // synchronous — a rotation is not an arrival, so it must not carry
-      // (or inherit) the pop for even one frame.
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
 
@@ -1838,8 +1427,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
 
       rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} hovered={true} />);
-      // hover does not expand the card, so the width class never changes
-      // and the pop is never armed.
       expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
@@ -1848,23 +1435,12 @@ describe("StatusRailCard", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
 
-      // deliberately no timer advance first: this pins the render-body
-      // disarm, not the EXPAND_MS timeout. card-chrome.css's `.promoting`
-      // rule leans on the two classes being mutually exclusive (it is
-      // declared BEFORE `.exiting`, which would otherwise win the width
-      // transition by source order).
       rerender(<StatusRailCard slot={{ state: "empty" }} />);
       expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
   });
 
-  // The idle hover-expanded state and the TTL hover-pause, exercised
-  // through the whole StatusRailCard tree rather than
-  // IdleHoverPeek/TtlBar in isolation —
-  // IdleHoverPeek.test.tsx and TtlBar.test.tsx already cover each
-  // component's own behavior in depth; these pin how StatusRailCard
-  // actually wires `hovered`/`status` into both of them.
   describe("idle hover-expanded peek/reveal", () => {
     const AMBIENT_STATUS: StatusState = {
       paused: false,
@@ -1881,10 +1457,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".below-block")).toBeNull();
     });
 
-    // The `:not(:has(.below-block))` rounding law keys off a real
-    // `.below-block` becoming present — that DOM condition, pinned here,
-    // is what makes "flanks un-round while the peek is open" true
-    // without any rule of its own.
     it("mounts a .below-block.idle-peek while idle and hovered", () => {
       const { container } = render(
         <StatusRailCard slot={{ state: "empty" }} status={AMBIENT_STATUS} hovered={true} />,
@@ -1902,22 +1474,9 @@ describe("StatusRailCard", () => {
     it("passes hoverPaused through to the TtlBar while a card is showing and hovered", () => {
       const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
       expect(container.querySelector(".ttl-bar")).not.toBeNull();
-      // TtlBar.test.tsx pins the freeze mechanics themselves; this only
-      // proves StatusRailCard doesn't lose the wire — a stale/omitted
-      // hoverPaused would still render a ttl-bar, so absence of a crash
-      // plus TtlBar's own hoverPaused tests together cover this.
     });
   });
 
-  // the peek's
-  // own AnimatePresence exit must survive a promotion arriving mid-open,
-  // rather than the whole component (AnimatePresence included) being torn
-  // out synchronously the instant the old `{!renderedShowing &&
-  // <IdleHoverPeek .../>}` conditional flipped false. Fake timers, same
-  // pattern as the "compact->idle geometry" describe block above, to step
-  // exactly to the SWAP_EXIT_MS boundary where `renderedShowing` — and so
-  // both `belowBlockOpen` and IdleHoverPeek's own `open` prop — flip in
-  // the same tick.
   describe("peek survives a promotion mid-open", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -1934,40 +1493,16 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
 
       rerender(<StatusRailCard slot={GOAL} hovered={true} />);
-      // still mid-swap: the peek stays open (its own `open` prop tracks
-      // `!renderedShowing`, and `renderedShowing` hasn't flipped yet), and
-      // the card content hasn't mounted yet either — same "width-leads-
-      // content" entrance choreography as always, untouched by this
-      // step. Scoped to `.below-block .card-content` (not a bare
-      // `.card-content` query), same reasoning as the collapsed-manifest
-      // test above: `flank-right`'s StatusDots wrapper carries its own
-      // `.card-content.idle` class and precedes `.below-block` in DOM
-      // order, so an unscoped query would find THAT one first.
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelector(".below-block .card-content")).toBeNull();
 
-      // 175 = SWAP_EXIT_MS (src/lib/constants.ts) — the swap settles
-      // here, same literal-with-comment convention as the
-      // "compact->idle geometry" describe block above. `renderedShowing`
-      // flips true in this same tick, which both mounts the card content
-      // (`belowBlockOpen`) AND flips the peek's own `open` prop false.
       act(() => vi.advanceTimersByTime(175));
 
-      // the decisive assertion: the peek is STILL present, its own exit
-      // playing, while the card content mounts regardless in the very
-      // same tick — it is never torn out unanimated in the render the
-      // card content appears.
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelector(".below-block .card-content")).not.toBeNull();
     });
   });
 
-  // Real timers, matching the "resting_state: notch" describe block's own
-  // `vi.waitFor` idiom above (AnimatePresence-driven DOM removal in this
-  // codebase's test env needs real wall-clock time to elapse, not a fake-
-  // timer advance) — proves the peek's exit genuinely finishes and leaves
-  // the DOM, completing the contract the fake-timer test above starts
-  // ("gone after the exit window").
   it("the peek actually leaves the DOM once its own exit animation finishes after a mid-open promotion", async () => {
     const { container, rerender } = render(
       <StatusRailCard slot={{ state: "empty" }} hovered={true} />,
@@ -1979,17 +1514,9 @@ describe("StatusRailCard", () => {
     await vi.waitFor(() => {
       expect(container.querySelector(".idle-peek")).toBeNull();
     });
-    // the card content is the thing left behind, not an empty card
-    // (scoped to `.below-block .card-content` — see the fake-timer test
-    // above for why an unscoped query would find StatusDots's own
-    // `.card-content.idle` instead).
     expect(container.querySelector(".below-block .card-content")).not.toBeNull();
   });
 
-  // the idle face — IdleFace.tsx owns the gaze/blink animation details;
-  // these pin how StatusRailCard gates it to TRUE idle (a delayed reveal
-  // driven by fake timers, same pattern as the geometry describe block
-  // below).
   describe("idle face", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -2013,7 +1540,6 @@ describe("StatusRailCard", () => {
 
     it("appears only after the idle delay elapses while truly idle", () => {
       const { container } = render(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
-      // immediately: not yet revealed.
       expect(container.querySelector(".idle-face")).toBeNull();
 
       act(() => vi.advanceTimersByTime(4499));
@@ -2027,29 +1553,19 @@ describe("StatusRailCard", () => {
       const { container, rerender } = render(
         <StatusRailCard slot={{ state: "empty" }} hovered={false} />,
       );
-      // most of the way through the delay...
       act(() => vi.advanceTimersByTime(3000));
       expect(container.querySelector(".idle-face")).toBeNull();
 
-      // ...then hover breaks idle, which must cancel that in-flight timer.
       rerender(<StatusRailCard slot={{ state: "empty" }} hovered={true} />);
       rerender(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
 
-      // if the old timer had survived, only 1500ms more (3000 + 1500 =
-      // 4500) would be needed here — it must NOT have appeared yet.
       act(() => vi.advanceTimersByTime(1500));
       expect(container.querySelector(".idle-face")).toBeNull();
 
-      // the full delay from the fresh idle start does reveal it.
       act(() => vi.advanceTimersByTime(3000));
       expect(container.querySelector(".idle-face")).not.toBeNull();
     });
 
-    // On real notch hardware `.idle-face` is
-    // CSS-hidden for the process's entire lifetime (overlay-card.css's
-    // `data-notchtap-mode="hud"` gate) — so the component must not even
-    // mount there, or its reveal/gaze/blink timers would run forever for
-    // a node nothing can ever see (a continuous idle-CPU cost).
     describe("on real notch hardware (presentationFacts().mode === 'notch')", () => {
       beforeEach(() => {
         window.__NOTCHTAP_MODE__ = "notch";
@@ -2067,29 +1583,13 @@ describe("StatusRailCard", () => {
 
       it("never mounts the face at all — no new timer gets scheduled by it as idle continues", () => {
         render(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
-        // baseline: whatever unrelated timers this render already owns
-        // (e.g. FlankClock's own clock tick) — not zero, and not this
-        // fix's concern.
         const baseline = vi.getTimerCount();
-        // on the "hud"/eligible path (the describe block above), this
-        // same idle state arms IdleFace's own reveal timer on top of
-        // that baseline. Here the count must never grow past it, proving
-        // IdleFace never mounted rather than merely staying invisible.
         act(() => vi.advanceTimersByTime(60_000));
         expect(vi.getTimerCount()).toBeLessThanOrEqual(baseline);
       });
     });
   });
 
-  // compact->idle as one directional state machine. The outer shell's
-  // geometry (priority accent class + expanded width class) must NOT key
-  // off the live `showing` flag alone: that snaps straight to idle the
-  // instant a card starts exiting, a visible "grows before shrinking"
-  // race against the still-fading below-block content (delayed by
-  // useDelayedSwap's SWAP_EXIT_MS exit window). Entrance reads the live
-  // slot directly. Uses fake timers, scoped to this describe block only,
-  // so the SWAP_EXIT_MS (175ms) delayed-swap boundary is directly
-  // steppable (same pattern as useDelayedSwap.test.ts).
   describe("compact->idle geometry as one state machine", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -2099,138 +1599,73 @@ describe("StatusRailCard", () => {
       vi.useRealTimers();
     });
 
-    // Entrance contract: geometry keys off the live slot, so the shell
-    // grows (priority class + expanded class) on the exact same render
-    // the promotion arrives — no timer advance needed. This is the
-    // width-leads-content entrance.
     it("idle->showing promotion applies showing geometry (priority + expanded) on the same render the promotion arrives", () => {
       const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
 
       rerender(<StatusRailCard slot={GOAL} />);
-      // synchronous — zero timer advance — entrance never waits on the
-      // delayed swap.
       expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
     });
 
-    // A Low Promotion or a Breakthrough (High-while-Silenced) Promotion
-    // starts compact — the queue-owned `expanded` flag on the wire is
-    // already `false` for those from the very first emission (see
-    // `useExitChoreography`'s
-    // `expanded = showing ? slot.expanded : ...` already reading the live
-    // slot on entrance). The regression this guards against: `expanded`
-    // starting `true` for one render and THEN collapsing (a visible
-    // expand-then-collapse flash) — it must read compact on the exact same
-    // render the promotion arrives, same "no timer advance needed" contract
-    // as the expanded case just above.
     it("a promotion arriving with expanded:false renders compact on the very first render — no expand-then-collapse flash", () => {
       const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} />);
-      // synchronous — zero timer advance — the very first render already
-      // reflects the wire's expanded:false, never a transient expanded
-      // class.
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
     });
 
-    // Exit contract: the shell must hold its showing-geometry class for
-    // the whole SWAP_EXIT_MS delayed-swap window, then flip to `.idle` in
-    // the same tick the swap completes — never before.
     it("showing->idle exit holds the showing-geometry class until the SWAP_EXIT_MS swap, then settles idle", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} />);
-      // mid-exit, immediately after the live slot goes empty: the swap
-      // timer hasn't fired yet, so geometry must still read the frozen
-      // renderedSlot — high, not idle.
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175) minus one
-      // tick.
       act(() => vi.advanceTimersByTime(174));
-      // still one tick short of the swap — geometry must not have moved.
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
 
       act(() => vi.advanceTimersByTime(1));
-      // the swap has now completed — geometry settles idle in the same
-      // tick, not late.
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
       expect(container.querySelector(".card-assembly.high")).toBeNull();
     });
 
-    // The sharpest part of the contract: "geometry" is not just the
-    // showing/idle shell class, it also covers `expanded` — an expanded
-    // card must not silently collapse to compact mid-exit, only settle
-    // to idle once the swap actually completes. GOAL is expanded: true.
     it("an expanded card's showing->idle exit keeps the expanded class until the swap completes", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} />);
-      // mid-exit: expanded must still be held, not dropped to compact.
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175) minus one
-      // tick.
       act(() => vi.advanceTimersByTime(174));
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
       act(() => vi.advanceTimersByTime(1));
-      // swap complete — settles idle, expanded gone (idle has no concept
-      // of expanded).
       expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     });
 
-    // One overlapping collapse: `.exiting` (overlay-card.css's
-    // width-shrink + corner-round trigger) must appear on the VERY SAME
-    // render `showing` goes false — before any timer advance, same as
-    // the frozen `.high`/`.expanded` classes above — and disappear on the
-    // exact same tick the swap settles into `.idle`, never lagging behind
-    // (or leading) that handoff. Deliberately a SEPARATE assertion from
-    // the two above: `.exiting` is an independent signal layered
-    // alongside the frozen priority/expanded contract, which the full
-    // SWAP_EXIT_MS geometry freeze still drives.
     it("showing->idle exit adds `.exiting` on the same render showing goes false, and drops it exactly when the swap settles", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} />);
-      // t=0 of the exit — `.exiting` must already be present, not waiting
-      // on any timer (this is what lets the width/corner-round CSS start
-      // immediately instead of chaining after the geometry freeze).
       expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
-      // still frozen at the showing-flavored geometry class too — `.exiting`
-      // is additive, not a replacement for the existing contract.
       expect(container.querySelector(".card-assembly.high.exiting")).not.toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175) minus one tick.
       act(() => vi.advanceTimersByTime(174));
       expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
 
       act(() => vi.advanceTimersByTime(1));
-      // the swap has completed — `.exiting` clears in the same tick
-      // `.idle` appears, never lagging behind it.
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     });
 
-    // The entrance-side guard: `useDelayedSwap`'s raw `exiting` flag (not
-    // exposed as a class itself) goes true on BOTH legs — its `key`
-    // changes on an idle->showing promotion too (swapKey flips from
-    // "idle" to the new id) — so it is not, by itself, safe to read as
-    // "showing->idle exit in progress." `shellExiting`
-    // (StatusRailCard.tsx) exists specifically to add the extra `!showing`
-    // check; this test is the regression guard for that check, pinning
-    // that `.exiting` never appears on the promotion leg, at any point
-    // during or after the delayed-swap window.
     it("idle->showing promotion never applies `.exiting` (entrance stays untouched)", () => {
       const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
 
@@ -2241,38 +1676,23 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
     });
 
-    // `exitToBare` — the "box, then rounded shape pops in" fix.
-    // notch resting mode's exit must carry BOTH `exiting` and
-    // `exit-to-bare` for the whole SWAP_EXIT_MS window (never `.bare`
-    // until the swap actually settles), then flip to `.bare` with both
-    // exit classes gone, exactly like the plain `.exiting`->`.idle`
-    // handoff pinned above.
     it("notch resting mode: showing->idle exit carries `exiting exit-to-bare` (not `.bare`) for the whole window, then settles `.bare` with both exit classes gone", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
-      // t=0 of the exit — both classes present together, `.bare` not yet.
       expect(container.querySelector(".card-assembly.exiting.exit-to-bare")).not.toBeNull();
       expect(container.querySelector(".card-assembly.bare")).toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175) minus one tick.
       act(() => vi.advanceTimersByTime(174));
       expect(container.querySelector(".card-assembly.exiting.exit-to-bare")).not.toBeNull();
       expect(container.querySelector(".card-assembly.bare")).toBeNull();
 
       act(() => vi.advanceTimersByTime(1));
-      // the swap has completed — `.bare` appears, both exit classes gone
-      // in the same tick, never lagging behind it.
       expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
     });
 
-    // Rail mode's own regression guard, mirroring the notch-mode test
-    // above: `exit-to-bare` must NEVER appear on the rail leg, at any
-    // point during or after the exit window — `restingState === "rail"`
-    // never lands on `.bare` at all, so there is nothing for this
-    // modifier to converge on.
     it("rail resting mode: showing->idle exit never applies `exit-to-bare`, at any point in or after the exit window", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="rail" />);
 
@@ -2283,20 +1703,12 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
     });
 
-    // `exitToBare` narrowed with `&& !hovered`
-    // — see `useExitChoreography.ts`'s own doc for the wobble mechanism
-    // (`.bare:has(.idle-peek)`/`.bare.hovered` re-widening `--cw` and
-    // repainting the flanks the instant `bare` mounts with `hovered`
-    // already true). A hovered notch-mode exit must fall back to the
-    // plain `.exiting` rule instead, at every point through the window
-    // and after it settles `.bare`.
     it("notch resting mode: a hovered showing->idle exit never applies `exit-to-bare`, at any point in or after the exit window", () => {
       const { container, rerender } = render(
         <StatusRailCard slot={GOAL} restingState="notch" hovered={true} />,
       );
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />);
-      // t=0 of the exit — plain `.exiting`, never `.exit-to-bare`.
       expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
 
@@ -2304,18 +1716,10 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
 
       act(() => vi.advanceTimersByTime(1));
-      // settles `.bare` (still hovered) with no `exit-to-bare` ever having
-      // applied.
       expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
     });
 
-    // The mid-window flip: a hover arriving partway through an
-    // already-in-progress unhovered notch exit must drop `exit-to-bare`
-    // on the very render the hover lands, not wait for the window to
-    // finish — CSS transitions retarget continuously from whatever the
-    // computed value currently is, so there is no snap to guard against
-    // here, only that the class itself tracks the live `hovered` prop.
     it("notch resting mode: a hover arriving mid-window drops `exit-to-bare` immediately", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
 
@@ -2325,33 +1729,13 @@ describe("StatusRailCard", () => {
       act(() => vi.advanceTimersByTime(100));
       expect(container.querySelector(".card-assembly.exit-to-bare")).not.toBeNull();
 
-      // the hover primitive fires mid-window — same render shape as a
-      // real `hover-changed` event flipping the live `hovered` prop.
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />);
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
-      // still mid-exit (window hasn't elapsed) — `.exiting` alone now.
       expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
     });
   });
 });
 
-// string-pins the CSS convergence invariant —
-// `overlay-card.css`'s own INVARIANT comment on `.card-root
-// .card-assembly.exiting.exit-to-bare` (above the rule) spells out five
-// properties that must equal `.card-assembly.bare`'s own end-state values
-// so the exit-to-bare animation has nothing left to jump when the class
-// flip to `.bare` actually lands. jsdom has no layout/paint engine, so
-// this is pinned at the string level against the real stylesheet source,
-// same technique as `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`.
-//
-// Read via `node:fs`, not a `?raw`/`?inline` Vite import — see
-// `celebrationStacking.test.tsx`'s own comment on `readSourceCss` for why
-// (Vite's css plugin intercepts `.css` imports under vitest's SSR-consumer
-// transform and hands back an empty module).
-// overlay-card.css is split into src/overlay/*.css chunks pulled back
-// together via plain `@import "./relative.css";` lines — inlined here so
-// this returns the full literal stylesheet text callers expect (imports
-// are one level deep; no chunk file itself contains an @import).
 function readSourceCss(relativePath: string): string {
   const url = new NodeURL(relativePath, import.meta.url);
   const raw = readFileSync(fileURLToPath(url), "utf-8");
@@ -2360,14 +1744,6 @@ function readSourceCss(relativePath: string): string {
   );
 }
 
-// A variant of `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`'s own
-// `ruleBody` helper: this file's target selectors span multiple
-// source lines (e.g. the exit-to-bare synthetic-cutout rule's
-// `:root[...]\n .card-root\n .card-assembly...` wrap), so the marker is
-// matched with the selector's OWN whitespace collapsed to `\s+` rather than
-// requiring an exact byte-for-byte multi-line reproduction here — same
-// "throw on no match" contract as the single-line original, just tolerant
-// of how the source happens to be wrapped.
 function ruleBody(css: string, selector: string): string {
   const pattern = selector
     .split(/\s+/)
@@ -2378,11 +1754,6 @@ function ruleBody(css: string, selector: string): string {
     throw new Error(`selector not found in stylesheet: ${selector}`);
   }
   const braceStart = match.index + match[0].length - 1;
-  // Scan for the matching close brace by hand, skipping over `/* ... */`
-  // comment spans rather than a plain `indexOf("}")` — several of this
-  // file's own rule comments quote a class-selector list in prose (e.g.
-  // "`.bare .flank-{left,right}`"), and a naive scan closes the rule on
-  // that literal `}` inside the comment instead of the rule's real one.
   let i = braceStart + 1;
   let inComment = false;
   while (i < css.length) {
@@ -2404,17 +1775,8 @@ function ruleBody(css: string, selector: string): string {
   throw new Error(`unterminated rule for selector: ${selector}`);
 }
 
-// Extracts one declaration's value out of an already-sliced rule body.
-// Throws rather than returning `undefined` on a miss — same "no vacuous
-// pass" discipline as `ruleBody` itself; a typo'd property name must fail
-// loudly, not silently compare `undefined === undefined`.
 function propValue(body: string, prop: string): string {
   const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // no anchor on what precedes `prop` (a comment, a semicolon, the rule's
-  // opening brace) — the `\s*:\s*` right after it is enough of a guard:
-  // a hyphenated sibling like `padding-left` can never match the bare
-  // `padding` pattern, since there is no whitespace-only gap between
-  // `padding` and its own colon in that case.
   const match = body.match(new RegExp(`${escaped}\\s*:\\s*([^;]+);`));
   if (!match) {
     throw new Error(`property not found: ${prop}`);
@@ -2451,10 +1813,6 @@ describe("exit-to-bare CSS convergence invariant", () => {
   });
 
   it("flank background: the exit-to-bare animation's end state matches `.bare`'s (both transparent)", () => {
-    // the exit rule uses the longhand `background-color`, `.bare` uses the
-    // `background` shorthand — different property names, same resulting
-    // value, so each is read off its own rule rather than compared by
-    // property name.
     expect(propValue(exitFlankBody, "background-color")).toBe(
       propValue(bareFlankBody, "background"),
     );
@@ -2489,13 +1847,6 @@ describe("exit-to-bare CSS convergence invariant", () => {
   });
 });
 
-// ---- the icon strip's mount
-// gate and the selection-driven below-block swap, all exercised through
-// the whole StatusRailCard tree. Each mounted component's OWN behavior
-// is already covered in depth by its own file (IconStrip/
-// AgentBelowBlock/NewsBelowBlock/IdleHoverPeek) — these pin only what
-// THIS component actually decides: when each one mounts, and which
-// props it drives them with.
 describe("tab-notch integration", () => {
   afterEach(cleanup);
 
@@ -2551,11 +1902,8 @@ describe("tab-notch integration", () => {
           }}
         />,
       );
-      // agent: a registered session means present AND live
       expect(container.querySelector(".icon.agent")?.className).toContain("is-live");
-      // football: nothing in play, so not present at all
       expect(container.querySelector(".icon.football")?.className).not.toContain("is-present");
-      // news: always present whenever the strip is up
       expect(container.querySelector(".icon.news")?.className).toContain("is-present");
     });
 
@@ -2628,10 +1976,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelector(".below-block.idle-peek")).toBeNull();
     });
 
-    // An empty tab degrades to the ambient peek, never to "no
-    // below-block at all" — a blank shell is the blank-pull bug: the
-    // operator pulls a tab open and gets nothing. The agent CARD stays
-    // absent.
     it("selecting agent with no sessions degrades to the ambient peek, not to a blank shell", () => {
       const { container } = hoveredIdle("agent", QUIET, []);
       expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
@@ -2639,10 +1983,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // the other two empty-tab cases. News has no story wire at all
-    // (`TabBelowBlock`'s hard-wired `NO_NEWS_STORIES`), so it is always
-    // empty — selecting it must still keep the peek, never blank the
-    // hover outright.
     it("selecting news keeps the ambient peek, since no story wire exists to fill the block", () => {
       const { container } = hoveredIdle("news", {
         ...QUIET,
@@ -2652,9 +1992,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // ...and the positive case: with the UNGATED sessions threaded in
-    // (App.tsx reads `agentState.tabSessions`), a merely-working agent
-    // has something to render, so the peek yields to the real card.
     it("selecting agent with live sessions mounts the agent below-block and closes the peek", () => {
       const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
         agentSession(),
@@ -2664,7 +2001,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // The selected session must reach AgentBelowBlock and PositionBar.
     it("threads viewedSessionIndex through to the below-block, changing which session's hero renders", () => {
       const sessions = [
         agentSession({ project: { name: "alpha-repo", cwd: null } }),
@@ -2751,22 +2087,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelector(".below-block")).toBeNull();
     });
 
-    // ---- where the pulled card actually LANDS in the shell.
-    //
-    // `.card-assembly` is a `1fr auto 1fr` grid (flank / cutout / flank)
-    // and the rule that puts a card under the notch spans it across row 2.
-    // Grid placement only reaches DIRECT items, and every `TabBelowBlock`
-    // branch renders its own `.below-block` root inside this path's
-    // animating wrapper — i.e. a grandchild. That wrapper MUST carry its
-    // own placement; without it the browser auto-places it into the next
-    // free cell (the left flank column, effectively zero-width in bare
-    // notch mode) and the pulled card renders squeezed into the flank.
-    //
-    // jsdom applies no stylesheet, so these pin the machine-checkable
-    // half: the DOM shape the CSS requires (a placement class, on a direct
-    // child) and the rule that class resolves to. Whether the painted
-    // pixels really span the shell stays a hardware check
-    // (`docs/TESTING_STRATEGY.md` §5).
     it("mounts the pulled card in a placed wrapper that is a DIRECT child of the shell", () => {
       const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
         agentSession(),
@@ -2775,12 +2095,7 @@ describe("tab-notch integration", () => {
       const slot = container.querySelector(".tab-below-slot");
       expect(assembly).not.toBeNull();
       expect(slot).not.toBeNull();
-      // the whole point: one level deeper and the shell's grid cannot
-      // place it at all.
       expect(slot?.parentElement).toBe(assembly);
-      // and the reason the class must live on the WRAPPER rather than be
-      // dropped in favour of the `.below-block` rule — that block sits one
-      // level further down, out of the grid's reach.
       const block = container.querySelector('[data-testid="agent-below-block"]');
       expect(block).not.toBeNull();
       expect(block?.parentElement).toBe(slot);
@@ -2798,14 +2113,8 @@ describe("tab-notch integration", () => {
       const css = readSourceCss("../overlay-card.css");
       const slotRule = ruleBody(css, ".card-root .tab-below-slot");
       const blockRule = ruleBody(css, ".card-root .below-block");
-      // read off each rule rather than hardcoded twice, so a future move of
-      // the content row moves both or fails here.
       expect(propValue(slotRule, "grid-column")).toBe(propValue(blockRule, "grid-column"));
       expect(propValue(slotRule, "grid-row")).toBe(propValue(blockRule, "grid-row"));
-      // placement and box behaviour ONLY — the `.below-block` inside still
-      // owns every painted pixel, so any chrome declaration here would
-      // double-paint it. Asserted as the exact property list rather than a
-      // blocklist of the chrome we happened to think of.
       const declaredProps = slotRule
         .split(";")
         .map((declaration) => declaration.split(":")[0].trim())
@@ -2816,31 +2125,19 @@ describe("tab-notch integration", () => {
         "position",
         "box-sizing",
         "width",
-        // the same grid-blowout guard `.below-block` and the flanks carry:
-        // a spanning item's `auto` minimum can otherwise push the tracks
-        // wider than `--cw`.
         "min-width",
       ]);
     });
 
     it("the bare shell re-widens for ANY hover-mounted block, not just the ambient peek", () => {
       const css = readSourceCss("../overlay-card.css");
-      // The re-widen rule keys off `.below-block`, not `.idle-peek`:
-      // keying it to the peek alone leaves a pulled card rendering into a
-      // cutout-width shell. `ruleBody` throws on a miss, so narrowing the
-      // selector back fails here instead of silently passing.
       const bareRevealed = ruleBody(css, ".card-root .card-assembly.bare:has(.below-block)");
-      // `--present-icons` is the strip's icon-count growth formula, the
-      // value this rule animates toward (`stripGeometryParity.test.ts`
-      // pins its numbers).
       expect(propValue(bareRevealed, "--cw")).toContain("--present-icons");
       expect(() => ruleBody(css, ".card-root .card-assembly.bare:has(.idle-peek)")).toThrow(
         /selector not found/,
       );
     });
 
-    // the push path's regression pin: a Showing card renders its own
-    // content regardless of what is selected.
     it("a showing card renders its own content, untouched, whatever is selected", () => {
       const { container } = render(
         <StatusRailCard

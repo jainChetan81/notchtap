@@ -14,25 +14,14 @@ import { presentationFacts } from "./lib/presentationFacts";
 
 type RestingState = "rail" | "notch";
 
-// HUD mode has no hardware cutout to measure, so the app draws its own
-// pure-#000 rectangle (`.synthetic-cutout`, styles.css) at these
-// dimensions. Mirrored as `HUD_CUTOUT_W`/`HUD_CUTOUT_H` in
-// src-tauri/src/hover.rs — same lockstep rule as its geometry constants.
+// Mirrored by HUD_CUTOUT_W/H in src-tauri/src/hover.rs; keep dimensions in lockstep.
 const HUD_CUTOUT_WIDTH_PX = 200;
 const HUD_CUTOUT_HEIGHT_PX = 32;
 
-// Both surfaces stack in one grid cell so the crossfade overlap never
-// shifts layout: the row's height is the max of the two, growing down
-// from the notch. `mode="wait"` would add dead air before the Board;
-// `popLayout` needs a positioned parent and `.card-root` is display:contents.
 const SURFACE_STACK_STYLE = { display: "grid" } as const;
 const SURFACE_CELL_STYLE = { gridArea: "1 / 1" } as const;
 
-// The Board arrives on the longer BOARD_SUMMON_MS clock and exits on the
-// quieter SURFACE_SWAP_MS — emphasis carried by duration alone. LAW:
-// never transform the shell (the cutout must read as fixed hardware);
-// animate only content below the cutout, opacity-only here.
-// Exported so App.test.tsx pins these exact values.
+// Never animate transforms here: the synthetic cutout must remain fixed like hardware.
 export const BOARD_SURFACE_MOTION = {
   initial: { opacity: 0 },
   animate: {
@@ -45,8 +34,6 @@ export const BOARD_SURFACE_MOTION = {
   },
 };
 
-// The rail's routine swap — a plain symmetric crossfade, deliberately
-// without the Board's arrival emphasis.
 export const RAIL_SURFACE_MOTION = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
@@ -64,32 +51,16 @@ function applyAppearance(scale: number, radius: number, opacity: number) {
 function App() {
   const slot = useSlotState();
   const status = useStatusState();
-  // Precedence: a Visible Notification always wins; else the Board shows
-  // when `agent-state` holds sessions and the engine isn't Paused; else
-  // clock idle. Working-only summons are gated rust-side before publish.
-  // `presentationMode` is pure data (lib/presentation.ts) — one call site.
   const agentState = useAgentState();
   const mode = presentationMode(slot, agentState.sessions.length, status.paused);
-  // Resting (idle) render choice — seeded like scale/radius/opacity, hot-
-  // updated by the appearance-changed listener; a missing seed means "rail".
   const [restingState, setRestingState] = useState<RestingState>(
     () => window.__NOTCHTAP_APPEARANCE__?.resting_state ?? "rail",
   );
-  // No boot seed — the cursor position at page load is unknown, so this
-  // starts false and only moves via the hover-changed listener below.
   const [hovered, setHovered] = useState(false);
-  // Which tab rust has selected — decided rust-side, threaded down as a
-  // plain prop so StatusRailCard listens for nothing itself. The overlay
-  // is receive-only: it listens for rust-published events, invokes nothing.
+  // This window is receive-only: state arrives through Rust-published events; never invoke here.
   const selectedTab = useTabSelection();
-  // The Agent tab's viewed-session cursor — rust owns the value; this
-  // hook only renders what it's told.
   const viewedSessionIndex = useAgentViewedSession();
 
-  // Expose boot-time presentation facts to CSS — mode gates notch-only
-  // rules, cutout size feeds the geometry formulas (styles.css). HUD mode
-  // reports no cutout, so the synthetic constants fill in; a real
-  // measurement always wins.
   useEffect(() => {
     const { mode, cutoutWidth, cutoutHeight } = presentationFacts();
     document.documentElement.dataset.notchtapMode = mode;
@@ -137,8 +108,6 @@ function App() {
     };
   }, []);
 
-  // Mirrors the appearance-changed listener's shape above. No boot seed:
-  // the tracking area's own first event is the seed.
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     let unmounted = false;
@@ -161,20 +130,8 @@ function App() {
     };
   }, []);
 
-  // `.card-root` scopes overlay-card.css onto StatusRailCard, whose own
-  // root IS `.card-assembly` — this wrapper is the only ancestor hosting
-  // that scope; `display: contents` keeps it layout-neutral.
-  // The Agent Board is a top-level swap, not a mode inside StatusRailCard:
-  // `initial={false}` keeps first-mount renders synchronous (App.test.tsx),
-  // and the `agent-board` key changes only on a genuine board<->rail swap
-  // (notification<->idle both map to "status-rail"), so StatusRailCard is
-  // never remounted by this wrapper.
-  // Both branches crossfade opacity-only on different clocks; never
-  // transform the shell (the cutout must read as fixed hardware).
   return (
     <div className="card-root">
-      {/* Single-cell grid keeps the two surfaces stacked instead of queued
-          in flow during a swap — see `SURFACE_STACK_STYLE` above. */}
       <div className="surface-stack" style={SURFACE_STACK_STYLE}>
         <AnimatePresence initial={false}>
           {mode === "board" ? (
@@ -193,12 +150,6 @@ function App() {
                 status={status}
                 restingState={restingState}
                 hovered={hovered}
-                // Tab surface inputs: `agentState` read above for the
-                // Board's own branch — same snapshot, no second
-                // subscription. `sessions` is summons-gated, `tabSessions`
-                // the ungated view the agent ICON is lit from; a pull is
-                // user-initiated, so it reads the ungated one — `sessions`
-                // would open an empty block. Board render untouched.
                 selectedTab={selectedTab}
                 agentSessions={agentState.tabSessions}
                 agentCapturedAtMs={agentState.capturedAtMs}

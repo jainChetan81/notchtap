@@ -6,8 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>notch states — mirrors the shipped overlay</title>
 <style>
-  /* ============== real overlay tokens (vendor/shared-ui/design/tokens.css,
-     src/animationTiming.ts, src/styles.css :root) ============== */
+  /* Mirrors shared overlay tokens and animation timing. */
   :root {
     --overlay-blue: #0a84ff;
     --overlay-teal: #55d6bd;
@@ -28,20 +27,15 @@
     --rotation-exit-ms: 70ms;   /* ROTATION_EXIT_MS  — same-slot rotation content fade-out */
     --rotation-enter-ms: 120ms; /* ROTATION_ENTER_MS — same-slot rotation content fade-in */
     --interrupt-exit-ms: 60ms;  /* INTERRUPT_EXIT_MS — priority-preemption "yank" */
-    --interrupt-ease: cubic-bezier(.4,0,1,1); /* INTERRUPT_EASE */
+    --interrupt-ease: cubic-bezier(.4,0,1,1);
 
-    /* card-chrome.css geometry inputs. --notchtap-cutout-width defaults to
-       200px, the HUD synthetic-cutout constant (App.tsx's HUD_CUTOUT_WIDTH_PX)
-       — on real notch hardware this instead comes from a live measurement
-       (notchtap-detect) and varies by MacBook model; 200px is a
-       representative stand-in for this static mock either way. */
+    /* Hardware supplies the live cutout width; this static HUD mirror uses 200px. */
     --notchtap-cutout-width: 200px;
     --notchtap-cutout-height: 32px;
-    --card-scale: 1;   /* Settings "size" control, applyAppearance() */
-    --card-radius: 8px;/* Settings "corner radius" control */
-    --card-opacity: 1; /* Settings "glass/default/solid" control — below-block only */
+    --card-scale: 1;
+    --card-radius: 8px;
+    --card-opacity: 1;
 
-    /* ---- this page's OWN viewer chrome, not part of the mirrored app ---- */
     --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --page-accent: #7fe08d;
   }
   * { box-sizing: border-box; }
@@ -66,7 +60,7 @@
   .geo-table th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
   .geo-table td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
 
-  /* ============== real shell geometry (card-chrome.css, mirrored) ============== */
+  /* Mirrors card-chrome.css shell geometry. */
   .card-root .card-assembly {
     position: relative;
     box-sizing: border-box;
@@ -78,20 +72,13 @@
     isolation: isolate;
     transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
-    /* Base width changes use the house curve. Arrival bounce is scoped to
-       the transient `.promoting` class below. */
+    /* Arrival bounce is scoped to `.promoting`; other width changes use the house curve. */
     transition: width var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
-  /* Expanded width and manifest disclosure share one duration and curve. */
   .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); transition: width var(--expand-ms) var(--ease-notchtap); }
-  /* the arrival pop, scoped: StatusRailCard.tsx arms `.promoting` in the
-     same commit the width formula flips to showing geometry and clears it
-     EXPAND_MS later. Declared after `.expanded` on purpose — the two
-     co-occur on a promotion that arrives expanded, and they tie on
-     specificity, so source order is what lets the arrival win. */
+  /* `.promoting` follows `.expanded` so equal specificity gives arrival timing precedence. */
   .card-root .card-assembly.promoting { transition: width var(--expand-ms) var(--ease-notchtap-pop); }
-  /* Bare and peek widths share the reveal timing used by the flank content. */
   .card-root .card-assembly.bare { --cw: min(var(--notchtap-cutout-width), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
   .card-root .card-assembly.bare:has(.idle-peek) { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
   .card-root .card-assembly.exiting { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--swap-exit-ms) var(--ease-notchtap); }
@@ -100,17 +87,13 @@
   .card-root .flank-left, .card-root .flank-right {
     box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
     background: #000; color: var(--overlay-fg); min-width: 0;
-    /* Border radius transitions on entrance. Higher-specificity exit rules
-       apply the content-exit timing below. */
+    /* Higher-specificity exit rules override the entrance radius timing. */
     transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap), border-radius var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
   .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
 
-  /* ROUNDING LAW (card-chrome.css): the cutout's own base corners stay
-     perfectly square. Outer rounding lives ONLY on the flanks (idle — they
-     ARE the bottom edge) or on .below-block (showing/exiting — it owns the
-     bottom edge instead). Never both, or you get a double-curve gap. */
+  /* Only the element owning the assembly's bottom edge receives outer rounding. */
   .card-root .card-assembly:not(:has(.below-block)) .flank-left,
   .card-root .card-assembly.exiting .flank-left { border-bottom-left-radius: var(--card-radius); transition: border-radius var(--content-exit-ms) var(--ease-notchtap); }
   .card-root .card-assembly:not(:has(.below-block)) .flank-right,
@@ -121,15 +104,8 @@
   .card-root .card-assembly.bare.hovered .flank-left { padding-left: 16px; }
   .card-root .card-assembly.bare.hovered .flank-right { padding-right: 16px; }
 
-  /* Real behavior is two independently-driven signals landing on the SAME
-     bare shell: `.bare:has(.idle-peek)` re-widens --cw (real DOM presence
-     of the hover-reveal below-block), `.bare.hovered` repaints the flanks
-     opaque (the live rust-derived `hovered` prop). Both are driven by the
-     click-through window's own tracking area, never CSS `:hover`. This
-     static page has no such constraint, so `.bare-hover-demo:hover`
-     stands in for both signals at once, for the standalone bare-notch
-     rigs in sections 1 and 5 (section 3's live demo drives the real
-     `.bare`/`.bare.hovered`/`:has(.idle-peek)` combination via JS). */
+  /* The shipped click-through window separates DOM-presence and Rust hover signals.
+     This standalone rig uses :hover to drive both. */
   .card-root .card-assembly.bare-hover-demo:hover {
     --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%);
   }
@@ -144,8 +120,7 @@
     border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
   }
 
-  /* Concave gills use radial gradients because border radius cannot carve
-     inward. Opacity controls their transition in this HUD-only reference. */
+  /* Concave HUD gills use radial gradients because border-radius cannot carve inward. */
   .card-root .notch-gill { display: block; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; opacity: 0; transition: opacity var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly:not(:has(.below-block)):not(.bare) .notch-gill,
   .card-root .card-assembly.exiting:not(.bare) .notch-gill { opacity: 1; }
@@ -163,14 +138,13 @@
   .card-root .below-block.agent-origin::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
   .card-root .below-block.agent-origin .compact, .card-root .below-block.agent-origin .manifest { position: relative; z-index: 1; }
 
-  /* priority accent — src/overlay/card-chrome.css's three tiers */
+  /* Mirrors card-chrome.css priority tiers. */
   .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
   .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
   .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 
-  /* ============== compact / masthead / title / body (masthead-content.css) ============== */
-  /* The base min-height transition keeps compact height, shell width, and
-     manifest disclosure aligned in both directions. */
+  /* Mirrors masthead-content.css. */
+  /* Compact height, shell width, and disclosure share one timing. */
   .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; transition: min-height var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly.expanded .compact { min-height: 82px; }
   .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
@@ -196,7 +170,7 @@
   .card-root .detail-label { margin-bottom: 5px; margin-top: 8px; color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
   .card-root .detail-value { color: rgba(255,255,255,0.74); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 
-  /* ============== manifest / expanded panel (manifest.css) ============== */
+  /* Mirrors manifest.css. */
   .card-root .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--expand-ms) var(--ease-notchtap), opacity var(--expand-ms) var(--ease-notchtap); }
   .card-root .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
   .card-root .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
@@ -207,17 +181,15 @@
   .card-root .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
   .card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
-  /* ============== ttl-bar / queue segments (ttl-bar.css) ============== */
-  /* Explicit row placement keeps every segment and the fill in one 4px row. */
+  /* Mirrors ttl-bar.css. */
   .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
-  /* Untouched segments stay bright, consumed segments dim, and the fill
-     drains from the right in the queue direction. */
+  /* The fill drains from the right in queue order. */
   .card-root .ttl-seg { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: background var(--reveal-ms) var(--ease-notchtap); }
   .card-root .ttl-seg.done { background: rgba(255,255,255,0.08); }
   .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: right; will-change: transform; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
   .card-root .ttl-fill.paused { opacity: 0.85; background: color-mix(in srgb, var(--accent) 90%, transparent); }
 
-  /* ============== news category colors (news-category.css) ============== */
+  /* Mirrors news-category.css. */
   .card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
   .card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
   .card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
@@ -233,18 +205,16 @@
   .card-root .news-shade .compact, .card-root .news-shade .manifest { position: relative; z-index: 1; }
   @keyframes shade-drift { 0% { transform: translate3d(0,0,0); } 33% { transform: translate3d(-7%,-2%,0); } 66% { transform: translate3d(-3%,-5%,0); } 100% { transform: translate3d(-8%,-6%,0); } }
 
-  /* ============== source-identity colors (source-identity.css) — every
-     non-news origin's own "who sent this" color, on the SAME --cat/--cat-deep/
-     --cat-pill channel news uses, never --accent (priority stays orthogonal). ============== */
-  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); } /* Anthropic "crail" terracotta */
-  .card-root .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); } /* OpenAI green */
-  .card-root .src-kimi        { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); } /* deliberately mono */
+  /* Source identity shares the category channel; priority remains orthogonal. */
+  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
+  .card-root .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); }
+  .card-root .src-kimi        { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); }
   .card-root .src-opencode    { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
-  .card-root .src-agent       { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); } /* runtime unknown */
+  .card-root .src-agent       { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
   .card-root .src-football    { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
-  .card-root .src-manual      { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); } /* "CLI blue" */
+  .card-root .src-manual      { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
 
-  /* ============== status dots (status-dots.css) ============== */
+  /* Mirrors status-dots.css. */
   .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
   .card-root .status-dot {
     box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none;
@@ -267,7 +237,7 @@
   .card-root .pause-glyph span { width: 2px; height: 9px; border-radius: 1px; background: rgba(255,255,255,0.5); }
   .card-root .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
 
-  /* ============== idle hover-peek (idle-peek.css) ============== */
+  /* Mirrors idle-peek.css. */
   .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 0; }
   .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
   .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
@@ -280,7 +250,6 @@
   .card-root .idle-peek-timeline::before { content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%); width: 5px; height: 5px; transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75); }
 
 
-  /* ============== this page's own control/demo chrome (not app UI) ============== */
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
   .controls label { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
   select, button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
@@ -582,15 +551,13 @@
 <script>
   "use strict";
 
-  // ---------- section 2: idle-peek variant switcher ----------
   const peekVariantSelect = document.getElementById("peek-variant");
   const dotStateSelect = document.getElementById("dot-state");
   const idleDotsHost = document.getElementById("idle-dots");
   const peekContent = document.getElementById("peek-content");
 
   function statusDotsMarkup(mode) {
-    // mirrors StatusDots.tsx's shape/active/dim logic for the four
-    // configured-state combinations it can render.
+    // Mirrors StatusDots shape, active, and dim states.
     if (mode === "unavailable") {
       return `<span class="status-dots">
         <span class="status-dot football shape-unavailable"></span>
@@ -634,11 +601,7 @@
   renderPeek();
   renderDots();
 
-  // Real overlay drives .hovered off a rust tracking-area event, never CSS
-  // :hover (the window is click-through). This static page has no such
-  // constraint, so a plain :hover-driven height/opacity reveal stands in
-  // for it — close enough to demonstrate the geometry, not a claim that
-  // the shipped app uses :hover.
+  // The shipped click-through window uses Rust hover tracking; this static rig uses :hover.
   const idleRig = document.getElementById("idle-rig");
   const idlePeekBlock = document.getElementById("idle-peek-block");
   idleRig.addEventListener("mouseenter", () => {
@@ -649,7 +612,6 @@
   });
   idlePeekBlock.style.transition = "height 260ms " + getComputedStyle(document.documentElement).getPropertyValue("--ease-notchtap");
 
-  // ---------- section 3: the notification lifecycle demo ----------
   const originSelect = document.getElementById("origin-select");
   const prioritySelect = document.getElementById("priority-select");
   const restingSelect = document.getElementById("resting-select");
@@ -795,8 +757,7 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  // An ordinary end-of-turn exit: the Slot genuinely empties, so the shell
-  // (not just the content) plays the exiting -> idle/bare geometry above.
+  // End-of-turn empties the slot, so both shell and content exit.
   function exitCard() {
     showing = false;
     if (rafId !== null) cancelAnimationFrame(rafId);
@@ -827,18 +788,8 @@
     }, 175);
   }
 
-  // A Priority Preemption: queue.rs swaps the Visible slot's CONTENT
-  // in-place — the Slot never empties, so `showing` never goes false and
-  // the shell never touches idle/bare geometry at all (useExitChoreography's
-  // `shellExiting` is `!showing && renderedShowing`; showing stays true
-  // throughout). Only the below-block content changes: the outgoing item
-  // plays the fast, sharp "yank" (INTERRUPT_EXIT_MS/INTERRUPT_EASE), then
-  // — because the real AnimatePresence uses mode="wait" — the incoming
-  // item enters afterward with the ordinary PROMOTION slide (SWAP_EXIT_MS/
-  // NOTCHTAP_EASE), never the lighter same-tier rotation fade. The shell's
-  // priority accent color updates the instant the new (higher) priority
-  // class lands; width only changes if `expanded` differs, exactly like
-  // any other same-slot rotation.
+  // Priority preemption swaps content in place; the visible slot and shell never exit.
+  // The interrupt exit completes before the incoming promotion enters.
   function interrupt() {
     if (!showing) return;
     const opts = Array.from(prioritySelect.options).map((o) => o.value);

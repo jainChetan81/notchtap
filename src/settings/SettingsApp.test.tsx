@@ -19,10 +19,6 @@ import {
 } from "./SettingsApp";
 import type { AdapterHealthDto } from "./types";
 
-// jsdom has no ResizeObserver; the shadcn Switch
-// (radix-ui's useSize hook, used to size its thumb) reads one on mount.
-// A no-op stub is enough — nothing in this suite asserts on a resize
-// callback, only on rendered DOM/ARIA state.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -31,13 +27,6 @@ class ResizeObserverStub {
 // biome-ignore lint/suspicious/noExplicitAny: test-environment polyfill assignment, not app code.
 (globalThis as any).ResizeObserver ??= ResizeObserverStub;
 
-// Several tests drive setInterval/setTimeout-based status transitions
-// (ok-message auto-clear) with fake timers. Those
-// timers must be created UNDER the fake clock, so fake timers are engaged
-// before render — which means we can't rely on RTL's findBy/waitFor (their
-// internal polling assumes real timers). This flushes the microtask queue
-// enough times to drain invoke() promise chains and any resulting state
-// updates, entirely independent of the timer fake/real state.
 async function flush(times = 6) {
   for (let i = 0; i < times; i++) {
     await act(async () => {
@@ -46,9 +35,6 @@ async function flush(times = 6) {
   }
 }
 
-// The shadcn/radix Switch carries its on/off signal as `aria-checked`
-// on a real `<button role="switch">`, not as `HTMLInputElement.checked`
-// — every toggle assertion in this file reads it through here.
 function isChecked(element: HTMLElement): boolean {
   return element.getAttribute("aria-checked") === "true";
 }
@@ -110,9 +96,6 @@ const config: Config = {
   prefix_shortcut: "⌃⇧Space",
 };
 
-// Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
-// get_default_config, ) — the fixture the "Reset to defaults" test
-// asserts concrete values against (port 9789, ttl 8, tier cap 50, ...).
 const rustConfigDefaults: Config = {
   port: 9789,
   default_ttl: 8,
@@ -169,12 +152,6 @@ const rustConfigDefaults: Config = {
   prefix_shortcut: "⌃⇧Space",
 };
 
-// get_history's wire shape — snake_case throughout, including
-// `meta`; pinned against a live serde_json print of a real HistoryEntry
-// rather than derived from the SlotState (camelCase) convention. 088's
-// read_recent returns oldest -> newest; these two fixtures are ordered
-// that way so the "newest first" display test can assert the UI does the
-// reversal, not the mock data.
 const historyEntryOlder: HistoryEntry = {
   recorded_at_ms: 1700000000000,
   event: {
@@ -219,8 +196,6 @@ const historyEntryNewer: HistoryEntry = {
   },
 };
 
-// every optional field populated, to exercise the
-// metadata chips + the expandable <details> block together.
 const historyEntryFullMeta: HistoryEntry = {
   recorded_at_ms: 1700000200000,
   event: {
@@ -265,9 +240,6 @@ function mockLoads() {
 afterEach(() => {
   cleanup();
   clearMocks();
-  // defensive: a test that enables fake timers ('s auto-clear
-  // tests) always restores real timers itself, but this guards against a
-  // leak into later tests if one fails mid-test.
   vi.useRealTimers();
 });
 
@@ -280,9 +252,6 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "General" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Football" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "News" })).toBeTruthy();
-    // the Cmux tab is gone — the cmux relay is
-    // superseded by the v7 Agent Adapter layer; replaces it
-    // with the Agents section asserted below.
     expect(screen.queryByRole("button", { name: "Cmux" })).toBeNull();
     expect(screen.getByRole("button", { name: "Agents" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
@@ -338,8 +307,6 @@ describe("SettingsApp", () => {
     expect(await screen.findByText("Red card (High priority, football)")).toBeTruthy();
     expect(await screen.findByText("Generic alert (High priority, agent)")).toBeTruthy();
     expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
-    // the four states the old four-sample gallery could
-    // never show — the ones most sensitive to CSS drift.
     expect(await screen.findByText("Compact (collapsed manifest, medium priority)")).toBeTruthy();
     expect(await screen.findByText("Live match (recurring scorecard, football)")).toBeTruthy();
     expect(await screen.findByText("News headline, compact (single timestamp)")).toBeTruthy();
@@ -347,10 +314,6 @@ describe("SettingsApp", () => {
     expect(
       await screen.findByText("Parliament passes the landmark digital rights bill"),
     ).toBeTruthy();
-    // the agent sample's body carries inline markdown —
-    // the command must render as <code> elements, not literal backticks.
-    // it shows twice on the expanded sample: compact .body + manifest
-    // Message cell both run renderInlineMarkdown.
     const previewCommands = await screen.findAllByText("git push origin master");
     expect(previewCommands.length).toBe(2);
     expect(previewCommands.every((el) => el.tagName === "CODE")).toBe(true);
@@ -365,10 +328,6 @@ describe("SettingsApp", () => {
     ).toBeTruthy();
   });
 
-  // the compact fixture renders
-  // `.compact` (the collapsed-manifest state), and the live fixture
-  // renders its `.chip-live` (proof `espn` meta reached the recurring
-  // scorecard branch, not the generic compact/manifest branch).
   it("Appearance gallery: every fixture renders without error, compact shows .compact, live shows its live chip", async () => {
     mockLoads();
     const { container } = render(<SettingsApp />);
@@ -395,10 +354,6 @@ describe("SettingsApp", () => {
       ".preview-row",
     ) as HTMLElement;
     expect(liveRow.querySelector(".chip-live")).not.toBeNull();
-    // `.notif-block` is gone — the live card renders through
-    // `FootballHeroCard`'s shared template now, with the score-row kept
-    // as an additive block (`.score-row`) rather than the old bespoke
-    // wrapper.
     expect(liveRow.querySelector(".score-row")).not.toBeNull();
   });
 
@@ -438,23 +393,16 @@ describe("SettingsApp", () => {
     expect(screen.getByDisplayValue("14")).toBeTruthy();
     expect(screen.getByDisplayValue("75")).toBeTruthy();
     expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
-    // the toggle reflects the loaded config's resting_state
-    // ("notch" in this fixture) — checked means "hidden while idle".
     expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(true);
     expect(
       screen.getByText(
         "Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts.",
       ),
     ).toBeTruthy();
-    // the Silenced group's toggle/window reflect the loaded
-    // config fixture (enabled: true, window: "00:00-10:00").
     expect(isChecked(screen.getByLabelText("Enable silent period"))).toBe(true);
     expect(screen.getByDisplayValue("00:00-10:00")).toBeTruthy();
   });
 
-  // the hide-when-idle toggle patches resting_state and it rides
-  // the same Save & Relaunch path as every other General-section field —
-  // the toggle's help text says so, and this test pins that it's true.
   it("toggling Hide overlay when idle patches resting_state into the saved config", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -468,7 +416,7 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     const toggle = await screen.findByLabelText("Hide overlay when idle");
-    expect(isChecked(toggle)).toBe(true); // fixture config has resting_state: "notch"
+    expect(isChecked(toggle)).toBe(true);
 
     fireEvent.click(toggle);
     expect(isChecked(toggle)).toBe(false);
@@ -480,9 +428,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.resting_state).toBe("rail");
   });
 
-  // the Silenced group's toggle and window field both round-trip
-  // into the saved `[silence]` config block, same Save & Relaunch path as
-  // every other General-section field.
   it("toggling Silent period and editing the window both patch config.silence in the saved payload", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -496,7 +441,7 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     const toggle = await screen.findByLabelText("Enable silent period");
-    expect(isChecked(toggle)).toBe(true); // fixture config has silence.enabled: true
+    expect(isChecked(toggle)).toBe(true);
     fireEvent.click(toggle);
     expect(isChecked(toggle)).toBe(false);
 
@@ -510,10 +455,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.silence).toEqual({ enabled: false, window: "23:00-07:30" });
   });
 
-  // an in-progress invalid window string must NOT reach
-  // patchConfig (the last valid value stays committed) and must surface an
-  // inline error — the client-side mirror of `Window::parse`'s rules, ahead
-  // of the server-side ErrorPanel round-trip.
   it("an invalid silent-period window shows an inline error and never patches config.silence.window", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -538,9 +479,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.silence.window).toBe("00:00-10:00");
   });
 
-  // the prefix keybinding field, in the Shortcuts
-  // section, round-trips into config.prefix_shortcut through the same
-  // Save & Relaunch path as every other Settings field.
   it("editing the prefix keybinding patches config.prefix_shortcut in the saved payload", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -564,11 +502,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.prefix_shortcut).toBe("⌃⇧X");
   });
 
-  // an in-progress invalid prefix string must NOT reach
-  // patchConfig (the last valid value stays committed) and must surface
-  // an inline error — the client-side mirror of
-  // `settings::is_valid_prefix_shortcut`'s rules, ahead of the
-  // server-side ErrorPanel round-trip.
   it("an invalid prefix keybinding shows an inline error and never patches config.prefix_shortcut", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -633,9 +566,6 @@ describe("SettingsApp", () => {
     mockLoads();
     render(<SettingsApp />);
 
-    // integer field: clear-then-retype must not flash to 0 mid-edit —
-    // the old `onChange(Number(e.target.value))` pattern turned a
-    // cleared field into `Number("") === 0` on every keystroke.
     const port = (await screen.findByLabelText("Listener port")) as HTMLInputElement;
     fireEvent.change(port, { target: { value: "" } });
     expect(port.value).toBe("");
@@ -662,9 +592,6 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     await screen.findByDisplayValue("4321");
-    // get_default_config now resolves on its own microtask, separate from
-    // get_config — wait for it to land (button enabled)
-    // before clicking, rather than assuming it's already there.
     await waitFor(() => {
       expect(
         (
@@ -715,8 +642,6 @@ describe("SettingsApp", () => {
       ).toBe("true");
     });
 
-    // get_default_config resolves on its own microtask — wait for the button
-    // to enable before clicking, or the reset asserts against un-reset state.
     await waitFor(() => {
       expect(
         (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
@@ -764,10 +689,6 @@ describe("SettingsApp", () => {
     const rssToggle = await screen.findByLabelText("Priority");
     expect(selectedPriorityLabel(rssToggle)).toBe("High");
   });
-
-  // `agent_priority`/`agent_ttl_secs` have no settings-window control; the
-  // Agents section owns agent configuration, so there is nothing to
-  // exercise here.
 
   it("preserves a feed's source/category when its url is edited by a trailing slash", async () => {
     let savedConfig: Config | null = null;
@@ -840,8 +761,6 @@ describe("SettingsApp", () => {
     ]);
   });
 
-  // --- Topics textarea (merges with Feeds, not either/or) ---
-
   it("loads Topics from config and saves edited lines back, trimmed and empty lines dropped", async () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
@@ -869,17 +788,11 @@ describe("SettingsApp", () => {
     expect(savedConfig!.rss_topics).toEqual(["formula 1", "nvidia earnings"]);
   });
 
-  // --- on-the-go search (search_news_now) ---
-
   describe("Search now", () => {
     async function openNews() {
       render(<SettingsApp />);
       await screen.findByRole("heading", { level: 1, name: "General" });
       fireEvent.click(screen.getByRole("button", { name: "News" }));
-      // Waits for the News section's own content (not just the header,
-      // which updates a render ahead of the AnimatePresence-keyed content
-      // swap) — mirrors the existing feed tests' `findByLabelText("Feeds")`
-      // pattern above.
       await screen.findByLabelText("Topics");
     }
 
@@ -909,7 +822,6 @@ describe("SettingsApp", () => {
 
       await waitFor(() => expect(invokedQuery).toBe("aston villa transfers"));
       expect(await screen.findByText("3 stories queued")).toBeTruthy();
-      // input clears on success
       await waitFor(() => expect(input.value).toBe(""));
     });
 
@@ -967,10 +879,6 @@ describe("SettingsApp", () => {
     });
   });
 
-  // a read-only legend of every SOURCE_CATEGORY_COLORS
-  // token, rendered as one MetaChip per category with a capitalized
-  // label — restrained, no interactivity, so this just checks it's
-  // there and coloured, not that it can be clicked.
   it("News section renders a read-only category legend, including a capitalized 'Science' chip", async () => {
     mockLoads();
     render(<SettingsApp />);
@@ -990,7 +898,6 @@ describe("SettingsApp", () => {
     probe.style.background = SOURCE_CATEGORY_COLORS.science;
     expect(dot.style.background).toBe(probe.style.background);
 
-    // every legend token renders, not just science
     for (const label of ["Politics", "Tech", "Sports", "Business", "World", "Science"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
@@ -1005,10 +912,6 @@ describe("SettingsApp", () => {
 
     const rows = screen.getAllByRole("listitem");
     const [newsRow, agentRow, manualRow, footballRow] = rows;
-    // The boundary buttons are marked `aria-disabled` rather than native
-    // `disabled`, so they stay in the tab order and a boundary move never
-    // strands keyboard focus on <body>; `move` no-ops when the target is
-    // out of range.
     expect(
       within(newsRow)
         .getByRole("button", { name: /earlier/ })
@@ -1033,8 +936,6 @@ describe("SettingsApp", () => {
   });
 
   it("Diagnostics section renders the lines returned by get_recent_log_lines", async () => {
-    // same advisory-fetch shape as the other section-open fetches: the
-    // fetch fires on section-open and resolves on its own microtask.
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_default_config") return rustConfigDefaults;
@@ -1053,8 +954,6 @@ describe("SettingsApp", () => {
   });
 
   it("History section renders entries newest-first from a mocked get_history", async () => {
-    // fixture entries are oldest -> newest (088's read_recent contract);
-    // the UI must reverse them for display, not the mock.
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_default_config") return rustConfigDefaults;
@@ -1071,19 +970,11 @@ describe("SettingsApp", () => {
 
     const titles = screen
       .getAllByText(/notification$/)
-      // history-title carries utility classes alongside its stable
-      // "history-title" hook class, so an exact className match can't
-      // isolate it — check for the token (classList.contains) instead.
       .filter((el) => el.classList.contains("history-title"))
       .map((el) => el.textContent);
     expect(titles).toEqual(["Second notification", "First notification"]);
   });
 
-  // the origin span picks up its colour from
-  // SOURCE_ORIGIN_COLORS — a recognized origin (manual) carries the
-  // matching inline `color`, an origin with no entry in that table
-  // (news, which is coloured by category instead) carries no inline
-  // style at all.
   it("History origin spans carry each origin's SOURCE_ORIGIN_COLORS colour, news included", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
@@ -1102,22 +993,14 @@ describe("SettingsApp", () => {
     const manualSpan = originSpans.find((el) => el.textContent === "manual") as HTMLElement;
     const newsSpan = originSpans.find((el) => el.textContent === "news") as HTMLElement;
 
-    // jsdom normalizes an inline hex colour to its rgb() form on read —
-    // set the same hex on a throwaway element and read it back rather
-    // than hardcoding the rgb triplet, so this stays pinned to
-    // SOURCE_ORIGIN_COLORS.manual even if that hex ever changes.
     const probe = document.createElement("span");
     probe.style.color = SOURCE_ORIGIN_COLORS.manual;
     expect(manualSpan.style.color).toBe(probe.style.color);
-    // news is coloured at the ORIGIN level here (the category system is
-    // a card-side refinement) — see SOURCE_ORIGIN_COLORS.news's comment.
     probe.style.color = SOURCE_ORIGIN_COLORS.news;
     expect(newsSpan.style.color).toBe(probe.style.color);
   });
 
   it("Empty-history state renders the 'nothing recorded yet' copy", async () => {
-    // fixture config has history_enabled: true, so an empty result reads
-    // as "on, nothing recorded" rather than "off".
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_default_config") return rustConfigDefaults;
@@ -1172,7 +1055,6 @@ describe("SettingsApp", () => {
 
     const clearButton = await screen.findByRole("button", { name: "Clear history" });
     fireEvent.click(clearButton);
-    // first click only arms the confirmation — clear_history must NOT fire yet
     expect(clearHistory).not.toHaveBeenCalled();
     expect(await screen.findByRole("button", { name: "Really clear?" })).toBeTruthy();
 
@@ -1180,10 +1062,6 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
   });
 
-  // same fix, same test shape as QueueSection's own K1 test
-  // above — HistorySection carried the identical parent-level-conditional
-  // bug (`entries.length === 0 ? <p> : <ul>…`), so Clear history's own
-  // outgoing row never got to exit-animate either.
   it("Clear history lets the row exit-animate instead of vanishing outright, with the empty state appearing immediately alongside it", async () => {
     const clearHistory = vi.fn();
     let entries: HistoryEntry[] = [historyEntryOlder];
@@ -1206,23 +1084,16 @@ describe("SettingsApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Really clear?" }));
     await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
 
-    // the render where `entries` actually flipped to `[]`: the empty-state
-    // text is already up, but the outgoing row is STILL in the DOM,
-    // mid-exit — never both-at-once under the old parent-level ternary.
     expect(
       await screen.findByText("History is on, but nothing has been recorded yet."),
     ).toBeTruthy();
     expect(screen.getByText("First notification")).toBeTruthy();
 
-    // once the row's own 180ms exit animation actually finishes, it
-    // leaves the DOM for good.
     await waitFor(() => {
       expect(screen.queryByText("First notification")).toBeNull();
     });
   });
 
-  // history richness — the metadata row + expandable
-  // details.
   describe("history richness", () => {
     function mockHistory(entries: HistoryEntry[]) {
       mockIPC((command) => {
@@ -1248,15 +1119,12 @@ describe("SettingsApp", () => {
       ) as HTMLElement;
       expect(row).not.toBeNull();
 
-      // always-present chips: source, category, priority, event_type, rotation
       expect(within(row).getByText("ESPN")).toBeTruthy();
       expect(within(row).getByText("Sports")).toBeTruthy();
       expect(within(row).getByText("High")).toBeTruthy();
       expect(within(row).getByText("Score update")).toBeTruthy();
       expect(within(row).getByText("every 30s")).toBeTruthy();
 
-      // the disclosure starts closed, is queryable/togglable by its
-      // accessible (visible) name, and flips `open` on click.
       const details = row.querySelector(".history-details") as HTMLDetailsElement;
       expect(details).not.toBeNull();
       expect(details.open).toBe(false);
@@ -1264,13 +1132,10 @@ describe("SettingsApp", () => {
       fireEvent.click(summary);
       expect(details.open).toBe(true);
 
-      // expanded-only content
       expect(within(row).getByText("Full-time report")).toBeTruthy();
       expect(within(row).getByText("arsenal-vs-chelsea")).toBeTruthy();
       expect(within(row).getByText("Attendance")).toBeTruthy();
       expect(within(row).getByText("60,000")).toBeTruthy();
-      // published_at_ms (1700000000000 = 22:13 UTC), now rendered via the
-      // pinned en-US 12-hour formatter shared with the overlay clock (S3).
       expect(within(row).getByText("10:13 PM")).toBeTruthy();
       expect(within(row).getByText(/ENG\.1: ARS 2–0 CHE \(FT\)/)).toBeTruthy();
       expect(within(row).getByText("https://example.com/story")).toBeTruthy();
@@ -1285,32 +1150,20 @@ describe("SettingsApp", () => {
       ) as HTMLElement;
       expect(row).not.toBeNull();
 
-      // only the three always-present chips (priority, event_type,
-      // rotation) — no source/category chip.
       expect(row.querySelectorAll(".history-meta-chip")).toHaveLength(3);
       expect(within(row).getByText("Medium")).toBeTruthy();
       expect(within(row).getByText("Generic")).toBeTruthy();
       expect(within(row).getByText("TTL 8s")).toBeTruthy();
 
-      // no optional-richness fields exist on this fixture, so no
-      // disclosure affordance renders at all.
       expect(row.querySelector(".history-details")).toBeNull();
       expect(within(row).queryByText("More details")).toBeNull();
     });
 
     it("falls back to the raw wire value for an unrecognized priority or rotation kind, instead of a blank chip", async () => {
-      // `get_history` crosses the tauri IPC boundary as untyped JSON — an
-      // unexpected priority/rotation.kind (a future variant, a bug, a
-      // hand-edited history.jsonl) must render legibly rather than as an
-      // empty chip (an un-narrowed `Record` lookup would return
-      // `undefined`, which React renders as nothing).
       const malformed: HistoryEntry = {
         ...historyEntryOlder,
         event: {
           ...historyEntryOlder.event,
-          // deliberately off-contract values simulating untyped IPC
-          // input — routed through `unknown` (not `any`) to keep the
-          // rest of the object's real typing intact.
           priority: "urgent" as unknown as PriorityLevel,
           rotation: { kind: "hourly", every_secs: 60 } as unknown as HistoryRotationSpec,
         },
@@ -1387,8 +1240,6 @@ describe("SettingsApp", () => {
       fireEvent.click(within(row).getByText("More details"));
       expect(within(row).getByText(markupSubtitle)).toBeTruthy();
 
-      // literal text, never parsed as markup: no element actually created
-      // from either string.
       expect(row.querySelector("script")).toBeNull();
       expect(row.querySelector("img")).toBeNull();
     });
@@ -1420,7 +1271,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.history_enabled).toBe(true);
   });
 
-  // settings-window queue visibility + clear/skip.
   describe("Queue section", () => {
     const waitingHigh: QueueItemSummary = {
       title: "High priority waiting item",
@@ -1458,10 +1308,6 @@ describe("SettingsApp", () => {
         .getAllByText(/waiting item$/)
         .filter((el) => el.classList.contains("queue-title"));
       expect(rows).toHaveLength(2);
-      // pin the tag CONTENT, not just the row count — a tag
-      // that silently rendered the same label for every priority (or the
-      // raw enum value instead of PRIORITY_LABELS) would still pass the
-      // count-only assertion above.
       const tags = screen
         .getAllByText(/^(High|Low)$/)
         .filter((el) => el.classList.contains("queue-priority-tag"));
@@ -1525,15 +1371,6 @@ describe("SettingsApp", () => {
       await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
     });
 
-    // the exit choreography, pinned directly. `items.length === 0 ? <p> :
-    // <ul>…` would unmount the whole `<ul>` (AnimatePresence included) the
-    // instant Clear empties the array, so the outgoing row's exit
-    // animation would never play — a hard cut, not a collapse. Keep the `<ul>` +
-    // AnimatePresence mounted and renders the empty-state `<p>` as a
-    // sibling instead, so both can be true on the SAME render: the row is
-    // still in the DOM (exiting) AND the empty-state text has already
-    // appeared, then the row actually leaves once its own exit window
-    // elapses.
     it("Clear queue lets the row exit-animate instead of vanishing outright, with the empty state appearing immediately alongside it", async () => {
       const clearQueue = vi.fn();
       let queueItems: QueueItemSummary[] = [waitingHigh];
@@ -1556,14 +1393,9 @@ describe("SettingsApp", () => {
       fireEvent.click(screen.getByRole("button", { name: "Clear queue" }));
       await waitFor(() => expect(clearQueue).toHaveBeenCalledTimes(1));
 
-      // the render where `items` actually flipped to `[]`: the empty-state
-      // text is already up, but the outgoing row is STILL in the DOM,
-      // mid-exit — never both-at-once under the old parent-level ternary.
       expect(await screen.findByText("Queue is empty.")).toBeTruthy();
       expect(screen.getByText("High priority waiting item")).toBeTruthy();
 
-      // once the row's own 180ms exit animation actually finishes, it
-      // leaves the DOM for good.
       await waitFor(() => {
         expect(screen.queryByText("High priority waiting item")).toBeNull();
       });
@@ -1578,20 +1410,10 @@ describe("SettingsApp", () => {
       await openQueue();
 
       expect(await screen.findByText("Couldn't load the queue")).toBeTruthy();
-      // a failed mount fetch must not leave `items` at `null` forever,
-      // or "Loading…" renders underneath the sticky
-      // ActionStatus error above it — the load never resolves into either
-      // an error-aware or an empty state. Assert it's actually gone, not
-      // merely that the error text is present alongside it.
       expect(screen.queryByText("Loading…")).toBeNull();
       expect(screen.getByText(/Couldn't load the queue — Refresh to retry/)).toBeTruthy();
     });
 
-    // the manual Refresh control — following
-    // DiagnosticsSection's own Refresh-button test precedent
-    // ("Diagnostics Refresh-button failure is announced..." below), a
-    // user-initiated call is `announce: true`, unlike the passive mount
-    // fetch.
     it("Refresh re-invokes get_queue and announces its outcome", async () => {
       let queueItems: QueueItemSummary[] = [waitingHigh];
       const getQueue = vi.fn();
@@ -1614,31 +1436,8 @@ describe("SettingsApp", () => {
       expect(getQueue).toHaveBeenCalledTimes(2);
     });
 
-    // An `${index}:${item.title}` row key is stable only as long as the
-    // list never reorders, which a refetch that lands duplicate or
-    // reordered summaries can violate. The
-    // priority:source:title:occurrenceIndex key stays stable across a
-    // refetch that returns the identical list, which is what lets
-    // AnimatePresence treat unchanged rows as "still here" (no exit+enter)
-    // rather than remounting every row on every Refresh. Same DOM node
-    // identity (not just equal content) is the proof: a remount would
-    // produce a brand-new element.
-    //
-    // The refetch below DROPS the first row on purpose: `waitingLow`
-    // moves from index 1 to index 0, which a positional key computes as a
-    // different key (`1:...` -> `0:...`) for the exact same surviving
-    // row, forcing an AnimatePresence exit+enter remount. The
-    // content-based key ignores position, so the row's identity survives.
-    // A refetch of an unchanged list would not discriminate: both key
-    // schemes compute the identical string for every row.
     it("a surviving row keeps its DOM node identity when a refetch drops an earlier row — no remount from a positional key", async () => {
       let queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
-      // Not `mockQueue(queueItems)`: that helper closes over the array
-      // reference it's CALLED with, so reassigning the outer `queueItems`
-      // variable below wouldn't be visible to it. Reading `queueItems`
-      // directly inside the handler (same shape as the Skip
-      // current/Clear queue tests above) is what lets the second
-      // `get_queue` return a genuinely different list.
       mockIPC((command) => {
         if (command === "get_config") return config;
         if (command === "get_default_config") return rustConfigDefaults;
@@ -1650,8 +1449,6 @@ describe("SettingsApp", () => {
         ".queue-row",
       ) as HTMLElement;
 
-      // waitingHigh (the FIRST row) is gone from this refetch — waitingLow
-      // is now at index 0, not index 1.
       queueItems = [waitingLow];
       fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
       await waitFor(() => {
@@ -1665,10 +1462,6 @@ describe("SettingsApp", () => {
       expect(rowAfter).toBe(rowBefore);
     });
 
-    // the section's own top-of-file comment cites this
-    // exact rule — titles are UNTRUSTED wire data, rendered as plain text
-    // only. History precedent: "renders markup-like feed text literally"
-    // (above, Step A).
     it("renders a markup-like title literally — no img/script element ever created, no HTML injection", async () => {
       const markupTitle = '<img src=x onerror="alert(1)">';
       mockQueue([{ ...waitingHigh, title: markupTitle }]);
@@ -1681,11 +1474,6 @@ describe("SettingsApp", () => {
       expect(row.querySelector("img")).toBeNull();
     });
 
-    // mirrors History's own "300-char unbroken-token body"
-    // pin (`SettingsApp.test.tsx`'s History describe block) — jsdom can't
-    // measure the CSS effect, only that `.queue-title` still carries the
-    // `[overflow-wrap:anywhere]` utility for a title with no natural break
-    // point.
     it("renders a 300-char unbroken-token title without widening the row (pins the .queue-title overflow-wrap utility)", async () => {
       const longToken = "x".repeat(300);
       mockQueue([{ ...waitingHigh, title: longToken }]);
@@ -1697,24 +1485,19 @@ describe("SettingsApp", () => {
     });
   });
 
-  // About section: the 12th settings section — identity/version/system
-  // stats, sourced from a mocked get_about_info. Byte/uptime formatting
-  // itself is covered independently in byteFormat.test.ts; these tests
-  // only check that the section wires the fetched fields into the right
-  // places.
   describe("About section", () => {
     const aboutInfo: AboutInfo = {
       version: "0.1.0",
       bundleId: "com.notchtap.app",
-      bundleSizeBytes: 52_428_800, // 50 MiB
+      bundleSizeBytes: 52_428_800,
       platform: "macOS 14.5",
       arch: "aarch64",
-      processMemoryBytes: 41_943_040, // 40 MiB
-      systemMemoryUsedBytes: 8_589_934_592, // 8 GiB
-      systemMemoryTotalBytes: 17_179_869_184, // 16 GiB
-      diskUsedBytes: 214_748_364_800, // 200 GiB
-      diskTotalBytes: 536_870_912_000, // 500 GiB
-      uptimeSecs: 3725, // 1h 2m
+      processMemoryBytes: 41_943_040,
+      systemMemoryUsedBytes: 8_589_934_592,
+      systemMemoryTotalBytes: 17_179_869_184,
+      diskUsedBytes: 214_748_364_800,
+      diskTotalBytes: 536_870_912_000,
+      uptimeSecs: 3725,
     };
 
     function mockAbout() {
@@ -1743,12 +1526,12 @@ describe("SettingsApp", () => {
       fireEvent.click(screen.getByRole("button", { name: "About" }));
 
       expect(await screen.findByText("v0.1.0 · com.notchtap.app")).toBeTruthy();
-      expect(screen.getByText("40.0 MB")).toBeTruthy(); // app memory
-      expect(screen.getByText("8.0 / 16.0 GB")).toBeTruthy(); // system memory
-      expect(screen.getByText("200.0 / 500.0 GB")).toBeTruthy(); // disk
-      expect(screen.getByText("macOS 14.5 · aarch64")).toBeTruthy(); // platform
-      expect(screen.getByText("50.0 MB")).toBeTruthy(); // bundle size
-      expect(screen.getByText("1h 2m")).toBeTruthy(); // uptime
+      expect(screen.getByText("40.0 MB")).toBeTruthy();
+      expect(screen.getByText("8.0 / 16.0 GB")).toBeTruthy();
+      expect(screen.getByText("200.0 / 500.0 GB")).toBeTruthy();
+      expect(screen.getByText("macOS 14.5 · aarch64")).toBeTruthy();
+      expect(screen.getByText("50.0 MB")).toBeTruthy();
+      expect(screen.getByText("1h 2m")).toBeTruthy();
     });
 
     it("shows a loading state before get_about_info resolves and an error state if it rejects", async () => {
@@ -1768,10 +1551,6 @@ describe("SettingsApp", () => {
     });
   });
 
-  // Agents section: global/priority
-  // controls bind config.agents.*, four adapter cards read a mocked
-  // get_agent_health, and the test-event button invokes
-  // send_agent_test_event.
   describe("Agents section", () => {
     const health: AdapterHealthDto[] = [
       {
@@ -1834,12 +1613,12 @@ describe("SettingsApp", () => {
       const enableToggle = await screen.findByLabelText("Enable Agent Adapters");
       expect(isChecked(enableToggle)).toBe(true);
       const informational = screen.getByLabelText("Show informational cards");
-      expect(isChecked(informational)).toBe(true); // fixture: agents.informational_notifications true
+      expect(isChecked(informational)).toBe(true);
       const completion = screen.getByLabelText("Show a card when an agent finishes a turn");
-      expect(isChecked(completion)).toBe(false); // fixture: agents.completion_notifications false
-      expect(screen.getByDisplayValue("400")).toBeTruthy(); // terminal_retention_secs
-      expect(screen.getByDisplayValue("600")).toBeTruthy(); // stale_after_secs
-      expect(screen.getByDisplayValue("1200")).toBeTruthy(); // stale_retention_secs
+      expect(isChecked(completion)).toBe(false);
+      expect(screen.getByDisplayValue("400")).toBeTruthy();
+      expect(screen.getByDisplayValue("600")).toBeTruthy();
+      expect(screen.getByDisplayValue("1200")).toBeTruthy();
     });
 
     function findAdapterCard(label: string): HTMLElement {
@@ -1858,14 +1637,6 @@ describe("SettingsApp", () => {
       const codexCard = findAdapterCard("Codex");
       const kimiCard = findAdapterCard("Kimi");
       const opencodeCard = findAdapterCard("OpenCode");
-      // CI flake fix: the adapter name renders immediately from static
-      // config, but the health chip depends on the separate, async
-      // `get_agent_health` mock resolving — a race the previous
-      // synchronous getByText calls here didn't account for (it passed
-      // locally under light load, but failed in CI, a genuinely
-      // pre-existing race this PR's redesign likely widened by adding
-      // an extra render pass for the collapsed/expanded state). Await
-      // each health chip instead of asserting on it synchronously.
       expect(await within(claudeCard).findByText("Available")).toBeTruthy();
       expect(await within(codexCard).findByText("Partial")).toBeTruthy();
       expect(await within(kimiCard).findByText("Unavailable")).toBeTruthy();
@@ -1884,8 +1655,6 @@ describe("SettingsApp", () => {
       expect(within(previewGroup).getByText("Multiple independent sessions")).toBeTruthy();
     });
 
-    // each adapter card header carries a runtime-colour
-    // swatch dot (SOURCE_RUNTIME_COLORS[wireRuntime]) alongside its label.
     it("renders a runtime-colour swatch dot on each adapter card header", async () => {
       mockAgents();
       await openAgents();
@@ -1922,21 +1691,12 @@ describe("SettingsApp", () => {
 
       await screen.findAllByText("Claude Code");
       const claudeCard = findAdapterCard("Claude Code");
-      // cards start
-      // collapsed, and the setup snippet's Copy/Send-test buttons only
-      // mount once expanded — click the header/name button to expand it
-      // first.
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Claude Code" }));
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Send test event" }));
 
       await waitFor(() => expect(sentRuntime).toBe("claude-code"));
     });
 
-    // each adapter tile is collapsed by default (a
-    // compact identity/health/toggle row, matching Handy's Models-page
-    // "compact by default, click to reveal detail" pattern) — the
-    // capabilities list, last-seen/status detail, and setup snippet only
-    // mount once the card is expanded.
     it("keeps an adapter card's detail collapsed by default and reveals it on click", async () => {
       mockAgents();
       await openAgents();
@@ -1946,12 +1706,9 @@ describe("SettingsApp", () => {
       const trigger = within(codexCard).getByRole("button", { name: "Codex" });
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
 
-      // Collapsed: no capabilities list, no "Last seen" field, no setup
-      // snippet target-file text anywhere in the card.
       expect(within(codexCard).queryByText("session_lifecycle")).toBeNull();
       expect(within(codexCard).queryByText("Last seen")).toBeNull();
       expect(codexCard.querySelector(".agent-setup")).toBeNull();
-      // The health chip and the enable toggle stay visible regardless.
       expect(within(codexCard).getByText("Partial")).toBeTruthy();
       expect(within(codexCard).getByLabelText("Enable Codex")).toBeTruthy();
 
@@ -1961,9 +1718,6 @@ describe("SettingsApp", () => {
       expect(within(codexCard).getByText("session_lifecycle")).toBeTruthy();
       expect(within(codexCard).getByText("Last seen")).toBeTruthy();
       expect(codexCard.querySelector(".agent-setup")?.textContent).toContain("hooks.json");
-      // Codex's fixture carries a compatibilityMessage but no
-      // lastErrorCategory — the "Status" field should render, the
-      // "Last error" field should not.
       expect(within(codexCard).getByText("Codex has known gaps.")).toBeTruthy();
       expect(within(codexCard).queryByText("Last error")).toBeNull();
 
@@ -1973,9 +1727,6 @@ describe("SettingsApp", () => {
       expect(within(codexCard).queryByText("session_lifecycle")).toBeNull();
     });
 
-    // Kimi's fixture is the one adapter with both a lastErrorCategory AND
-    // a compatibilityMessage set — confirms both real-field rows render
-    // together rather than one silently winning.
     it("shows both the error-category field and the compatibility message once expanded", async () => {
       mockAgents();
       await openAgents();
@@ -1990,9 +1741,6 @@ describe("SettingsApp", () => {
       expect(within(kimiCard).getByText("Disabled in Settings.")).toBeTruthy();
     });
 
-    // The enable switch is a primary control (Handy keeps a model's own
-    // on/off state visible without needing to expand), not detail — it
-    // must never toggle the disclosure it happens to sit beside.
     it("clicking the enable switch does not expand or collapse the card", async () => {
       mockAgents();
       await openAgents();
@@ -2022,7 +1770,7 @@ describe("SettingsApp", () => {
       await openAgents();
 
       const toggle = await screen.findByLabelText("Enable Codex");
-      expect(isChecked(toggle)).toBe(false); // fixture: agents.runtimes.codex.enabled false
+      expect(isChecked(toggle)).toBe(false);
       fireEvent.click(toggle);
       expect(isChecked(toggle)).toBe(true);
 
@@ -2032,14 +1780,10 @@ describe("SettingsApp", () => {
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
       expect(savedConfig!.agents.runtimes.codex.enabled).toBe(true);
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
-      expect(savedConfig!.agents.runtimes.claude_code.enabled).toBe(true); // untouched sibling
+      expect(savedConfig!.agents.runtimes.claude_code.enabled).toBe(true);
     });
 
     it("the completion-cards toggle round-trips into the saved config payload", async () => {
-      // agents.completion_notifications is
-      // the per-turn-card off switch, and it must survive the
-      // get_config -> edit -> save_config_and_relaunch round trip like
-      // every other [agents] key.
       let savedConfig: Config | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
@@ -2053,7 +1797,7 @@ describe("SettingsApp", () => {
       await openAgents();
 
       const toggle = await screen.findByLabelText("Show a card when an agent finishes a turn");
-      expect(isChecked(toggle)).toBe(false); // fixture: agents.completion_notifications false
+      expect(isChecked(toggle)).toBe(false);
       fireEvent.click(toggle);
       expect(isChecked(toggle)).toBe(true);
 
@@ -2063,16 +1807,12 @@ describe("SettingsApp", () => {
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
       expect(savedConfig!.agents.completion_notifications).toBe(true);
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
-      expect(savedConfig!.agents.informational_notifications).toBe(true); // untouched sibling
+      expect(savedConfig!.agents.informational_notifications).toBe(true);
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
-      expect(savedConfig!.agents.completion_priority).toBe("low"); // untouched sibling
+      expect(savedConfig!.agents.completion_priority).toBe("low");
     });
 
     it("the board-presence toggle round-trips into the saved config payload", async () => {
-      // agents.board_show_working gates
-      // whether a merely-working session may summon the Agent Board at
-      // all. Rust owns the gate itself; Settings only has to round-trip
-      // the key like every other [agents] key.
       let savedConfig: Config | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
@@ -2088,7 +1828,7 @@ describe("SettingsApp", () => {
       const toggle = await screen.findByLabelText(
         "Show the Agent Board while agents are only working",
       );
-      expect(isChecked(toggle)).toBe(true); // fixture: agents.board_show_working true
+      expect(isChecked(toggle)).toBe(true);
       fireEvent.click(toggle);
       expect(isChecked(toggle)).toBe(false);
 
@@ -2098,22 +1838,15 @@ describe("SettingsApp", () => {
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
       expect(savedConfig!.agents.board_show_working).toBe(false);
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
-      expect(savedConfig!.agents.completion_notifications).toBe(false); // untouched sibling
+      expect(savedConfig!.agents.completion_notifications).toBe(false);
     });
 
     it("rust's own defaults keep the Agent Board quiet for working-only sessions", async () => {
-      // The default this ships with is FALSE, deliberately a behaviour
-      // change for existing installs (config.rs's field doc) — pin it
-      // against the same `get_default_config` payload the Reset controls
-      // read, so a silent flip to `true` fails here.
       expect(rustConfigDefaults.agents.board_show_working).toBe(false);
     });
   });
 });
 
-// resets hot-apply the live overlay, and every operation that can
-// silently fail now reports its outcome through the shared ActionStatus
-// mechanism. Each of the seven operations gets independent coverage below.
 describe("SettingsApp — action status", () => {
   it("Reset invokes set_appearance with the loaded config's saved values, not the currently-adjusted ones", async () => {
     const setAppearance = vi.fn();
@@ -2138,7 +1871,6 @@ describe("SettingsApp — action status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
-      // config fixture's appearance is { card_scale: 1, card_radius: 8, card_opacity: 0.9 }
       expect(setAppearance).toHaveBeenLastCalledWith({ scale: 1, radius: 8, opacity: 0.9 });
     });
   });
@@ -2165,7 +1897,6 @@ describe("SettingsApp — action status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
 
     await waitFor(() => {
-      // rustConfigDefaults' appearance is { card_scale: 1, card_radius: 16, card_opacity: 0.9 }
       expect(setAppearance).toHaveBeenCalledWith({ scale: 1, radius: 16, opacity: 0.9 });
     });
   });
@@ -2183,7 +1914,6 @@ describe("SettingsApp — action status", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    // form state and live-apply are separate concerns — the form still resets.
     await waitFor(() => {
       expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("4321");
     });
@@ -2236,12 +1966,10 @@ describe("SettingsApp — action status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     const scaleToggle = await screen.findByRole("group", { name: "Scale" });
 
-    // never shows a pending/ok "Working…" flicker for this high-frequency action
     fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
     await screen.findByText("Live preview couldn't update — will apply on Save & Relaunch");
     expect(screen.queryByText("Working…")).toBeNull();
 
-    // a second, identical failure must not duplicate the message
     fireEvent.click(within(scaleToggle).getByRole("button", { name: "Medium" }));
     await waitFor(() => {
       expect(
@@ -2249,7 +1977,6 @@ describe("SettingsApp — action status", () => {
       ).toHaveLength(1);
     });
 
-    // the next successful apply clears it — no lingering "ok" chatter either
     shouldFail = false;
     fireEvent.click(within(scaleToggle).getByRole("button", { name: "Small" }));
     await waitFor(() => {
@@ -2305,14 +2032,6 @@ describe("SettingsApp — action status", () => {
   });
 
   it("Send test success message auto-clears", async () => {
-    // No fake timers here: ActionStatus's ok-clear now unmounts
-    // through an AnimatePresence exit fade, which runs on real
-    // requestAnimationFrame ticks. A faked setTimeout clock, even one
-    // later swapped back to real, leaves any in-flight animation that
-    // started under it wedged mid-transition (its internal scheduling
-    // captured the fake clock at start) — so this test waits out the real
-    // 2.5s ok-clear window plus the exit fade on the real clock, with a
-    // longer per-test timeout to match.
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_default_config") return rustConfigDefaults;
@@ -2453,11 +2172,6 @@ describe("SettingsApp — action status", () => {
   });
 });
 
-// the emulated role="group"/"list"/"table" markup (and its
-// lint suppressions) is gone — these pin the *native* element
-// relationships (fieldset/legend, ul/li, table/thead/tbody/th/td, and
-// label-to-control) that replaced it, not just that the ARIA roles still
-// resolve.
 describe("SettingsApp — native semantic markup", () => {
   it("the Scale segmented control is a real <fieldset> named by its <legend>", async () => {
     mockLoads();
@@ -2480,8 +2194,6 @@ describe("SettingsApp — native semantic markup", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    // Any section's Priority `Segmented` fieldset exercises the same
-    // native-markup contract, so Football's stands in for the rest.
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     await screen.findByRole("heading", { level: 1, name: "Football" });
 
@@ -2515,9 +2227,6 @@ describe("SettingsApp — native semantic markup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     await screen.findByRole("heading", { level: 1, name: "Shortcuts" });
 
-    // AnimatePresence mode="wait" swaps the section body in after the h1
-    // (which isn't animated) already shows the new title, so wait for
-    // the table itself rather than racing the exit/enter transition.
     const table = await screen.findByRole("table", { name: "Keyboard shortcuts" });
     expect(table.tagName).toBe("TABLE");
 
@@ -2551,16 +2260,6 @@ describe("SettingsApp — native semantic markup", () => {
   });
 });
 
-// the shadcn Switch contract, in two parts —
-// (a) through the app's own ToggleControl call sites (accessible name,
-// checked-state reflection — already covered by the isChecked() round-
-// trip tests above); (b) here, direct primitive-level coverage of the
-// pieces isChecked() alone doesn't prove: real button/role semantics
-// (keyboard-operable by native browser behavior, not a custom
-// keydown handler), and disabled behavior — ToggleControl itself never
-// passes `disabled` today (grep confirms no call site does), so
-// disabled coverage renders the shadcn Switch + Label pair directly,
-// the same components ToggleControl composes.
 describe("SettingsApp — shadcn Switch contract", () => {
   it("is a real role=switch button, named by an associated Label, reflecting aria-checked", () => {
     render(
@@ -2614,9 +2313,9 @@ describe("SettingsApp — shadcn Switch contract", () => {
     const startPaused = await screen.findByLabelText("Start paused");
     expect(startPaused.tagName).toBe("BUTTON");
     expect(startPaused.getAttribute("role")).toBe("switch");
-    expect(startPaused.getAttribute("aria-checked")).toBe("true"); // fixture: start_paused true
+    expect(startPaused.getAttribute("aria-checked")).toBe("true");
 
     const hideWhenIdle = screen.getByLabelText("Hide overlay when idle");
-    expect(hideWhenIdle.getAttribute("aria-checked")).toBe("true"); // fixture: resting_state "notch"
+    expect(hideWhenIdle.getAttribute("aria-checked")).toBe("true");
   });
 });

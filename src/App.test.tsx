@@ -10,9 +10,6 @@ vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
 const emit = (payload: SlotState) => act(() => emitTo("slot-state", payload));
 const emitAgentState = (payload: AgentState) => act(() => emitTo("agent-state", payload));
-// Every gate off, nothing queued — only `paused` is under test here, and
-// `useStatusState`'s validator rejects a partial payload whole, so the
-// full shape has to be supplied.
 const emitStatus = (paused: boolean) =>
   act(() =>
     emitTo("status-state", {
@@ -24,11 +21,6 @@ const emitStatus = (paused: boolean) =>
     }),
   );
 
-// an agent session on the UNGATED tab list only —
-// `sessions` stays empty so `presentationMode` keeps the idle rail (not
-// the Agent Board) mounted, while the agent tab's below-block has real
-// content to render. The seam test needs content to distinguish "the
-// selection arrived" from "the selection arrived and rendered nothing".
 const emitAgentTabSession = () =>
   act(() =>
     emitTo("agent-state", {
@@ -88,8 +80,6 @@ describe("App", () => {
     resetHandlers();
   });
 
-  // this project's vitest config doesn't set `test.globals`, so RTL's
-  // auto-cleanup (hooked off a global `afterEach`) never registers.
   afterEach(cleanup);
 
   it("renders the idle pill without notification content when the slot is empty", () => {
@@ -124,11 +114,6 @@ describe("App", () => {
       remainingMs: 8000,
     });
     expect(await screen.findByText("GOAL")).toBeTruthy();
-    // the collapsed manifest stays mounted (aria-hidden), so the
-    // body text also appears in its Message cell — assert on the compact
-    // view's copy specifically.
-    // the generic branch's body class renamed `.body` ->
-    // `.notif-body` (header/subtitle/body restructure).
     expect(container.querySelector(".compact .notif-body")?.textContent).toBe("1-0");
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
   });
@@ -223,11 +208,6 @@ describe("App", () => {
     expect(card?.classList.contains("idle")).toBe(false);
 
     emit({ state: "empty" });
-    // the outer card's "idle" class flips synchronously with the state
-    // change, but the old title/body only leave the DOM once their exit
-    // animation finishes — wait for that too, not just the class.
-    // the generic branch's title/body classes renamed
-    // `.title`/`.body` -> `.notif-title`/`.notif-body`.
     await vi.waitFor(() => {
       expect(card?.classList.contains("idle")).toBe(true);
       expect(container.querySelector(".notif-title")).toBeNull();
@@ -236,18 +216,11 @@ describe("App", () => {
     expect(container.querySelector(".notif-body")).toBeNull();
   });
 
-  // the resting-state render choice rides the same appearance
-  // channel as scale/radius/opacity — seeded at boot, hot-updated live.
   describe("resting_state", () => {
     afterEach(() => {
       delete window.__NOTCHTAP_APPEARANCE__;
     });
 
-    // the shell still mounts
-    // (bare) so it stays hoverable — see StatusRailCard.test.tsx's own
-    // "resting_state: notch" suite for the full behavior contract. This
-    // pin only checks the wiring from the boot seed through to the bare
-    // render, not the whole contract.
     it("renders bare (no painted chrome) while idle when the boot seed carries resting_state: notch", () => {
       window.__NOTCHTAP_APPEARANCE__ = {
         scale: 1,
@@ -280,12 +253,10 @@ describe("App", () => {
           resting_state: "notch",
         }),
       );
-      // bare, not absent — see the boot-seed test above.
       await vi.waitFor(() => {
         expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
       });
 
-      // and back — the toggle isn't a one-way ratchet
       act(() =>
         emitTo("appearance-changed", {
           scale: 1,
@@ -300,13 +271,6 @@ describe("App", () => {
     });
   });
 
-  // the HUD synthetic cutout vars — a notchless mac gets no
-  // measured cutout from rust (mode is "hud", width/height read null),
-  // so App.tsx now falls through to the fixed HUD_CUTOUT_WIDTH_PX/
-  // HUD_CUTOUT_HEIGHT_PX constants instead of leaving the CSS vars unset
-  // (the pre-091 behavior, when only width existed and only in notch
-  // mode). Notch mode with a real measurement is unaffected — the
-  // measured value always wins over the synthetic fallback.
   describe("HUD synthetic cutout vars", () => {
     afterEach(() => {
       delete window.__NOTCHTAP_MODE__;
@@ -341,10 +305,6 @@ describe("App", () => {
     });
 
     it("falls through to the hud synthetic vars if notch mode never got a measurement", () => {
-      // presentation.rs's own hud/fallback shape: mode reported notch is
-      // impossible without a measurement in practice, but this pins the
-      // null-coalescing behavior directly regardless of which mode string
-      // arrived, since App.tsx's fallback is keyed on `mode === "hud"`.
       window.__NOTCHTAP_MODE__ = "hud";
       window.__NOTCHTAP_CUTOUT_WIDTH__ = null;
       window.__NOTCHTAP_CUTOUT_HEIGHT__ = null;
@@ -358,11 +318,6 @@ describe("App", () => {
     });
   });
 
-  // the presentation precedence
-  // machine's own integration coverage — App.tsx is `presentationMode`'s
-  // one call site, so this is where "slot-occupied hides the board",
-  // "board over idle", and "empty registry falls back to idle" actually
-  // get exercised end to end, not just as a pure-function unit test.
   describe("Agent Board precedence", () => {
     it("an empty registry falls back to the existing idle rail, never mounting the board", () => {
       const { container } = render(<App />);
@@ -404,9 +359,6 @@ describe("App", () => {
       ).not.toBeNull();
     });
 
-    // Paused quiets the WHOLE notch, so the Agent Board falls through to
-    // the idle rail until the engine resumes — it never stays on screen
-    // ticking with live agent activity.
     it("hides the board while the engine is paused, and brings it back on resume", async () => {
       const { container } = render(<App />);
       emitAgentState({
@@ -431,13 +383,6 @@ describe("App", () => {
       });
     });
 
-    // The surfaces stack in one grid cell instead of queueing in flow
-    // during the overlap, and the Board branch (only the Board branch)
-    // arrives on a longer clock — with NO transform on the shell, since
-    // that would move/resize the synthetic notch cutout. Structure and
-    // exported consts are pinned here, never mid-flight styles: jsdom
-    // runs no compositor, same discipline as AgentBoard.test.tsx's own
-    // motion-vitals block.
     describe("surface swap", () => {
       it("stacks both surfaces in one grid cell so an overlap never pushes either one down", async () => {
         const { container } = render(<App />);
@@ -445,16 +390,9 @@ describe("App", () => {
         // null-guard on the next line protects the optional cast.
         const stack = container.querySelector(".surface-stack") as HTMLElement | null;
         expect(stack).not.toBeNull();
-        // the wrapper is the layout mechanism — a single-cell grid, so an
-        // overlap resolves as max(height), not sum(height).
         expect(stack?.style.display).toBe("grid");
-        // `.card-root` itself keeps its documented zero-geometry
-        // `display: contents` scoping role (styles.css) — the stack is a
-        // NEW child, not an amendment to that guarantee.
         expect(stack?.parentElement?.className).toBe("card-root");
 
-        // both branches occupy the same cell, so neither is ever in the
-        // other's flow.
         const railCell = container.querySelector(".card-assembly")?.parentElement;
         expect(railCell?.style.gridArea).toBe("1 / 1");
 
@@ -469,18 +407,11 @@ describe("App", () => {
         });
         const boardCell = container.querySelector('[data-testid="agent-board"]')?.parentElement;
         expect(boardCell?.style.gridArea).toBe("1 / 1");
-        // ...and nothing else: the surface cell carries no transform of
-        // its own (see the next test).
         expect(boardCell?.style.transform).toBe("");
         expect(boardCell?.style.transformOrigin).toBe("");
       });
 
       it("never transforms the shell — the summon's emphasis is duration only", () => {
-        // A scale/drop entrance on this wrapper would animate the
-        // synthetic notch cutout along with the rest of the shell, and
-        // that cutout has to read as fixed hardware (card-chrome.css's
-        // `transform-origin` doc). Both surfaces are opacity-only; the
-        // Board's arrival earns its emphasis from the LONGER clock.
         expect(BOARD_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(BOARD_SURFACE_MOTION.animate).toEqual({
           opacity: 1,
@@ -488,7 +419,6 @@ describe("App", () => {
         });
         expect(RAIL_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(RAIL_SURFACE_MOTION.animate).toEqual({ opacity: 1 });
-        // no transform-family key anywhere in the board's three legs.
         // SAFETY: each BOARD_SURFACE_MOTION leg is an object of known animation
         // props, so the array cast to Record<string, unknown>[] is a safe
         // widening the property check below reads through.
@@ -504,10 +434,6 @@ describe("App", () => {
       });
 
       it("keeps the board's dismissal quieter than its arrival (deliberate asymmetry)", () => {
-        // Spatial-consistency's "mirror the exit path" rule is waived here
-        // on purpose: an interruption should announce itself and then
-        // leave without ceremony. The exit is opacity ONLY, on the shorter
-        // shared surface-swap clock.
         expect(BOARD_SURFACE_MOTION.exit).toEqual({
           opacity: 0,
           transition: { duration: SURFACE_SWAP_MS / 1000, ease: NOTCHTAP_EASE },
@@ -535,20 +461,6 @@ describe("App", () => {
     });
   });
 
-  // `useTabSelection`'s ONE production call site.
-  // `useTabSelection.test.ts` proves the hook validates and stores; this
-  // proves App.tsx actually subscribes to the right channel and threads
-  // the result down to `StatusRailCard`'s `selectedTab` prop. Neither of
-  // those wiring mistakes is loud: drop the prop or mistype the channel
-  // name and the overlay degrades to "clicking an icon does nothing" with
-  // the whole suite still green, because every layer's own failure mode
-  // is the silent "nothing is selected" page.
-  //
-  // Three events are needed to reach the seam, and all three are real
-  // rust-emitted channels, not test scaffolding: an agent-state wire with
-  // a session on it (the below-block renders nothing without content),
-  // the hover that opens the tab pull at all (`tabPullOpen = !showing &&
-  // hovered`, StatusRailCard.tsx), and the selection itself.
   describe("tab selection seam", () => {
     it("mounts the selected tab's below-block once hovered", async () => {
       const { container } = render(<App />);
@@ -559,13 +471,6 @@ describe("App", () => {
       await vi.waitFor(() => {
         expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
       });
-      // ...and the ambient peek yields to it, leaving exactly one
-      // `.below-block` under the shell once the swap settles — the
-      // invariant `card-chrome.css`'s `:not(:has(.below-block))` rounding
-      // law depends on (StatusRailCard.tsx's `peekOpen` doc). Waited on,
-      // not asserted synchronously: the peek is an AnimatePresence child,
-      // so it is still playing its exit collapse at the instant the new
-      // card mounts. The overlap is the crossfade, by design.
       await vi.waitFor(() => {
         expect(container.querySelector(".idle-peek")).toBeNull();
         expect(container.querySelectorAll(".below-block").length).toBe(1);
@@ -592,14 +497,7 @@ describe("App", () => {
       await act(async () => {
         await Promise.resolve();
       });
-      // The coercion this pins is SILENT by design (`useTabSelection`'s
-      // closed-set check against `TAB_ORDER` returns "nothing selected"
-      // for anything it does not recognise, never an error) — which is
-      // also why `tabWireParity.test.ts` exists: rust-side drift in the
-      // wire tokens would land here and read as a working app that
-      // simply never selects anything.
       expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
-      // ...and the shipped ambient peek is what fills the gap, unchanged.
       expect(container.querySelector(".idle-peek")).not.toBeNull();
     });
 

@@ -32,21 +32,13 @@ fn log_dir() -> anyhow::Result<PathBuf> {
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
     let dir = home.join("Library").join("Logs").join("notchtap");
     fs::create_dir_all(&dir)?;
-    // notchtap.log can carry sensitive notification content (titles/
-    // bodies relayed through `/notify`) — same posture as `history.rs`'s
-    // `history.jsonl` (0700 dir / 0600 file, see `SizeRotatingAppender`
-    // below) rather than trusting the umask-derived default (0755).
     #[cfg(unix)]
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
     Ok(dir)
 }
 
-/// Read the last `n` lines of the active log file (`{log_dir}/notchtap.log`;
-/// rotated backups stay out of scope). Full-file read plus a
-/// tail-slice — the 10MB rotation cap already bounds the worst-case file
-/// size, so a seek-from-end tail reader would be complexity without payoff
-/// at this size. A file that doesn't exist yet (fresh install, nothing
-/// logged) reads as an empty Vec, not an error.
+/// Read the last `n` lines of the active log file (`{log_dir}/notchtap.log`; rotated backups stay
+/// out of scope).
 pub fn read_recent_lines(n: usize) -> anyhow::Result<Vec<String>> {
     read_recent_lines_from(&log_dir()?.join("notchtap.log"), n)
 }
@@ -91,9 +83,8 @@ impl SizeRotatingAppender {
     ) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
-        // matches `log_dir`'s own 0700 (this constructor is also reached
-        // directly by this module's tests, with their own temp dirs, not
-        // just via `log_dir`'s call path).
+        // matches `log_dir`'s own 0700 (this constructor is also reached directly by this module's
+        // tests, with their own temp dirs, not just via `log_dir`'s call path).
         #[cfg(unix)]
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         let filename = filename.as_ref().to_string();
@@ -103,12 +94,6 @@ impl SizeRotatingAppender {
         #[cfg(unix)]
         open_options.mode(0o600);
         let file = open_options.open(&path)?;
-        // `.mode()` on `OpenOptions` only governs the permissions a *new*
-        // file is created with — a no-op against a file that already
-        // exists (e.g. one an earlier umask left at 0644). Force 0600
-        // unconditionally so a pre-existing permissive file gets fixed
-        // rather than staying world-readable forever
-        // (same reasoning as `history.rs`'s `HistoryStore::append`).
         #[cfg(unix)]
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
         let size = file.metadata()?.len();
@@ -178,14 +163,9 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    // a fresh, unique dir per test is mandatory, not hygiene: `new()`
-    // seeds `size` from any pre-existing file's length, which would
-    // silently shift the threshold arithmetic.
     fn temp_dir() -> PathBuf {
         std::env::temp_dir().join(format!("notchtap-logtest-{}", Uuid::new_v4()))
     }
-
-    // --- log dir/file must not be world-readable ---
 
     #[cfg(unix)]
     #[test]
@@ -211,7 +191,6 @@ mod tests {
         let dir = temp_dir();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("notchtap.log");
-        // simulate a pre-existing permissive file (umask 0644)
         fs::write(&path, "").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 
@@ -248,7 +227,6 @@ mod tests {
         app.write_all(&[b'b'; 50]).unwrap();
         app.flush().unwrap();
 
-        // 100 total bytes is not `> 100` — no rotation, single file.
         assert_eq!(fs::read(dir.join("notchtap.log")).unwrap().len(), 100);
         assert!(!dir.join("notchtap.log.1").exists());
     }
@@ -259,8 +237,6 @@ mod tests {
         let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
 
         app.write_all(&[b'a'; 60]).unwrap();
-        // 60 + 60 > 100 with size 60 > 0: rotation happens before this
-        // write, so the live file restarts with only the second write.
         app.write_all(&[b'b'; 60]).unwrap();
         app.flush().unwrap();
 
@@ -277,15 +253,11 @@ mod tests {
         let dir = temp_dir();
         let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
 
-        // five 60-byte writes → four rotations.
         for fill in *b"12345" {
             app.write_all(&[fill; 60]).unwrap();
         }
         app.flush().unwrap();
 
-        // rotate_locked's loop (i = 2, then 1) only ever renames up to
-        // .3, so retention is current + exactly 3 backups: the oldest
-        // ('1') is overwritten by the rename onto .3 and no .4 exists.
         assert_eq!(fs::read(dir.join("notchtap.log")).unwrap(), vec![b'5'; 60]);
         assert_eq!(
             fs::read(dir.join("notchtap.log.1")).unwrap(),
@@ -307,9 +279,6 @@ mod tests {
         let dir = temp_dir();
         let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
 
-        // size is 0 going in, so the `inner.size > 0` guard skips
-        // rotation even though this single write exceeds max_size — the
-        // oversized line lands whole in the current file.
         app.write_all(&[b'x'; 150]).unwrap();
         app.flush().unwrap();
 
@@ -328,8 +297,6 @@ mod tests {
             read_recent_lines_from(&path, 200).unwrap(),
             Vec::<String>::new()
         );
-        // a missing file (fresh install, nothing logged yet) reads the
-        // same way — empty, not an error.
         fs::remove_file(&path).unwrap();
         assert_eq!(
             read_recent_lines_from(&path, 200).unwrap(),

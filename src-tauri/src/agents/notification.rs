@@ -1,10 +1,3 @@
-//! Maps a noteworthy Agent Event into the domain [`Event`] — the ONE
-//! seam letting a Session's permission/input/failure/completion moments
-//! enter the Notification Slot under every Queue/Slot rule. Pure: no
-//! clock read, no registry access, no HTTP. The caller (`http.rs`'s
-//! `agent_events_handler`) applies the registry mutation first, and a
-//! `QueueError::QueueFull` from `Engine::accept` must never unwind it.
-
 use uuid::Uuid;
 
 use crate::event::{
@@ -15,24 +8,9 @@ use crate::event::{
 use super::adapter::{kind_wire_label, runtime_wire_label};
 use super::model::{session_hash_hex, AgentDetail, AgentEventKind, AgentRuntime, AgentSessionKey};
 
-/// Priority/gating knobs for the registry→Notification mapping. Every
-/// call site (`http.rs`'s `agent_events_handler`, `settings.rs`'s agent
-/// preview arm) uses [`NotificationPolicy::default`]. `Informational`'s
-/// priority is deliberately NOT a field here: it is pinned at a fixed
-/// Medium, unlike the other four kinds, which each get their own
-/// configurable priority.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NotificationPolicy {
-    /// `agents.informational_notifications` (default `false`). Gates
-    /// BOTH the wire `Informational` kind AND a non-terminal `Failed` —
-    /// see [`is_noteworthy`] for why the two share one gate.
     pub informational_notifications: bool,
-    /// `agents.completion_notifications` (default `true`). Gates a
-    /// TERMINAL `Completed` — a real session end — only. A non-terminal
-    /// `Completed` (the per-turn stop every runtime fires after each
-    /// response) is not covered by this key at all: it rides
-    /// `informational_notifications` instead, so this can default ON
-    /// without carding the operator once per turn.
     pub completion_notifications: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
@@ -41,10 +19,8 @@ pub struct NotificationPolicy {
 }
 
 impl Default for NotificationPolicy {
-    /// `permission_priority = input_priority = failure_priority =
-    /// "high"`, `completion_priority = "medium"`,
-    /// `informational_notifications = false`,
-    /// `completion_notifications = true`.
+    /// `permission_priority = input_priority = failure_priority = "high"`, `completion_priority =
+    /// "medium"`, `informational_notifications = false`, `completion_notifications = true`.
     fn default() -> Self {
         Self {
             informational_notifications: false,
@@ -57,19 +33,8 @@ impl Default for NotificationPolicy {
     }
 }
 
-/// Whether `kind` (+ `terminal`) is ever eligible to become a
-/// Notification, independent of queue capacity.
-///
-/// `Failed` and `Completed` share ONE terminal split. A terminal failure
-/// or completion is an outcome: `Failed` is always-on High, `Completed`
-/// reads `policy.completion_notifications` (default ON). A NON-terminal
-/// one is progress — a tool failure while the session keeps working, or
-/// the per-turn stop every runtime fires after each response — so both
-/// fall through into `policy.informational_notifications` (default OFF)
-/// at Informational's fixed `Priority::Medium`. `registry::next_state`
-/// encodes the identical split for the registry's own state machine, so
-/// the Agent Board still shows every turn boundary; only the card is
-/// suppressed.
+/// Whether `kind` (+ `terminal`) is ever eligible to become a Notification, independent of queue
+/// capacity.
 pub fn is_noteworthy(kind: AgentEventKind, terminal: bool, policy: &NotificationPolicy) -> bool {
     match kind {
         AgentEventKind::PermissionRequested | AgentEventKind::InputRequired => true,
@@ -81,28 +46,20 @@ pub fn is_noteworthy(kind: AgentEventKind, terminal: bool, policy: &Notification
     }
 }
 
-/// The Priority a noteworthy `kind` maps to. Only meaningful when
-/// [`is_noteworthy`] is true for the same `(kind, terminal)` pair —
-/// callers must check that first, since this function still returns a
-/// value (Medium) for a policy-suppressed kind.
+/// The Priority a noteworthy `kind` maps to. Only meaningful when [`is_noteworthy`] is true for the
+/// same `(kind, terminal)` pair — callers must check that first.
 pub fn priority_for(kind: AgentEventKind, terminal: bool, policy: &NotificationPolicy) -> Priority {
     match kind {
         AgentEventKind::PermissionRequested => policy.permission_priority,
         AgentEventKind::InputRequired => policy.input_priority,
         AgentEventKind::Completed if terminal => policy.completion_priority,
         AgentEventKind::Failed if terminal => policy.failure_priority,
-        // Non-terminal Failed and non-terminal Completed both read as
-        // Informational ([`is_noteworthy`]), which is pinned at a fixed
-        // Medium rather than a configurable priority.
         AgentEventKind::Completed | AgentEventKind::Failed | AgentEventKind::Informational => {
             Priority::Medium
         }
     }
 }
 
-/// Human-facing runtime name for the generated title (Settings/card
-/// display concern — NOT the wire token; see [`runtime_wire_label`] for
-/// that).
 fn runtime_display_name(runtime: AgentRuntime) -> &'static str {
     match runtime {
         AgentRuntime::ClaudeCode => "Claude Code",
@@ -112,9 +69,8 @@ fn runtime_display_name(runtime: AgentRuntime) -> &'static str {
     }
 }
 
-/// Short, kind-specific title — `runtime_display_name` plus a fixed verb
-/// per kind, never derived from `summary`: notification text is
-/// templated, never sniffed from provider payloads.
+/// Short, kind-specific title — `runtime_display_name` plus a fixed verb per kind, never derived
+/// from `summary`: notification text is templated, never sniffed from provider payloads.
 fn title_for(runtime: AgentRuntime, kind: AgentEventKind, terminal: bool) -> String {
     let name = runtime_display_name(runtime);
     match kind {
@@ -128,10 +84,8 @@ fn title_for(runtime: AgentRuntime, kind: AgentEventKind, terminal: bool) -> Str
     }
 }
 
-/// Fallback body when the wire event carried no `summary` (it is
-/// optional) — a Notification's `body` is a required, non-optional
-/// `String` (`event.rs::EventPayload`), so this module must always have
-/// something to show.
+/// Fallback body when the wire event carried no `summary` (it is optional) — a Notification's
+/// `body` is a required, non-optional `String` (`event.rs::EventPayload`).
 fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
     match kind {
         AgentEventKind::PermissionRequested => "Approval needed to continue.".to_string(),
@@ -144,48 +98,15 @@ fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
     }
 }
 
-/// Everything [`build_notification`] needs about what an Agent Event's
-/// card should SAY — as opposed to its routing/policy facts
-/// (`session_key`/`kind`/`terminal`/`ttl_secs`/`policy`, which stay their
-/// own positional params). Bundling `summary`/`project_name`/`details`
-/// keeps `build_notification` under clippy's `too_many_arguments`.
 pub struct NotificationContent<'a> {
     pub summary: Option<&'a str>,
-    /// The project NAME (`AgentProject.name`), never the cwd — see
-    /// [`build_notification`]'s own doc.
+    /// The project NAME (`AgentProject.name`), never the cwd — see [`build_notification`]'s own
+    /// doc.
     pub project_name: Option<&'a str>,
     pub details: &'a [AgentDetail],
 }
 
-/// The one constructor for an Agent-originated Notification `Event`.
-/// Returns `None` when this `(kind, terminal)` pair isn't
-/// noteworthy under `policy` — Starting/Working/tool/subagent progress
-/// (wire `Informational`, `terminal: false`, `informational_notifications`
-/// off), a non-terminal `Failed`, and a non-terminal `Completed` (the
-/// per-turn stop) all resolve to `None` here under that same gate, same
-/// as they never update anything past the registry. A TERMINAL
-/// `Completed` — a real session end — resolves to `None` only once
-/// `completion_notifications` is off (that gate defaults on, so this is
-/// opt-in silence, not the default).
-///
-/// `ttl_secs` is the caller's own one-shot rotation window (`http.rs`
-/// passes the `agent_ttl_secs` config field); this module stays agnostic
-/// to where the value came from.
-///
-/// `project_name`/`details` are the already-sanitized/capped
-/// `AgentProject.name`/`Vec<AgentDetail>` the registry accepted off the
-/// same wire event — NEVER the cwd; only the name is
-/// display-appropriate. They ride onto `EventMeta.subtitle`/`.details`,
-/// the same two fields the manual `/notify` rich-relay path populates,
-/// so an agent card renders identically to a manual one of the same
-/// shape. Absent project or empty details leave those fields at
-/// `EventMeta::default()`'s None/empty.
-///
-/// Bundled into [`NotificationContent`] (rather than three more
-/// positional params) to stay under clippy's `too_many_arguments` —
-/// `session_key`/`kind`/`terminal`/`ttl_secs`/`policy` are the event's
-/// own routing/policy facts, `NotificationContent` is everything that
-/// only affects what the card SAYS.
+/// Returns no event when the kind is not noteworthy under the supplied policy.
 pub fn build_notification(
     session_key: &AgentSessionKey,
     kind: AgentEventKind,
@@ -234,11 +155,6 @@ pub fn build_notification(
                 .collect(),
             ..EventMeta::default()
         },
-        // Agent cards have no dedicated icon/animation signal — same
-        // `Generic` choice `/notify`'s manual path makes (`http.rs`'s
-        // `NotifyRequest::signal` default), since `EventSignal` is a
-        // football-live-match-centric enum (goal/card/kickoff/...) with no
-        // agent-shaped variant to reach for.
         signal: WireSignal::Generic,
         origin: SourceKind::Agent,
     })
@@ -251,9 +167,6 @@ mod tests {
     fn key(runtime: AgentRuntime) -> AgentSessionKey {
         AgentSessionKey::new(runtime, "sess-1").unwrap()
     }
-
-    // --- every AgentEventKind → expected priority/one-shot or no-card,
-    // under the default policy (informational off). ---
 
     #[test]
     fn permission_requested_is_high_one_shot() {
@@ -361,14 +274,8 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-    // --- the `Completed` terminal split. Four (terminal, policy)
-    // combinations, pinned exhaustively. ---
-
     #[test]
     fn non_terminal_completed_is_quiet_under_the_default_policy() {
-        // A per-turn Stop (kind Completed, terminal:false) is progress,
-        // not an outcome: it rides `informational_notifications` (OFF by
-        // default), so the operator is NOT carded once per turn.
         let policy = NotificationPolicy::default();
         assert!(!policy.informational_notifications);
         assert!(!is_noteworthy(AgentEventKind::Completed, false, &policy));
@@ -389,9 +296,6 @@ mod tests {
 
     #[test]
     fn non_terminal_completed_becomes_a_medium_card_when_informational_is_on() {
-        // It shares Informational's gate AND Informational's fixed
-        // Medium priority — never `completion_priority`, and never
-        // `completion_notifications`.
         let policy = NotificationPolicy {
             informational_notifications: true,
             completion_notifications: false,
@@ -421,9 +325,6 @@ mod tests {
 
     #[test]
     fn terminal_completed_ignores_the_informational_gate() {
-        // The mirror of the test above: a real session end is NOT gated
-        // behind `informational_notifications`, only behind
-        // `completion_notifications`.
         let policy = NotificationPolicy {
             informational_notifications: false,
             completion_notifications: true,
@@ -431,9 +332,6 @@ mod tests {
         };
         assert!(is_noteworthy(AgentEventKind::Completed, true, &policy));
     }
-
-    // --- `completion_notifications`: the session-end off switch.
-    // Default ON, and it reaches the terminal shape only. ---
 
     #[test]
     fn terminal_completed_is_suppressed_when_completion_notifications_is_off() {
@@ -456,7 +354,6 @@ mod tests {
         )
         .is_none());
 
-        // The other kinds are untouched by this gate.
         assert!(is_noteworthy(
             AgentEventKind::PermissionRequested,
             false,
@@ -492,9 +389,6 @@ mod tests {
 
     #[test]
     fn completion_notifications_off_still_lets_a_per_turn_stop_through_the_informational_gate() {
-        // The two gates are independent: turning the session-end card off
-        // must not also silence a per-turn stop the operator explicitly
-        // opted into via `informational_notifications`.
         let policy = NotificationPolicy {
             completion_notifications: false,
             informational_notifications: true,
@@ -544,8 +438,6 @@ mod tests {
             per_turn.payload.body,
             "Turn completed; the session is still open."
         );
-        // The whole point of the split: a per-turn stop must never read
-        // as the session ending.
         assert_ne!(per_turn.payload.title, session_end.payload.title);
         assert_ne!(per_turn.payload.body, session_end.payload.body);
     }
@@ -596,13 +488,9 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-    // --- the non-terminal-Failed resolution (see `is_noteworthy`) ---
-
     #[test]
     fn non_terminal_failed_is_gated_like_informational_not_high() {
         let default_policy = NotificationPolicy::default();
-        // Off by default, same as Informational — NOT an automatic High
-        // card just because the wire `kind` says `Failed`.
         assert!(!is_noteworthy(
             AgentEventKind::Failed,
             false,
@@ -622,10 +510,6 @@ mod tests {
         )
         .is_none());
 
-        // Enabling the SAME `informational_notifications` toggle that
-        // gates Informational also lets a non-terminal Failed through, at
-        // the same Medium priority — proving it shares Informational's
-        // gate/priority rather than Failed's High/always-on row.
         let enabled_policy = NotificationPolicy {
             informational_notifications: true,
             ..NotificationPolicy::default()
@@ -655,14 +539,8 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-    // --- Starting/Working/tool/subagent progress never create cards ---
-
     #[test]
     fn non_terminal_informational_progress_creates_no_card() {
-        // Starting/Working/tool/subagent progress all arrive as wire
-        // `Informational` with `terminal: false` — there is no dedicated
-        // "progress" kind — so they take the same suppression path as
-        // `informational_is_suppressed_by_default`.
         let policy = NotificationPolicy::default();
         assert!(build_notification(
             &key(AgentRuntime::OpenCode),
@@ -678,8 +556,6 @@ mod tests {
         )
         .is_none());
     }
-
-    // --- AgentSignal shape: wire tokens, hashed (never raw) session id ---
 
     #[test]
     fn agent_signal_carries_wire_tokens_and_hashed_session_not_raw_id() {
@@ -762,10 +638,6 @@ mod tests {
         assert_eq!(event.payload.body, "Waiting for your input.");
     }
 
-    // --- notification parity — project name -> subtitle,
-    // AgentDetail -> DetailItem, matching the manual `/notify` rich-relay
-    // shape ---
-
     #[test]
     fn project_name_becomes_subtitle() {
         let event = build_notification(
@@ -781,8 +653,6 @@ mod tests {
             &NotificationPolicy::default(),
         )
         .unwrap();
-        // The project NAME, not the cwd — build_notification never sees a
-        // cwd at all (the caller only passes the name through).
         assert_eq!(
             event.meta.subtitle.as_deref(),
             Some("mac-notification-nudge")

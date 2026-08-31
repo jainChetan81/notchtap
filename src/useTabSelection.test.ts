@@ -5,8 +5,6 @@ import { isValidTabSelection, useTabSelection } from "./useTabSelection";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-// deliberately keeps `unknown` — this file exercises malformed payloads,
-// mirroring useStatusState.test.ts's own emit helper.
 const emit = (payload: unknown) => act(() => emitTo("tab-selection-changed", payload));
 
 describe("useTabSelection", () => {
@@ -79,9 +77,6 @@ describe("useTabSelection", () => {
 
   it("cleans up the listener on unmount", async () => {
     const { unmount } = await renderReady();
-    // the mock's unlisten is a no-op; the contract under test is that
-    // unmounting doesn't throw and doesn't leave a handler that writes
-    // into an unmounted component (React would warn).
     expect(() => unmount()).not.toThrow();
   });
 });

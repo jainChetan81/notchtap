@@ -1,9 +1,5 @@
-//! append-only JSONL notification history, gated behind the opt-in
-//! `history_enabled` config flag (`config.rs`, default `false`). The only
-//! writer is `Engine::accept`; the settings window's
-//! `get_history`/`clear_history` commands (`settings.rs`) read and clear.
-//! Deliberately stats the file per `append` rather than caching a handle
-//! like `logging.rs` — a few lines per hour; don't share the two paths.
+//! append-only JSONL notification history, gated behind the opt-in `history_enabled` config flag
+//! (`config.rs`, default `false`).
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -19,10 +15,6 @@ const HISTORY_FILENAME: &str = "history.jsonl";
 const DEFAULT_MAX_SIZE: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_FILES: usize = 2;
 
-/// One recorded notification. `recorded_at_ms` is wall-clock epoch millis
-/// (the queue's own timing is `Instant`-based and deliberately clock-free,
-/// so history stamps its own time here). Matches the `_ms: i64` convention
-/// already used by `EventMeta::published_at_ms`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub recorded_at_ms: i64,
@@ -36,9 +28,8 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Append-only JSONL store for accepted notifications, size-rotated like
-/// `logging.rs`'s appender but with its own (simpler, stat-per-append)
-/// write path — see the module doc for why the two are not shared.
+/// Append-only JSONL store for accepted notifications, size-rotated like `logging.rs`'s appender
+/// but with its own (simpler, stat-per-append) write path.
 pub struct HistoryStore {
     dir: PathBuf,
     max_size: u64,
@@ -52,15 +43,13 @@ impl HistoryStore {
         Self::with_limits(dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES)
     }
 
-    /// Same as `new`, with explicit rotation caps. Tests MUST use this —
-    /// a test that writes to the real `~/.config/notchtap/` is a bug.
+    /// Same as `new`, with explicit rotation caps. Tests MUST use this — a test that writes to the
+    /// real `~/.config/notchtap/` is a bug.
     pub fn with_limits(dir: impl AsRef<Path>, max_size: u64, max_files: usize) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
-        // history.jsonl holds sensitive notification content — 0600,
-        // same posture as settings.rs's config.toml. `create_dir_all`
-        // makes the dir with the umask-derived default mode, so pin it
-        // down explicitly too (0700) rather than trusting the umask.
+        // history.jsonl holds sensitive notification content — 0600, same posture as settings.rs's
+        // config.toml.
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         Ok(Self {
             dir,
@@ -78,17 +67,7 @@ impl HistoryStore {
         self.dir.join(format!("{HISTORY_FILENAME}.{i}"))
     }
 
-    /// Serialize `event` as one `HistoryEntry` line, rotating first if the
-    /// new line would push the current file over `max_size` (same
-    /// predicate as `logging.rs`: `size + line_len > max_size && size >
-    /// 0` — an oversized single line lands whole in an empty file rather
-    /// than rotating forever), then append it.
     pub fn append(&self, event: &Event) -> io::Result<()> {
-        // poison-tolerant (codebase convention, see settings.rs): a panic
-        // while one caller holds this lock must not wedge every other
-        // caller (append/read_recent/clear) behind a poisoned Mutex for
-        // the rest of the process's life — recover the inner guard
-        // instead of propagating the panic here too.
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         let entry = HistoryEntry {
@@ -109,11 +88,6 @@ impl HistoryStore {
             .append(true)
             .mode(0o600)
             .open(&path)?;
-        // `.mode()` on `OpenOptions` only governs the permissions a *new*
-        // file is created with — it's a no-op against a file that already
-        // exists with a permissive mode (e.g. umask 0644). Force 0600
-        // unconditionally on every append so such a file gets fixed
-        // rather than staying world-readable forever.
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
         file.write_all(line.as_bytes())?;
         Ok(())
@@ -133,19 +107,7 @@ impl HistoryStore {
         Ok(())
     }
 
-    /// Read the last `n` entries from the current file only (rotated
-    /// backups stay out of scope, same choice `logging.rs::read_recent_lines`
-    /// documents). A missing file reads as an empty Vec, not an error.
-    /// Lines that fail to parse are skipped — a crash mid-write can leave
-    /// a torn final line, and one bad line must never poison the whole
-    /// read. Returned oldest -> newest, same ordering contract as
-    /// `read_recent_lines`.
-    ///
-    /// Called by the settings window's `get_history` invoke command; also
-    /// exercised directly by this module's own tests and `engine.rs`'s
-    /// history-hook tests.
     pub fn read_recent(&self, n: usize) -> io::Result<Vec<HistoryEntry>> {
-        // poison-tolerant, same rationale as `append` above.
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         let contents = match fs::read_to_string(self.path()) {
@@ -163,13 +125,8 @@ impl HistoryStore {
         Ok(entries[start..].to_vec())
     }
 
-    /// Remove the current file and every rotated backup. A missing file
-    /// is success, not an error.
-    ///
-    /// Backs the settings window's "Clear history" control via the
-    /// `clear_history` invoke command (`settings.rs`).
+    /// Remove the current file and every rotated backup.
     pub fn clear(&self) -> io::Result<()> {
-        // poison-tolerant, same rationale as `append` above.
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         remove_if_exists(&self.path())?;
@@ -194,9 +151,6 @@ mod tests {
     use crate::event::test_fixtures;
     use uuid::Uuid;
 
-    // a fresh, unique dir per test, same rationale as logging.rs's
-    // temp_dir(): a shared dir would silently shift the rotation
-    // arithmetic between tests.
     fn temp_dir() -> PathBuf {
         std::env::temp_dir().join(format!("notchtap-historytest-{}", Uuid::new_v4()))
     }
@@ -270,11 +224,6 @@ mod tests {
         assert_eq!(entries[1].event.payload.title, "good-2");
     }
 
-    // Unknown-origin compat: an on-disk history.jsonl may hold entries
-    // whose origin (e.g. `weather`) is not a `SourceKind` value. Those
-    // lines fail to deserialize, and loading must SKIP them — same
-    // non-fatal degrade as the malformed-line test above — never fail
-    // the read.
     #[test]
     fn entry_with_removed_weather_origin_is_skipped_not_fatal() {
         let dir = temp_dir();
@@ -286,9 +235,6 @@ mod tests {
             event: test_fixtures::event("good"),
         })
         .unwrap();
-        // build the stale line from a real serialized entry so every
-        // OTHER field stays wire-accurate — only the origin is the
-        // removed spelling.
         let stale = good.replace("\"origin\":\"manual\"", "\"origin\":\"weather\"");
         assert_ne!(
             good, stale,
@@ -305,15 +251,11 @@ mod tests {
     #[test]
     fn rotation_at_threshold_creates_backup() {
         let dir = temp_dir();
-        // small cap so a couple of appends cross the threshold
         let store = HistoryStore::with_limits(&dir, 100, 2).unwrap();
 
-        // first append is small and well under the cap
         store.append(&test_fixtures::event("a")).unwrap();
         assert!(!dir.join("history.jsonl.1").exists());
 
-        // pad subsequent appends with a long body so the cumulative size
-        // crosses 100 bytes and triggers rotation on a later append
         let padded = test_fixtures::with_body(test_fixtures::event("b"), &"x".repeat(150));
         store.append(&padded).unwrap();
 
@@ -321,7 +263,6 @@ mod tests {
             dir.join("history.jsonl.1").exists(),
             "expected rotation to create a .1 backup once the threshold was crossed"
         );
-        // the live file restarted with just the triggering append
         let current = fs::read_to_string(dir.join("history.jsonl")).unwrap();
         assert_eq!(current.lines().count(), 1);
         assert!(current.contains("\"b\""));
@@ -332,9 +273,6 @@ mod tests {
         let dir = temp_dir();
         let store = HistoryStore::with_limits(&dir, 10, 2).unwrap();
 
-        // size is 0 going in, so even though this single line exceeds
-        // max_size, the guard (`current_size > 0`) skips rotation — the
-        // oversized line lands whole in the current (empty) file.
         let big = test_fixtures::with_body(test_fixtures::event("big"), &"y".repeat(200));
         store.append(&big).unwrap();
 
@@ -379,7 +317,6 @@ mod tests {
         let dir = temp_dir();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("history.jsonl");
-        // simulate a pre-existing file with a permissive mode (umask 0644)
         fs::write(&path, "").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 

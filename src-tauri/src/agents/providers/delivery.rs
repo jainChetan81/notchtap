@@ -1,26 +1,16 @@
-//! Impure half of the hook helper — posts an already-built schema-v1
-//! body to loopback `POST /agent/events`. Timeout at most 750 ms total;
-//! fail open: every failure becomes a bounded [`String`] reason, never
-//! a panic/exit — the caller (`src/bin/notchtap_agent.rs`) logs it and
-//! always exits 0. `NOTCHTAP_PORT` overrides the default 9789, which is
-//! deliberately duplicated from `config.rs::default_port` and the
-//! `notchtap` CLI script (neither module is `pub` from here).
+//! Loopback event delivery with a 750 ms timeout and bounded fail-open results.
 
 use std::time::Duration;
 
 use serde_json::Value;
 
-/// Must match `config.rs::default_port` and the `notchtap` CLI's
-/// `${NOTCHTAP_PORT:-9789}` fallback.
+/// Must match `config.rs::default_port` and the `notchtap` CLI's `${NOTCHTAP_PORT:-9789}` fallback.
 pub const DEFAULT_PORT: u16 = 9789;
 
-/// Bounds the whole request (connect + send + read) via `reqwest`'s
-/// per-request `.timeout()`.
+/// Bounds the whole request (connect + send + read) via `reqwest`'s per-request `.timeout()`.
 pub const DELIVERY_TIMEOUT: Duration = Duration::from_millis(750);
 
-/// Resolves the target port: `$NOTCHTAP_PORT` if parseable as `u16`,
-/// else [`DEFAULT_PORT`]. An unparseable value silently falls back —
-/// this helper is fail-open end to end, including config resolution.
+/// Falls back to [`DEFAULT_PORT`] when `NOTCHTAP_PORT` is absent or invalid.
 pub fn resolve_port() -> u16 {
     std::env::var("NOTCHTAP_PORT")
         .ok()
@@ -28,21 +18,15 @@ pub fn resolve_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
-/// What happened when a body was posted. Every reqwest error path is
-/// caught and turned into [`Failed`], never a panic.
-///
-/// [`Failed`]: DeliveryOutcome::Failed
+/// Every reqwest error path is caught and turned into [`Failed`], never a panic.
 #[derive(Debug)]
 pub enum DeliveryOutcome {
     Delivered,
-    /// A bounded, human-readable reason, logged by the caller via
-    /// `diagnostics::log_diagnostic`.
     Failed(String),
 }
 
-/// Posts `body` to `http://127.0.0.1:{port}/agent/events`. Keep the URL
-/// a loopback literal, never a hostname — `http.rs`'s
-/// `check_loopback_host` requires a loopback-literal `Host` header.
+/// Posts `body` to `http://127.0.0.1:{port}/agent/events`. Keep the URL a loopback literal, never a
+/// hostname — `http.rs`'s `check_loopback_host` requires a loopback-literal `Host` header.
 pub async fn deliver(body: Value, port: u16) -> DeliveryOutcome {
     let client = match reqwest::Client::builder().timeout(DELIVERY_TIMEOUT).build() {
         Ok(client) => client,
@@ -81,8 +65,6 @@ mod tests {
 
     #[test]
     fn resolve_port_falls_back_to_default_when_unset() {
-        // Never mutate `NOTCHTAP_PORT` here — tests in this crate share
-        // one process, so env writes race other tests.
         if std::env::var("NOTCHTAP_PORT").is_err() {
             assert_eq!(resolve_port(), DEFAULT_PORT);
         }
@@ -90,8 +72,6 @@ mod tests {
 
     #[tokio::test]
     async fn deliver_to_an_unreachable_port_fails_open() {
-        // Bind then immediately drop a listener to get a genuinely free
-        // port with nothing behind it for the actual POST.
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);

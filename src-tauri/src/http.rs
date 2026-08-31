@@ -26,60 +26,17 @@ use crate::event::{
     SourceKind,
 };
 
-// generic over the tauri runtime so tests can use tauri::test::mock_app()
-// (MockRuntime) while the app runs on the default Wry runtime
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
-    /// the one propagation module — ingest goes through
-    /// `Engine::accept`, the paused/waiting response reads through
-    /// `Engine::read`.
     pub engine: Engine<R>,
     pub default_ttl: u64,
-    /// the `/notify` fallback when a request omits its own `priority`
-    /// (`Config.manual_default_priority`, default `Medium`) — a request
-    /// that sets `priority` explicitly still overrides this.
     pub manual_default_priority: Priority,
-    /// No direct consumer in this struct: it's carried here only because
-    /// `Config`'s own `agent_priority` field (this value's source) is
-    /// itself a migration target, not because
-    /// `/notify`/`agent_events_handler` reads it.
     pub agent_priority: Priority,
-    /// UNLIKE `agent_priority` above, this one has a live consumer:
-    /// `agent_events_handler` passes it as the one-shot rotation window to
-    /// `agents::notification::build_notification` for every noteworthy
-    /// Agent Notification.
     pub agent_ttl_secs: u64,
-    /// the four kind-priority/informational knobs `[agents]` config
-    /// resolves to — built once in `lib.rs`'s `setup` and reused for
-    /// every `/agent/events` call.
     pub agent_notification_policy: NotificationPolicy,
-    /// per-runtime `[agents.runtimes.*]` enable
-    /// flags, read by `agent_events_handler` to decide whether a known,
-    /// syntactically valid runtime's event still reaches the Agent
-    /// Registry/Notification Engine — see that handler's own doc for the
-    /// "why 202, not 400" reasoning.
     pub agent_runtimes: crate::config::AgentRuntimesConfig,
-    /// the `[agents]` master switch, independent
-    /// of the four per-runtime flags above — `agent_events_handler` skips
-    /// the same registry/notification path when this is `false`,
-    /// regardless of which runtime sent the event.
     pub agent_enabled: bool,
-    /// the one Agent Registry, behind the same
-    /// application-state boundary as `engine` above — see
-    /// `agents/registry.rs::AgentRegistryHandle`'s own doc for why it's
-    /// a cheap `Clone` handle rather than the registry by value.
     pub agent_registry: AgentRegistryHandle,
-    /// the `agent-state` IPC publisher — see
-    /// `agents/board.rs::AgentBoardPublisher`'s own doc. Called here
-    /// after every `Applied` `/agent/events` mutation; the periodic
-    /// stale/retention tick is driven independently by
-    /// `AgentBoardPublisher::spawn_tick` (`lib.rs`'s `setup` closure).
     pub agent_board: AgentBoardPublisher<R>,
-    /// shared Adapter
-    /// Health bookkeeping — this handler records "last accepted event"
-    /// and "last bounded error category" into it on every request; the
-    /// Settings `get_agent_health` command and `agent_board`'s own
-    /// publish path both read it back via `HealthTracker::snapshot`. See
-    /// that type's own module doc for the pure/impure split.
     pub agent_health: std::sync::Arc<crate::agents::health::HealthTracker>,
 }
 
@@ -106,47 +63,27 @@ struct NotifyRequest {
     title: Option<String>,
     body: Option<String>,
     priority: Option<Priority>,
-    // non-`Option`, unlike `priority` — deliberate: sources that can't
-    // know a specific signal (this endpoint's own CLI callers) simply
-    // never set the field and get `Generic` via this default, mirroring
-    // `presentation.rs`'s `DetectOutput` cutout-field pattern rather than
-    // `priority`'s `unwrap_or` pattern in this same file.
     #[serde(default)]
     signal: EventSignal,
-    // A `/notify` caller has exactly one origin: `SourceKind::Manual`.
-    // The Agent Adapter layer posts to `/agent/events`, not here. This
-    // struct has no `deny_unknown_fields`, so an unrecognized key (a
-    // stray `"source"`, anything else) is silently ignored.
-    //
-    // An optional subtitle plus optional label/value detail pairs. Both
-    // are `Option` — a missing field deserializes to `None` (serde
-    // special-cases `Option`). Both are capped/sanitized (see
-    // `sanitize_subtitle`/`sanitize_details`) before they reach
+    // Both are capped/sanitized (see `sanitize_subtitle`/`sanitize_details`) before they reach
     // `EventMeta`, since `details` is untrusted hook input.
     subtitle: Option<String>,
     details: Option<Vec<DetailItem>>,
 }
 
-/// Display-safety caps for the rich-relay fields: the manifest lives in
-/// a fixed 500×300 window, so subtitle/detail text
-/// is bounded here — the server is the trust boundary. The hooks truncate
-/// earlier as a courtesy, never as the guarantee; if the window ever
-/// grows, revisit these numbers, not the mechanism.
+/// Display-safety caps for the rich-relay fields: the manifest lives in a fixed 500×300 window, so
+/// subtitle/detail text is bounded here — the server is the trust boundary.
 const SUBTITLE_MAX_CHARS: usize = 120;
 const DETAILS_MAX_PAIRS: usize = 8;
 const DETAIL_LABEL_MAX_CHARS: usize = 40;
 const DETAIL_VALUE_MAX_CHARS: usize = 200;
-// title/body are the two required fields on every request — the same
-// display-safety rationale as the subtitle/detail caps above applies
-// (fixed 500×300 window), just sized a little larger since title/body
-// are the primary content rather than supplementary meta. The overall
-// 64 KiB body limit alone would still let one unbounded field blow the
-// layout.
+// title/body are the two required fields on every request — the same display-safety rationale as
+// the subtitle/detail caps above applies (fixed 500×300 window).
 const TITLE_MAX_CHARS: usize = 200;
 const BODY_MAX_CHARS: usize = 500;
 
-/// Truncates to at most `max_chars` characters (not bytes — never splits a
-/// UTF-8 codepoint), appending an ellipsis only when truncation happened.
+/// Truncates to at most `max_chars` characters (not bytes — never splits a UTF-8 codepoint),
+/// appending an ellipsis only when truncation happened.
 fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
@@ -157,17 +94,12 @@ fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// An empty subtitle collapses to `None`; anything longer than the cap is
-/// truncated with an ellipsis.
 fn sanitize_subtitle(subtitle: Option<String>) -> Option<String> {
     subtitle
         .filter(|s| !s.is_empty())
         .map(|s| truncate_with_ellipsis(&s, SUBTITLE_MAX_CHARS))
 }
 
-/// Drops pairs with an empty label, keeps at most `DETAILS_MAX_PAIRS`
-/// (dropping happens first, so the cap counts only non-empty-label pairs),
-/// and truncates each label/value to its cap.
 fn sanitize_details(details: Option<Vec<DetailItem>>) -> Vec<DetailItem> {
     details
         .unwrap_or_default()
@@ -185,41 +117,29 @@ pub fn router<R: tauri::Runtime>(state: AppState<R>) -> Router {
     Router::new()
         .route("/notify", post(notify_handler::<R>))
         .route("/agent/events", post(agent_events_handler::<R>))
-        // one shared 64 KiB body cap for both loopback endpoints, read
-        // from the ONE constant (`agents::adapter::MAX_BODY_BYTES`)
-        // rather than repeating the literal per route.
+        // one shared 64 KiB body cap for both loopback endpoints, read from the ONE constant
+        // (`agents::adapter::MAX_BODY_BYTES`) rather than repeating the literal per route.
         .layer(DefaultBodyLimit::max(adapter::MAX_BODY_BYTES))
         .with_state(state)
 }
 
-/// Binds the listener. Loopback-only is a security boundary
-/// (`ARCHITECTURE.md` §7): this is the single place a bind happens,
-/// and it is hardcoded to 127.0.0.1 — no config field can widen it.
+/// Binds the listener.
 pub async fn bind_listener(port: u16) -> std::io::Result<tokio::net::TcpListener> {
     tokio::net::TcpListener::bind(("127.0.0.1", port)).await
 }
 
-/// Strips a trailing `:<port>` from a `Host` header value, handling the
-/// IPv6 bracket form (`[::1]:9789`) as well as the plain `host:port`
-/// form. A value with no colon (or an IPv6 literal with no port suffix)
-/// is returned unchanged.
 fn host_header_without_port(host_header: &str) -> &str {
     if let Some(rest) = host_header.strip_prefix('[') {
-        // IPv6 literal: `[::1]` or `[::1]:9789` — the host is everything
-        // up to the closing bracket.
         return rest.split(']').next().unwrap_or(rest);
     }
     match host_header.rsplit_once(':') {
-        // only split on a trailing numeric port — a bare IPv6 literal
-        // with no brackets (unusual in a Host header, but defensive)
-        // contains colons that are not a port separator.
         Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => host,
         _ => host_header,
     }
 }
 
-/// See the DNS-rebinding comment at the call site in `notify_handler`:
-/// only these three loopback literals are accepted, port suffix ignored.
+/// See the DNS-rebinding comment at the call site in `notify_handler`: only these three loopback
+/// literals are accepted, port suffix ignored.
 fn is_loopback_host(host_header: &str) -> bool {
     matches!(
         host_header_without_port(host_header),
@@ -227,10 +147,8 @@ fn is_loopback_host(host_header: &str) -> bool {
     )
 }
 
-/// Content-type defense (`application/json` only), shared by every
-/// loopback POST handler (`notify_handler`, `agent_events_handler`).
-/// `endpoint` is just the log-line label (e.g. `"notify"`,
-/// `"agent/events"`) — the check itself is identical for both routes.
+/// Content-type defense (`application/json` only), shared by every loopback POST handler
+/// (`notify_handler`, `agent_events_handler`).
 fn check_json_content_type(headers: &HeaderMap, endpoint: &str) -> Result<(), HttpError> {
     let content_type = headers
         .get("content-type")
@@ -245,18 +163,7 @@ fn check_json_content_type(headers: &HeaderMap, endpoint: &str) -> Result<(), Ht
     Ok(())
 }
 
-/// DNS-rebinding defense, shared by every loopback POST handler. The
-/// loopback bind (`bind_listener`, above) stops a remote attacker from
-/// reaching this socket at all, but a page served from a *legitimate*
-/// remote origin can rebind its own hostname's DNS to 127.0.0.1 after
-/// the browser's same-origin checks already passed, then issue a
-/// same-origin `fetch` that lands here over a genuinely local TCP
-/// connection. The one thing that request can't forge convincingly is
-/// the `Host` header — a browser sets it from the URL's origin, which
-/// is the attacker's domain, not `127.0.0.1`. The legitimate `notchtap`
-/// CLI and Agent Adapter helpers always talk to
-/// `http://127.0.0.1:<port>/...`, so they always send a loopback Host.
-/// Reject anything else (including a missing header).
+/// DNS-rebinding defense, shared by every loopback POST handler.
 fn check_loopback_host(headers: &HeaderMap, endpoint: &str) -> Result<(), HttpError> {
     let host_header = headers
         .get(axum::http::header::HOST)
@@ -296,16 +203,12 @@ async fn notify_handler<R: tauri::Runtime>(
     })?;
     let body = truncate_with_ellipsis(&body, BODY_MAX_CHARS);
 
-    // `/notify` has exactly one origin (see `NotifyRequest`'s own doc).
     let (origin, default_priority, ttl_secs) = (
         SourceKind::Manual,
         state.manual_default_priority,
         state.default_ttl,
     );
 
-    // subtitle/details are the only meta a `/notify` caller may
-    // set (source/category/published/link stay poller-only); both are
-    // sanitized/capped here — this is the trust boundary for hook input.
     let meta = EventMeta {
         subtitle: sanitize_subtitle(req.subtitle),
         details: sanitize_details(req.details),
@@ -347,20 +250,8 @@ async fn notify_handler<R: tauri::Runtime>(
     Ok(response.into_response())
 }
 
-/// `POST /agent/events`. Shares `/notify`'s
-/// listener, loopback binding, Host-header defense, and body-limit
-/// posture (`router`, above) — see `check_json_content_type`/
-/// `check_loopback_host`'s docs for why those two checks are factored
-/// out rather than duplicated here.
-///
-/// Status mapping: a parse/validation failure
-/// (`AdapterError`, `agents/adapter.rs`) is always `400`; oversized body
-/// is `413` via the router's `DefaultBodyLimit` layer (never reaches
-/// this function); a successful [`ApplyOutcome::Applied`] and the two
-/// idempotent no-op outcomes (`DuplicateEventId`/`StaleSequence`) are
-/// both `202` — the wire response distinguishes them only via the
-/// `idempotent` body field. The caller cannot tell from the status code
-/// alone, by design: both are a successful, safe-to-retry acceptance.
+/// Shares `/notify`'s listener, loopback binding, Host-header defense, and body-limit posture
+/// (`router`, above).
 async fn agent_events_handler<R: tauri::Runtime>(
     State(state): State<AppState<R>>,
     headers: HeaderMap,
@@ -371,12 +262,6 @@ async fn agent_events_handler<R: tauri::Runtime>(
 
     let parsed = adapter::parse_wire_event(&body).map_err(|e| {
         tracing::warn!(error = %e, "agent/events: rejected — {e}");
-        // attribute
-        // the rejection to a known runtime's Adapter Health card
-        // whenever the body at least named one — see
-        // `best_effort_runtime_hint`'s own doc for why this is a
-        // separate, tolerant re-read rather than something `AdapterError`
-        // itself carries.
         if let Some(runtime) = crate::agents::health::best_effort_runtime_hint(&body) {
             state.agent_health.record_error(
                 runtime,
@@ -392,46 +277,18 @@ async fn agent_events_handler<R: tauri::Runtime>(
     let event_id = event.event_id.clone();
     let kind = event.kind;
     let terminal = event.terminal;
-    // Cloned before `event` moves into `apply_event` below — the
-    // notification mapping (`notification::build_notification`) needs the
-    // same already-sanitized summary the registry itself just accepted,
-    // not a second untrusted read of the wire body.
     let summary = event.summary.clone();
-    // same clone-before-move for the parity fields — the project
-    // NAME (not cwd) and the already-sanitized/capped details the registry
-    // just accepted, so an agent card's subtitle/details match what a
-    // manual `/notify` rich-relay call would populate for the same shape.
     let project_name = event.project.as_ref().and_then(|p| p.name.clone());
     let details = event.details.clone();
     let runtime = session_key.runtime;
     let native_event = parsed.native_event;
 
-    // a well-formed
-    // event was just parsed off the wire for this runtime — recorded
-    // regardless of the admin-disabled check just below, since this
-    // field answers "is the adapter actually delivering", not "did
-    // notchtap act on it" (see `HealthTracker::record_accepted`'s own
-    // doc).
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     state.agent_health.record_accepted(runtime, now_ms);
 
-    // a KNOWN, syntactically valid runtime
-    // (`adapter::parse_wire_event` already 400s an unrecognized runtime
-    // string — that's the "unsupported runtime" `400` case) whose
-    // `[agents.runtimes.*]` toggle is administratively off skips BOTH the
-    // Agent Registry mutation and the Notification mapping entirely.
-    // This is deliberately a `202`, not a `400`: the request itself is
-    // well-formed and the runtime is one this build genuinely supports —
-    // the operator has just chosen not to accept its events right now,
-    // the same "accepted but not acted on" shape a duplicate
-    // `eventId`/stale `sequence` already uses. `runtimeDisabled` is a
-    // diagnostic-only wire field alongside `idempotent`/
-    // `notificationQueued`, so a caller (or a test) can distinguish this
-    // path from an ordinary accepted event without guessing from the
-    // (identical) status code.
     if !state.agent_enabled || !state.agent_runtimes.runtime_enabled(runtime) {
         tracing::info!(
             "agent.runtime" = ?runtime,
@@ -454,13 +311,6 @@ async fn agent_events_handler<R: tauri::Runtime>(
     let outcome = state.agent_registry.apply_event(event, now).await;
     let resulting_state = state.agent_registry.state_for(&session_key, now).await;
 
-    // Published after every accepted `/agent/events` mutation — gated on
-    // `Applied` specifically (not the two idempotent no-op outcomes):
-    // `DuplicateEventId`/`StaleSequence` made zero registry change, so
-    // `publish_if_changed`'s own dedup would suppress them anyway, but
-    // skipping the call entirely avoids a needless registry re-read on
-    // the (expected, at-least-once-delivery) common case of a retried
-    // event.
     if matches!(outcome, ApplyOutcome::Applied) {
         state.agent_board.publish_if_changed(now).await;
     }
@@ -470,24 +320,8 @@ async fn agent_events_handler<R: tauri::Runtime>(
         ApplyOutcome::DuplicateEventId | ApplyOutcome::StaleSequence
     );
 
-    // only a freshly `Applied` event is ever eligible
-    // for a Notification — a duplicate/stale no-op must never re-offer one
-    // (the registry itself already made zero state change for those, so a
-    // second card would be pure duplication, not a queue-full retry).
-    // `notification_queued` stays `None` (serializes to JSON `null`) for
-    // every registry-only path: idempotent no-ops AND ordinary
-    // Starting/Working/tool/subagent progress and (default policy)
-    // suppressed Informational/non-terminal-Failed events, none of which
-    // ever attempted to enter the Engine at all — `Some(false)` is
-    // reserved for the one case it means: a noteworthy event that WAS
-    // attempted and lost to a full queue tier.
     let mut notification_queued: Option<bool> = None;
     if matches!(outcome, ApplyOutcome::Applied) {
-        // `NotificationPolicy` and the agent-notification ttl come from
-        // `[agents]` config — `state.agent_notification_policy` (built
-        // once in `lib.rs`'s `setup` from `agents.*_priority`/
-        // `agents.informational_notifications`) and `state.agent_ttl_secs`
-        // (the flat migration-target field).
         if let Some(notification) = notification::build_notification(
             &session_key,
             kind,
@@ -507,8 +341,8 @@ async fn agent_events_handler<R: tauri::Runtime>(
         }
     }
 
-    // structured log fields — cwd and the raw session id never appear
-    // here (`session_hash`, not `session_key.native_session_id`).
+    // structured log fields — cwd and the raw session id never appear here (`session_hash`, not
+    // `session_key.native_session_id`).
     tracing::info!(
         "agent.runtime" = ?runtime,
         "agent.session_hash" = %session_hash,
@@ -593,10 +427,6 @@ mod tests {
                 agent_registry,
                 Arc::new(crate::agents::health::HealthTracker::new()),
                 crate::config::AgentRuntimesConfig::default(),
-                // http tests assert the /agent/events -> publish wiring
-                // itself, not the Board's presence gate (board.rs owns
-                // those tests) — `true` keeps every existing assertion
-                // reading the ungated snapshot it was written against.
                 true,
                 std::sync::Arc::new(crate::tabs::TabWire::default()),
             ),
@@ -613,9 +443,6 @@ mod tests {
     }
 
     fn json_request(body: &str) -> Request<Body> {
-        // a hand-built `Request` (unlike a real hyper client) doesn't get
-        // a `Host` header for free, so every test that expects to reach
-        // past the Host check sets a loopback one explicitly here.
         Request::builder()
             .method("POST")
             .uri("/notify")
@@ -635,17 +462,12 @@ mod tests {
             .unwrap()
     }
 
-    /// A minimal, structurally-valid schema-v1 body —
-    /// `event_id`/`session_id` are parameters so tests can vary identity
-    /// without repeating the whole JSON literal.
     fn valid_agent_body(event_id: &str, session_id: &str) -> String {
         format!(
             r#"{{"schemaVersion":1,"eventId":"{event_id}","runtime":"codex","sessionId":"{session_id}","nativeEvent":"PermissionRequest","kind":"permission_requested","state":"waiting_for_permission","terminal":false}}"#
         )
     }
 
-    // same shape as `valid_agent_body` but carrying `project`/
-    // `details`, for the notification-parity pin below.
     fn valid_agent_body_with_project_and_details(event_id: &str, session_id: &str) -> String {
         format!(
             r#"{{"schemaVersion":1,"eventId":"{event_id}","runtime":"codex","sessionId":"{session_id}","nativeEvent":"PermissionRequest","kind":"permission_requested","state":"waiting_for_permission","terminal":false,"project":{{"name":"mac-notification-nudge","cwd":"/Users/dev/mac-notification-nudge"}},"details":[{{"label":"Tool","value":"Bash"}},{{"label":"Command","value":"git push"}}]}}"#
@@ -706,15 +528,11 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    // --- Host-header validation (DNS-rebinding defense) ---
-
     #[test]
     fn is_loopback_host_accepts_the_three_loopback_literals_with_or_without_port() {
         for host in ["127.0.0.1", "127.0.0.1:9789", "localhost", "localhost:9789"] {
             assert!(is_loopback_host(host), "{host:?} should be accepted");
         }
-        // IPv6 loopback, bracketed (the only valid Host-header form for a
-        // literal IPv6 address), with and without a port suffix.
         for host in ["[::1]", "[::1]:9789"] {
             assert!(is_loopback_host(host), "{host:?} should be accepted");
         }
@@ -750,9 +568,6 @@ mod tests {
 
     #[tokio::test]
     async fn foreign_host_header_is_rejected() {
-        // the DNS-rebinding scenario: a rebound browser's same-origin
-        // fetch still carries the attacker's own domain as Host, even
-        // though the TCP connection lands on loopback.
         let app = router(test_state(SingleSlotQueue::new(50)));
         let request = Request::builder()
             .method("POST")
@@ -794,10 +609,6 @@ mod tests {
 
     #[tokio::test]
     async fn full_queue_returns_429() {
-        // per-tier cap 0: the first push still fast-path-promotes (nothing
-        // waiting yet, nothing visible); the second push at the same tier
-        // has nowhere to go, since the fast path only checks "is anything
-        // waiting", not the per-tier cap.
         let app = router(test_state(SingleSlotQueue::new(0)));
         let first = app
             .clone()
@@ -815,11 +626,6 @@ mod tests {
 
     #[tokio::test]
     async fn full_queue_returns_429_while_paused() {
-        // TESTING_STRATEGY.md §4.3: "still 429 when full while paused" —
-        // pause buffers, it never lifts the max_queued_per_tier cap. paused
-        // forces every push onto the waiting path (no fast path), so a
-        // 0-per-tier cap rejects the very first push here, unlike the
-        // non-paused variant above which needs a second push to see it.
         let mut queue = SingleSlotQueue::new(0);
         queue.pause();
         let app = router(test_state(queue));
@@ -840,8 +646,6 @@ mod tests {
 
     #[tokio::test]
     async fn listener_binds_loopback_only() {
-        // the security-boundary test from TESTING_STRATEGY.md §4.3: a real
-        // bind (port 0 = ephemeral), asserting the bound address is loopback.
         let listener = bind_listener(0).await.unwrap();
         let addr = listener.local_addr().unwrap();
         assert!(addr.ip().is_loopback());
@@ -849,8 +653,6 @@ mod tests {
 
     #[tokio::test]
     async fn ok_and_paused_response_bodies_match_documented_shape() {
-        // deserialize rather than substring-match so the contract is pinned
-        // field-by-field.
         let app = router(test_state(SingleSlotQueue::new(50)));
         let ok_response = app
             .clone()
@@ -877,7 +679,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_method_on_notify_is_rejected() {
-        // only POST /notify is routed; axum rejects other methods with 405.
         let app = router(test_state(SingleSlotQueue::new(50)));
         let request = Request::builder()
             .method("GET")
@@ -887,8 +688,6 @@ mod tests {
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
-
-    // --- priority field ---
 
     #[tokio::test]
     async fn priority_field_defaults_to_medium_when_absent() {
@@ -921,8 +720,6 @@ mod tests {
 
     #[tokio::test]
     async fn manual_default_priority_drives_the_absent_field_fallback() {
-        // the fallback is state.manual_default_priority
-        // (Config.manual_default_priority).
         let mut state = test_state(SingleSlotQueue::new(50));
         state.manual_default_priority = Priority::Low;
         let app = router(state.clone());
@@ -955,15 +752,8 @@ mod tests {
         );
     }
 
-    // --- an unrecognized `source` key on /notify ---
-
     #[tokio::test]
     async fn a_source_field_on_the_wire_is_silently_ignored_and_stays_manual() {
-        // `/notify` has no `source` field — a caller that sends one
-        // anyway (an old script, a stale integration) must not be
-        // rejected: `NotifyRequest` has no `deny_unknown_fields`, so the
-        // key is silently ignored and the push resolves as an ordinary
-        // Manual push, same as if the key were absent entirely.
         let mut state = test_state(SingleSlotQueue::new(50));
         state.manual_default_priority = Priority::Low;
         let app = router(state.clone());
@@ -993,8 +783,6 @@ mod tests {
             serde_json::from_str(r#"{"title":"t","body":"b","priority":"high"}"#).unwrap();
         assert_eq!(req.priority, Some(Priority::High));
     }
-
-    // --- signal field ---
 
     #[tokio::test]
     async fn signal_field_defaults_to_generic_when_absent() {
@@ -1043,8 +831,6 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_signal_string_returns_400() {
-        // proves rejection, not silent coercion to Generic — same rigor
-        // as EventType's own unknown-string handling.
         let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app
             .oneshot(json_request(
@@ -1055,17 +841,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---
-    //
-    // Only one item is ever visible, so "burst" here means bursting one
-    // priority tier's `waiting` up to and past its `max_queued_per_tier`
-    // cap.
-
     #[tokio::test]
     async fn burst_to_tier_cap_boundary_accepts_exactly_cap_plus_one() {
-        // cap 5: the first push fast-path-promotes to visible (nothing
-        // waiting yet), the next 5 land in waiting up to the cap, and the
-        // remaining 2 have nowhere to go. 8 posts total: 6x 200, 2x 429.
         let app = router(test_state(SingleSlotQueue::new(5)));
         let mut accepted = 0;
         let mut rejected = 0;
@@ -1089,8 +866,6 @@ mod tests {
 
     #[tokio::test]
     async fn paused_burst_to_tier_cap_boundary_accepts_exactly_cap() {
-        // paused from the start: no fast path, every push goes straight to
-        // waiting. cap 5, 8 posts: 5x 202 then 3x 429, nothing visible.
         let mut queue = SingleSlotQueue::new(5);
         queue.pause();
         let app = router(test_state(queue));
@@ -1119,8 +894,6 @@ mod tests {
 
     #[tokio::test]
     async fn boundary_body_size_exactly_at_limit_is_accepted() {
-        // pin the exact 64 KiB DefaultBodyLimit boundary, not just a
-        // grossly oversized body (oversized_body_returns_413 above).
         let limit = 64 * 1024;
         let overhead = r#"{"title":"t","body":""}"#.len();
         let pad = limit - overhead;
@@ -1155,14 +928,6 @@ mod tests {
 
     #[tokio::test]
     async fn ttl_field_on_wire_is_ignored_uses_configured_default() {
-        // `/notify` never accepts a client-supplied ttl at all —
-        // `NotifyRequest` has no `ttlSecs` field. An extra,
-        // unrecognized field is silently ignored (no
-        // `#[serde(deny_unknown_fields)]`), and the server's configured
-        // `default_ttl` still applies. Verified via `next_deadline()`:
-        // arms the auto-retract at promotion, so the earliest
-        // deadline is the retract at half the base window — ~now +
-        // default_ttl/2, not anywhere near the attempted wire value.
         let state = test_state(SingleSlotQueue::new(50)); // default_ttl: 8
         let before = std::time::Instant::now();
         let app = router(state.clone());
@@ -1186,8 +951,6 @@ mod tests {
         );
     }
 
-    // --- rich-relay subtitle/details wire fields + caps ---
-
     #[test]
     fn sanitize_subtitle_empties_and_caps() {
         assert_eq!(sanitize_subtitle(None), None);
@@ -1196,7 +959,6 @@ mod tests {
             sanitize_subtitle(Some("short".to_string())),
             Some("short".to_string())
         );
-        // 121 chars -> 120 kept + an ellipsis (121 total)
         let capped = sanitize_subtitle(Some("x".repeat(121))).unwrap();
         assert_eq!(capped.chars().count(), 121);
         assert!(capped.ends_with('…'));
@@ -1205,7 +967,6 @@ mod tests {
 
     #[test]
     fn sanitize_details_enforces_caps() {
-        // 9 non-empty-label pairs -> capped to 8
         let nine: Vec<DetailItem> = (0..9)
             .map(|i| DetailItem {
                 label: format!("L{i}"),
@@ -1214,7 +975,6 @@ mod tests {
             .collect();
         assert_eq!(sanitize_details(Some(nine)).len(), 8);
 
-        // empty-label pairs dropped before the count cap applies
         let with_empty = vec![
             DetailItem {
                 label: String::new(),
@@ -1229,7 +989,6 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].label, "Kept");
 
-        // label > 40 and value > 200 chars each truncated with an ellipsis
         let big = sanitize_details(Some(vec![DetailItem {
             label: "L".repeat(50),
             value: "v".repeat(500),
@@ -1254,8 +1013,6 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        // bind first so the MutexGuard drops at the semicolon, not at the
-        // end of the match (which would outlive `state`).
         let slot = state.engine.read(|q| q.current_slot_state()).await;
         match slot {
             crate::event::SlotState::Showing {
@@ -1339,7 +1096,6 @@ mod tests {
 
     #[tokio::test]
     async fn notify_without_subtitle_or_details_leaves_them_empty() {
-        // a payload setting neither field yields None/empty.
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let response = app
@@ -1359,8 +1115,6 @@ mod tests {
             other => panic!("expected Showing, got {other:?}"),
         }
     }
-
-    // --- POST /agent/events status codes ---
 
     #[tokio::test]
     async fn valid_agent_event_returns_202_accepted() {
@@ -1387,17 +1141,8 @@ mod tests {
         assert_eq!(state.agent_registry.session_count().await, 1);
     }
 
-    // --- per-runtime `[agents.runtimes.*]` gate ---
-
     #[tokio::test]
     async fn disabled_runtime_skips_both_registry_and_notification_and_returns_202() {
-        // `valid_agent_body` is always `runtime: "codex"` — disable just
-        // that runtime and prove BOTH halves of the skip: no registry
-        // mutation (`session_count` stays 0) and no notification queued
-        // (queue's `current_priority` stays `None`), while the endpoint
-        // still answers `202` (a known, syntactically valid runtime is not
-        // the same "unsupported runtime" `400` case — see
-        // `agent_events_handler`'s own doc).
         let mut state = test_state(SingleSlotQueue::new(50));
         state.agent_runtimes.codex.enabled = false;
         let app = router(state.clone());
@@ -1444,13 +1189,8 @@ mod tests {
         assert_eq!(state.agent_registry.session_count().await, 1);
     }
 
-    // --- registry → Notification mapping ---------
-
     #[tokio::test]
     async fn noteworthy_agent_event_also_queues_a_notification() {
-        // `valid_agent_body` is `kind: "permission_requested"` —
-        // noteworthy, so it must both update the registry AND promote a
-        // High-priority card into the (empty, plenty-of-room) queue.
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let response = app
@@ -1477,12 +1217,6 @@ mod tests {
         }
     }
 
-    // the parity companion to the pin above — a noteworthy event
-    // that also carries `project`/`details` must thread the project NAME
-    // onto `subtitle` and the details onto `details`, the same
-    // `notification::build_notification` parity mapping unit-tested
-    // directly in `agents/notification.rs`, now proven end to end through
-    // the real `/agent/events` handler.
     #[tokio::test]
     async fn noteworthy_agent_event_threads_project_and_details_onto_the_card() {
         let state = test_state(SingleSlotQueue::new(50));
@@ -1502,7 +1236,6 @@ mod tests {
             crate::event::SlotState::Showing {
                 subtitle, details, ..
             } => {
-                // The project NAME, not the cwd.
                 assert_eq!(subtitle.as_deref(), Some("mac-notification-nudge"));
                 assert_eq!(details.len(), 2);
                 assert_eq!(details[0].label, "Tool");
@@ -1516,11 +1249,6 @@ mod tests {
 
     #[tokio::test]
     async fn progress_event_creates_no_card_and_preserves_registry_history() {
-        // A wire `informational`/`terminal: false` event (Starting/Working/
-        // tool/subagent progress — the runtime hook lists carry no
-        // dedicated "progress" kind) must update the registry only — no
-        // card, and the registry's own accepted state/history for that
-        // session is untouched by the (absent) notification attempt.
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let body = r#"{"schemaVersion":1,"eventId":"e1","runtime":"codex","sessionId":"s1","nativeEvent":"PostToolUse","kind":"informational","state":"working","terminal":false,"summary":"Running tests"}"#;
@@ -1537,13 +1265,6 @@ mod tests {
         assert!(matches!(slot, crate::event::SlotState::Empty));
 
         assert_eq!(state.agent_registry.session_count().await, 1);
-        // This body is a `PostToolUse` declaring `state: "working"` — a
-        // mid-session progress tick, NOT a session start — so it advances
-        // to `Working` even though the registry has never seen the session
-        // before: `registry::apply_event`'s `is_session_start` reads the
-        // adapter's declared state rather than inferring a start from
-        // novelty, so a session first seen mid-flight (notchtap restarted
-        // under it) never reads `Starting`.
         let key = AgentSessionKey::new(crate::agents::model::AgentRuntime::Codex, "s1").unwrap();
         assert_eq!(
             state.agent_registry.state_for(&key, Instant::now()).await,
@@ -1569,10 +1290,6 @@ mod tests {
 
     #[tokio::test]
     async fn duplicate_noteworthy_event_never_double_queues_a_notification() {
-        // A duplicate `eventId` re-delivery of a noteworthy event must be
-        // a pure no-op end to end — not just registry-silent (already
-        // covered by `duplicate_event_id_is_202_idempotent_with_zero_mutation`)
-        // but also never a second attempt at the Engine.
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let first = app
@@ -1596,12 +1313,6 @@ mod tests {
 
     #[tokio::test]
     async fn queue_full_agent_notification_still_updates_registry_and_returns_202() {
-        // Queue-full independence: the registry accepts an
-        // Agent Event regardless of Engine queue capacity — losing an
-        // ephemeral card must never lose authoritative session state.
-        // Per-tier cap 0 (same recipe as `full_queue_returns_429` for
-        // `/notify`): the first push fast-path-promotes into the empty
-        // slot; the second, same-tier (High) push has nowhere to go.
         let state = test_state(SingleSlotQueue::new(0));
         let app = router(state.clone());
 
@@ -1620,17 +1331,12 @@ mod tests {
             .oneshot(agent_events_request(&valid_agent_body("e2", "s2")))
             .await
             .unwrap();
-        // Still 202, never 429 — the Notification's queue-full is not an
-        // HTTP error for this endpoint, only a diagnostic body field.
         assert_eq!(second.status(), StatusCode::ACCEPTED);
         let body2 = body_json(second).await;
         assert_eq!(body2["status"].as_str(), Some("accepted"));
         assert_eq!(body2["idempotent"].as_bool(), Some(false));
         assert_eq!(body2["notificationQueued"].as_bool(), Some(false));
 
-        // The registry still accepted BOTH sessions — the second one's
-        // lost card never rolled back the registry mutation that already
-        // happened.
         assert_eq!(state.agent_registry.session_count().await, 2);
         let key2 = AgentSessionKey::new(crate::agents::model::AgentRuntime::Codex, "s2").unwrap();
         assert_eq!(
@@ -1708,8 +1414,6 @@ mod tests {
 
     #[tokio::test]
     async fn foreign_host_header_on_agent_events_is_rejected() {
-        // same DNS-rebinding defense as /notify — proves the shared
-        // helper is actually wired into the new route, not just /notify.
         let app = router(test_state(SingleSlotQueue::new(50)));
         let request = Request::builder()
             .method("POST")
@@ -1735,8 +1439,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    // --- duplicate/stale idempotency: 202 + zero registry mutation ---
-
     #[tokio::test]
     async fn duplicate_event_id_is_202_idempotent_with_zero_mutation() {
         let state = test_state(SingleSlotQueue::new(50));
@@ -1749,17 +1451,12 @@ mod tests {
         assert_eq!(first.status(), StatusCode::ACCEPTED);
         assert_eq!(state.agent_registry.session_count().await, 1);
 
-        // Re-deliver the SAME eventId with a body that WOULD change state
-        // if accepted (a different kind) — it must be a pure no-op.
         let dup_body = r#"{"schemaVersion":1,"eventId":"e1","runtime":"codex","sessionId":"s1","nativeEvent":"Stop","kind":"completed","state":"completed","terminal":true}"#;
         let second = app.oneshot(agent_events_request(dup_body)).await.unwrap();
         assert_eq!(second.status(), StatusCode::ACCEPTED);
         let body = body_json(second).await;
         assert_eq!(body["idempotent"].as_bool(), Some(true));
 
-        // Zero mutation: still 1 session, and it must NOT have flipped to
-        // Completed — the duplicate's differing kind/terminal must never
-        // have reached the registry.
         assert_eq!(state.agent_registry.session_count().await, 1);
         let key = AgentSessionKey::new(crate::agents::model::AgentRuntime::Codex, "s1").unwrap();
         assert_eq!(
@@ -1780,8 +1477,6 @@ mod tests {
             .unwrap();
         assert_eq!(first.status(), StatusCode::ACCEPTED);
 
-        // Lower sequence, different (state-changing) kind — must be
-        // rejected as stale with zero registry mutation.
         let stale = r#"{"schemaVersion":1,"eventId":"e2","runtime":"codex","sessionId":"s1","sequence":4,"nativeEvent":"Stop","kind":"completed","state":"completed","terminal":true}"#;
         let second = app.oneshot(agent_events_request(stale)).await.unwrap();
         assert_eq!(second.status(), StatusCode::ACCEPTED);
@@ -1796,8 +1491,6 @@ mod tests {
         assert_eq!(state.agent_registry.session_count().await, 1);
     }
 
-    // --- every wire cap: at, above, and trimming behavior ------------
-
     #[tokio::test]
     async fn agent_event_id_cap_truncates_above_256_bytes() {
         let state = test_state(SingleSlotQueue::new(50));
@@ -1809,10 +1502,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        // A second delivery with the SAME (truncated-to-256) prefix must
-        // be treated as the duplicate it now is once both truncate
-        // identically — proves the cap actually applied server-side
-        // rather than merely being accepted untouched.
         let response2 = app
             .oneshot(agent_events_request(&valid_agent_body(&long_id, "s-cap")))
             .await
@@ -1875,8 +1564,6 @@ mod tests {
 
     #[tokio::test]
     async fn agent_event_name_and_cwd_caps_are_enforced_server_side() {
-        // Exercises the 120-scalar name/label cap and the 1024-scalar
-        // cwd/value cap together via the project object.
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let long_name = "n".repeat(200);
@@ -1900,29 +1587,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
 
-    // --- log hygiene: raw session id / cwd never reach the log line ---
-    //
-    // A per-test `tracing::subscriber::set_default` (thread-local) is the
-    // textbook pattern and does NOT work here: `tracing`'s per-callsite
-    // `Interest` (whether a given `tracing::info!` site is worth
-    // constructing an event for at all) is cached PROCESS-WIDE, decided
-    // the first time any thread touches that site. Under the suite's
-    // parallelism, one of the dozen-plus other `/agent/events` tests
-    // reaches `agent_events_handler`'s `tracing::info!` first on a thread
-    // carrying the ambient no-op default, caching the site as "never
-    // interesting" for the whole process before this test's thread gets a
-    // turn. `tracing::callsite::rebuild_interest_cache()` cannot outrun
-    // that — another thread can re-lose the race a moment later.
-    //
-    // So: install exactly ONE global default `Subscriber` for the whole
-    // test binary (so `Interest` is decided once, the same way regardless
-    // of which thread asks first) and route each event to the RIGHT
-    // test's buffer — or nowhere — via a thread-local lookup inside the
-    // writer, which `Subscriber::event` re-consults on every call (unlike
-    // the cached `Interest` fast path). A thread that never calls
-    // `CaptureGuard::install` gets the thread-local's default `None` and
-    // the writer discards the bytes, so every other test's log output is
-    // unaffected.
     thread_local! {
         static CAPTURE_TARGET: std::cell::RefCell<Option<Arc<std::sync::Mutex<Vec<u8>>>>> =
             const { std::cell::RefCell::new(None) };
@@ -1954,9 +1618,6 @@ mod tests {
         }
     }
 
-    /// Installs the one process-global subscriber (idempotent — `Once`
-    /// guards it against every test's concurrent first call) and points
-    /// THIS thread's capture target at `buf` until the guard drops.
     struct CaptureGuard;
 
     impl CaptureGuard {
@@ -1967,13 +1628,6 @@ mod tests {
                     .with_writer(CaptureWriter)
                     .with_ansi(false)
                     .finish();
-                // Best-effort: if some other path in this binary already
-                // won the race to install a global default first, this
-                // test simply can't capture anything and its own
-                // "the log line fired" sanity assertion will fail loudly
-                // rather than silently — there is no other global default
-                // installed anywhere in this crate (grepped), so in
-                // practice this always wins.
                 let _ = tracing::subscriber::set_global_default(subscriber);
             });
             CAPTURE_TARGET.with(|cell| *cell.borrow_mut() = Some(buf));
@@ -1993,20 +1647,10 @@ mod tests {
 
         let raw_session_id = "SUPER-SECRET-RAW-SESSION-ID-0xdeadbeef";
         let raw_cwd = "/Users/nobody/very-secret-project-path";
-        // `kind: "informational"` (progress, not noteworthy under
-        // the default policy) rather than `permission_requested` — this
-        // test's own concern is log hygiene (`apply_event` + the
-        // `agent/events` log line), not the notification-queueing seam
-        // `noteworthy_agent_event_also_queues_a_notification` already
-        // covers; keeping this one registry-only avoids coupling it to the
-        // Engine/mock-app-emit path too.
         let body = format!(
             r#"{{"schemaVersion":1,"eventId":"e1","runtime":"codex","sessionId":"{raw_session_id}","nativeEvent":"PostToolUse","kind":"informational","state":"working","terminal":false,"project":{{"cwd":"{raw_cwd}"}}}}"#
         );
 
-        // See `CaptureGuard`'s doc above for why this installs a
-        // process-global subscriber (once) and routes via a thread-local
-        // buffer, instead of `tracing::subscriber::set_default`.
         let _guard = CaptureGuard::install(buf.clone());
         let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app.oneshot(agent_events_request(&body)).await.unwrap();
@@ -2022,9 +1666,6 @@ mod tests {
             !captured.contains(raw_cwd),
             "raw cwd must never reach the log line, got: {captured}"
         );
-        // sanity: the log line DID fire (a hashed, not-empty session_hash
-        // field is present), so the negative assertions above aren't
-        // vacuously true because nothing was captured at all.
         assert!(
             captured.contains("agent.session_hash"),
             "expected the accept log line to have fired, got: {captured}"

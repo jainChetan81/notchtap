@@ -13,9 +13,6 @@ import { settingsInvoke } from "../ipc";
 import type { Config, HistoryEntry, HistoryEspnMeta, HistoryRotationSpec } from "../types";
 import { PRIORITY_LABELS } from "../types";
 
-// Row formatting helpers — deliberately duplicated rather than imported
-// from lib/presentation.ts: history is a plain scannable list, not a
-// card renderer.
 const HISTORY_EVENT_TYPE_LABELS = new Map<string, string>([
   ["generic", "Generic"],
   ["score_update", "Score update"],
@@ -23,21 +20,10 @@ const HISTORY_EVENT_TYPE_LABELS = new Map<string, string>([
   ["news_item", "News item"],
 ]);
 
-// event_type is a plain wire string here (HistoryEvent.event_type),
-// unlike rust's closed `EventType` enum — an unrecognized value (a future
-// type landing on one side before the other) falls back to the raw
-// string rather than throwing.
 function historyEventTypeLabel(eventType: string): string {
   return HISTORY_EVENT_TYPE_LABELS.get(eventType) ?? eventType;
 }
 
-// `event.priority` crosses the tauri IPC boundary as untyped JSON
-// (`get_history`'s `invoke` return is cast to `HistoryEntry[]`, not
-// runtime-validated) — a value the rust side hasn't sent yet, or a typo
-// in a future variant, must render legibly rather than as a blank chip
-// (`PRIORITY_LABELS[unknownValue]` is `undefined`, which React silently
-// renders as nothing). Falls back to the raw wire value, same "total
-// lookup" shape as `historyEventTypeLabel` just above.
 function historyPriorityLabel(priority: string): string {
   // SAFETY: hasOwn is the runtime check that priority is a known PriorityLevel — the cast only narrows the lookup after that check.
   // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn needs ES2022 lib; tsconfig targets ES2020.
@@ -53,19 +39,12 @@ function historyRotationLabel(rotation: HistoryRotationSpec): string {
   if (rotation.kind === "recurring") {
     return `every ${rotation.display_secs}s`;
   }
-  // Same runtime-untrusted-IPC defense as `historyPriorityLabel` above:
-  // `HistoryRotationSpec` is a closed two-member union at the type
-  // level, so TS narrows `rotation` to `never` past both checks — but an
-  // actual malformed/future payload isn't guaranteed to match either
-  // member. Read the field back off `unknown` rather than crash or
-  // render nothing.
+  // Runtime IPC may violate the closed union; preserve an unknown-kind fallback.
   // SAFETY: the cast intentionally widens a statically-`never` union to an unknown-shaped read; the cast doesn't assert the union — the following isString check is what establishes `kind` before use.
   const raw = rotation as { kind?: unknown };
   return isString(raw.kind) ? raw.kind : "unknown rotation";
 }
 
-// Text only, no crest artwork — compact one-line score/clock/cards
-// summary for the expandable details.
 function historyEspnSummary(espn: HistoryEspnMeta): string {
   const cardsClean =
     espn.homeCards[0] === 0 &&
@@ -78,10 +57,6 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
   return `${espn.league}: ${espn.homeAbbrev} ${espn.homeScore}–${espn.awayScore} ${espn.awayAbbrev} (${espn.clock})${cards}`;
 }
 
-// Absent on null/undefined OR whitespace-only — a blank source/category
-// reads as absent. `event.origin` is an untyped wire string: only
-// manual/football/agent/news have a colour; an unrecognized origin
-// (hand-edited history file only) renders with no inline style.
 function historyOriginColor(origin: string): string | undefined {
   // SAFETY: hasOwn is the runtime check that origin is a known SourceOriginToken — the cast only narrows the lookup after that check.
   // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn needs ES2022 lib; tsconfig targets ES2020.
@@ -98,11 +73,6 @@ function historyNonBlank(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-// One recorded entry: metadata row (source/category when present; priority,
-// event_type, rotation always render — they're Event's required fields)
-// plus a conditional native `<details>` for the optional richness (subtitle,
-// topic, published time, espn summary, `details[]` pairs, link).
-// `signal`/`id` never render — internal identifiers (`id` is only the key).
 function HistoryRow({ entry }: { entry: HistoryEntry }) {
   const { event } = entry;
   const source = historyNonBlank(event.meta.source);
@@ -119,7 +89,6 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
     event.meta.published_at_ms !== null ||
     event.meta.espn !== undefined;
 
-  // Detail label/value classes — `link` is escaped text, never an <a href>.
   const detailLabelClass =
     "history-detail-label text-fs-caption tracking-[0.04em] text-muted-foreground uppercase";
   const detailValueClass =
@@ -212,8 +181,6 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
             {link !== null && (
               <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
                 <span className={detailLabelClass}>Link</span>
-                {/* untrusted feed data (RSS/ESPN) — literal, selectable
-                    TEXT, never an <a href> or in-webview navigation. */}
                 <span className={cn(detailValueClass, "history-link-text select-text")}>
                   {link}
                 </span>
@@ -226,16 +193,9 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
   );
 }
 
-// Read-only recent history, newest first — reversal happens here at the
-// display layer; the rust store stays oldest -> newest. Advisory
-// mount-only fetch, same as DiagnosticsSection. Not a card renderer —
-// deliberately no overlay/presentation.ts imports: plain scannable list.
 export function HistorySection({ config }: { config: Config }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
-  // Load and clear are independent operations: distinct status instances,
-  // distinct UI locations, distinct announce behavior. No manual Refresh
-  // control — the only read attempt is the passive mount fetch below.
   const loadStatus = useActionStatus("history-load");
   const clearStatus = useActionStatus("history-clear");
 
@@ -257,8 +217,6 @@ export function HistorySection({ config }: { config: Config }) {
 
   async function handleClearClick() {
     if (!confirmingClear) {
-      // step one of the in-component two-step confirmation — never a
-      // browser confirm()/alert(), which would block the webview.
       setConfirmingClear(true);
       return;
     }
@@ -290,8 +248,6 @@ export function HistorySection({ config }: { config: Config }) {
         <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
       ) : (
         <>
-          {/* Sibling of the <ul> below, not a replacement — see the
-              AnimatePresence comment inside the <ul>. */}
           {newestFirst.length === 0 && (
             <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">
               {config.history_enabled
@@ -302,13 +258,6 @@ export function HistorySection({ config }: { config: Config }) {
           <ul
             className={cn("history-list flex flex-col", newestFirst.length > 0 && "py-1 pb-[11px]")}
           >
-            {/* initial={false}: first mount and unchanged re-fetch never
-                cascade — only rows genuinely appearing/leaving animate;
-                Clear collapses removed rows. <ul> + AnimatePresence stay
-                mounted while empty; the empty-state <p> is the sibling
-                above, gated directly on `newestFirst.length === 0`, so it
-                appears while last rows still exit. `py-1 pb-[11px]` gated
-                on `length > 0` so an empty <ul> adds no gap. */}
             <AnimatePresence initial={false}>
               {newestFirst.map((entry) => (
                 <HistoryRow key={entry.event.id} entry={entry} />
@@ -330,9 +279,6 @@ export function HistorySection({ config }: { config: Config }) {
           size="sm"
           className="text-fs-secondary"
           disabled={clearStatus.status.state === "pending"}
-          // The <label htmlFor="clear-history"> above would freeze the
-          // accessible name at "Clear history"; aria-label keeps it in
-          // sync with the visible text.
           aria-label={confirmingClear ? "Really clear?" : "Clear history"}
           onClick={() => void handleClearClick()}
         >

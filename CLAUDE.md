@@ -10,7 +10,7 @@ Canon guide, every agent + maintainer working this repo. Keep it lean: history l
 
 ## writing rules (comments + docs)
 
-Comments and docs describe the CURRENT product only, present tense. Never write plan numbers, dates, review citations, or "what this used to be" — history lives in git. Keep only: invariants code can't express ("never X, it breaks Y"), cross-file couplings named explicitly, security boundaries, short API doc comments. Tool directives (biome-ignore, @ts-expect-error, SAFETY:, #[allow] justifications) stay verbatim.
+Comments and docs describe the CURRENT product only, present tense. Never write plan numbers, dates, review citations, or "what this used to be" — history lives in git. Keep only: invariants code can't express ("never X, it breaks Y"), cross-file couplings named explicitly, security boundaries, short API doc comments. Default to no comment when names, types, tests, or `git blame` make the intent traceable. Keep comments to 1–2 lines; if a comment needs a paragraph, improve the code or move durable rationale into the appropriate architecture document. Tool directives (biome-ignore, @ts-expect-error, SAFETY:, #[allow] justifications) stay verbatim.
 
 ## commands
 

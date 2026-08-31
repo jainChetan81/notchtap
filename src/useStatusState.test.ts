@@ -6,7 +6,6 @@ import { useStatusState } from "./useStatusState";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-// deliberately keeps `unknown` — this file exercises malformed payloads
 const emit = (payload: unknown) => act(() => emitTo("status-state", payload));
 
 const FALLBACK: StatusState = {
@@ -68,8 +67,6 @@ describe("useStatusState", () => {
     const { result } = await renderReady();
     emit(LIVE);
     expect(result.current).toEqual(LIVE);
-    // same contract as the slot-state hook: live event payloads run
-    // through the validator too — a partial object falls back whole.
     emit({ paused: false, waiting: 1 });
     expect(result.current).toEqual(FALLBACK);
   });
@@ -78,8 +75,6 @@ describe("useStatusState", () => {
     const { unmount } = await renderReady();
     expect(() => unmount()).not.toThrow();
   });
-
-  // --- startup race shield (mirrors the slot-state hook's global-seed tests) ---
 
   it("reads the eval-planted global as initial state (late-mount side of the race shield)", () => {
     window.__NOTCHTAP_STATUS_STATE__ = LIVE;
@@ -140,22 +135,11 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
-  // --- the wire fields added to the validator ---
-  //
-  // The four clauses below (`agent.activeSessions`, `news.chargeFraction`
-  // with its `[0, 1]` range, `news.chargeCount`, `news.isCharged`) shipped
-  // with fixture coverage only. They matter more than the count suggests:
-  // this validator is all-or-nothing, so a single bad field from rust
-  // blanks the WHOLE status rail back to FALLBACK — every icon dark, no
-  // console error, nothing naming the field that did it. These tests name
-  // the fields.
-
   it("ignores a payload with no agent block at all", () => {
     const { agent: _agent, ...missingAgent } = LIVE;
     window.__NOTCHTAP_STATUS_STATE__ = missingAgent;
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
 
-    // ...and one that is present but not an object.
     window.__NOTCHTAP_STATUS_STATE__ = { ...LIVE, agent: 3 };
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });

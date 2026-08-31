@@ -5,8 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { StatusState } from "../useStatusState";
 import { StatusDots } from "./StatusDots";
 
-// this project's vitest config doesn't set `test.globals`, so RTL's
-// auto-cleanup (which hooks a global `afterEach`) never registers.
 afterEach(cleanup);
 
 const ALL_ON: StatusState = {
@@ -69,15 +67,11 @@ describe("StatusDots", () => {
     expect(news.classList.contains("dim")).toBe(true);
   });
 
-  // 's live-match text is old rail furniture — the
-  // dots carry no text content at all, only color/glow state.
   it("carries no text content (dots only, no labels)", () => {
     const { container } = render(<StatusDots status={ALL_ON} />);
     expect(container.textContent).toBe("");
   });
 
-  // settings preview / older hosts render without a status prop at all —
-  // every dot must fall back to dim rather than throwing.
   it("dims every dot when status is omitted", () => {
     const { container } = render(<StatusDots />);
     const dots = container.querySelectorAll(".status-dot");
@@ -87,9 +81,6 @@ describe("StatusDots", () => {
     }
   });
 
-  // the paused indicator — every dot forces `dim`
-  // (never `active`) while paused, even for sources that are otherwise
-  // enabled, plus a static two-bar glyph renders beside the dot row.
   describe("paused", () => {
     it("forces every dot dim, even for otherwise-enabled sources, while paused", () => {
       const { container } = render(
@@ -117,8 +108,6 @@ describe("StatusDots", () => {
       rerender(<StatusDots status={{ ...ALL_ON, paused: true }} />);
       const glyph = container.querySelector(".pause-glyph");
       expect(glyph).not.toBeNull();
-      // two CSS-drawn bars, no text content (receive-only indicator, not
-      // a label).
       expect(glyph?.querySelectorAll("span")).toHaveLength(2);
       expect(container.textContent).toBe("");
     });
@@ -129,8 +118,6 @@ describe("StatusDots", () => {
     });
   });
 
-  // each dot is `role="img"` + a truthful `aria-label`,
-  // and carries a non-color shape class independent of active/dim.
   describe("accessible names + non-color shapes", () => {
     it("names every dot 'enabled' and shapes it filled when every source is enabled", () => {
       render(<StatusDots status={ALL_ON} />);
@@ -175,11 +162,6 @@ describe("StatusDots", () => {
       expect(screen.getByRole("img", { name: "News — disabled" })).toBeTruthy();
     });
 
-    // The label must come from the RAW
-    // config flag, never the pause-suppressed display booleans — while
-    // paused, an otherwise-enabled source is still truthfully "enabled"
-    // (dim luminance + its configured shape retained), and the pause
-    // fact lives exclusively on the pause glyph, never on a dot's label.
     it("keeps a dot labeled 'enabled' (dim, configured shape retained) while paused — the pause fact lives only on the glyph", () => {
       const { container } = render(
         <StatusDots
@@ -201,27 +183,13 @@ describe("StatusDots", () => {
       expect(glyph.classList.contains("pause-glyph")).toBe(true);
       expect(container.querySelectorAll('[aria-label="Notifications paused"]')).toHaveLength(1);
 
-      // no dot's accessible name ever mentions "paused" — that fact is
-      // exclusively the glyph's.
       for (const dot of Array.from(container.querySelectorAll(".status-dot"))) {
         expect(dot.getAttribute("aria-label")?.toLowerCase()).not.toContain("paused");
       }
     });
   });
 
-  // jsdom can't compute cascade from
-  // stylesheets (no layout/paint engine), so these are pinned at the
-  // STRING level against the real shared stylesheet — same technique as
-  // celebrationStacking.test.tsx's own `ruleBody` helper (this is a
-  // single-line-selector variant of it; StatusRailCard.test.tsx's own
-  // copy additionally tolerates multi-line/wrapped selectors, not needed
-  // here).
   describe("overlay-card.css string pins", () => {
-    // overlay-card.css is split into src/overlay/*.css chunks pulled back
-    // together via plain `@import "./relative.css";` lines — inlined here
-    // so this returns the full literal stylesheet text callers expect
-    // (imports are one level deep; no chunk file itself contains an
-    // @import).
     function readSourceCss(relativePath: string): string {
       const url = new NodeURL(relativePath, import.meta.url);
       const raw = readFileSync(fileURLToPath(url), "utf-8");
@@ -249,9 +217,6 @@ describe("StatusDots", () => {
     it(".status-dot's transition softens border-radius AND (post-C2) background-color, not just opacity/box-shadow", () => {
       const body = ruleBody(overlayCardCss, ".card-root .status-dot");
       expect(body).toContain("border-radius var(--hover-ms");
-      // C2: the enabled<->disabled shape flip also changes `background`/
-      // `border` (below in the stylesheet) — without this leg those two
-      // still snapped while border-radius eased, a two-phase glitch.
       expect(body).toContain("background-color var(--hover-ms");
       expect(body).toContain("border-color var(--hover-ms");
       expect(body).toContain("border-width var(--hover-ms");

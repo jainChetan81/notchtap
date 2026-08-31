@@ -1,73 +1,19 @@
-// The three neon icon-tabs, right-aligned inside the right flank, hidden
-// entirely at rest and revealed only once the flank behind them has already
-// painted black (the flank's own `.hovered` gate lives in the caller's CSS,
-// not here — this component always renders all three icons;
-// `icon-strip.css`'s `.hovered .icon-strip`
-// rule is what makes them visible, matching `hover::icon_strip_rects`
-// (src-tauri/src/hover.rs)'s own "present icons occupy space, absent ones
-// collapse to zero width" contract exactly: this component renders every
-// tab UNCONDITIONALLY, in the fixed strip order, and lets CSS width/
-// opacity/scale transitions do the collapsing — never `display: none`,
-// per the "must never jump mid-hover" rule.
-//
-// All glyphs are original notchtap drawings (CLAUDE.md "naming") —
-// hand-authored paths, not a third-party
-// icon set. Redraw freely; the shapes here are a first pass, not a
-// locked asset.
 import { type ReactNode, useId } from "react";
 
 export type Tab = "agent" | "football" | "news";
 
 export const TAB_ORDER: readonly Tab[] = ["agent", "football", "news"];
 
-// The three-tier luminance scheme, uniform across all
-// icons: "hidden" never renders as `.is-present` at all (zero width,
-// invisible — the strip's own baseline `.icon` rule), "present" is the
-// dim 0.62-opacity tier ("present but idle — quiet news" per the design
-// source), "live" is full 1.0 opacity ("genuinely live — agent/match").
-// Agent/football are only ever "hidden" or "live" in practice (each is
-// present ONLY while genuinely live, so there is no "present but not
-// live" state for them) — "present" mainly
-// exists for news (dim while charging, escalating only once
-// `newsCharged` below is separately true).
 export type IconVisualState = "hidden" | "present" | "live";
 
 export interface IconStripProps {
   agent: IconVisualState;
   football: IconVisualState;
   news: IconVisualState;
-  /** 0..1 fill level, rising silently across the poll
-   * cycle. Purely visual (a `scaleY` on the glyph's own interior
-   * rectangle) — never glows, never implies `newsCharged`. */
   newsCharge: number;
-  /** The cycle has ended AND items are genuinely
-   * waiting — the glyph goes to full weight and breathes coral ->
-   * salmon until visited (selecting the news tab). Independent of
-   * `news: IconVisualState` above (a news icon can be "present" —
-   * dim, unread nothing pending — while `newsCharged` is false, or
-   * "live"-equivalent-styled once charged; charged styling wins
-   * visually regardless of the `news` tier passed in, matching the
-   * mock's own `.icon.news.is-charged { opacity: 1 }` override, which
-   * is declared AFTER (and so beats) the plain luminance tiers at
-   * equal specificity). */
   newsCharged: boolean;
-  /** The literal count badge, shown alongside the ambient fill rather
-   * than instead of it. `null` omits
-   * the badge entirely (nothing waiting, or the count is unknown). */
   newsCount: number | null;
   selected: Tab | null;
-  /** Fires on a click that lands on a `live`- or `present`-tier icon
-   * (a `hidden` icon is not interactive — `pointer-events: none` in
-   * CSS backs this up, this prop is the React-side mirror of that
-   * rule for anyone testing the component directly). Deliberately
-   * optional and deliberately just a callback, not a rust round-trip.
-   * The click-detection mechanism is settled and shipped: a rust-side
-   * `NSEvent` local monitor (`src-tauri/src/click.rs`) observes the
-   * mouseDown, hit-tests it against the strip, and pushes a
-   * `tab-selection-changed` event down the receive-only channel — the
-   * webview never tells rust about a click. So this prop is purely
-   * presentational, kept for rendering the component directly in
-   * tests. */
   onSelect?: (tab: Tab) => void;
 }
 
@@ -77,13 +23,6 @@ const TAB_LABEL = {
   news: "News",
 } satisfies Record<Tab, string>;
 
-// An explicit `aria-label` overrides accessible-name computation from
-// child content entirely, so the visually-rendered `.charge-count` badge
-// (sighted-only) never reaches assistive tech — a screen-reader user gets
-// no indication of the pending-item count sighted users see. Only the
-// news tab has a count at all; every other tab (and news with no count)
-// renders exactly
-// `TAB_LABEL[tab]`, unchanged.
 function iconAriaLabel(tab: Tab, newsCount: number | null): string {
   if (tab === "news" && newsCount !== null) {
     return `${TAB_LABEL[tab]}, ${newsCount} new`;
@@ -91,12 +30,6 @@ function iconAriaLabel(tab: Tab, newsCount: number | null): string {
   return TAB_LABEL[tab];
 }
 
-// Original notchtap glyphs, 18x18 viewBox (matching --icon-box), all
-// stroke-only (agent, football, news). `currentColor` throughout so
-// the per-tab `--hue` custom property (icon-strip.css) drives both the
-// stroke/fill AND, via the two stacked `drop-shadow`s on the parent
-// `<svg>` wrapper in CSS, the glow — one value, never two to keep in
-// sync (mirroring the mock's own "the whole point" comment on this).
 function AgentGlyph(): ReactNode {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -128,35 +61,16 @@ export function FootballGlyph(): ReactNode {
 
 export function NewsGlyph({ charge }: { charge: number }): ReactNode {
   const clamped = Math.max(0, Math.min(1, charge));
-  // A real, unique id per mount (React's useId) — not a hardcoded string.
-  // Two NewsGlyphs in the same document (unlikely in the live app, real
-  // in a test rendering two IconStrips side by side) would otherwise
-  // collide: SVG `id`s are document-global, so the second glyph's
-  // `clip-path` url() would silently resolve to the FIRST glyph's
-  // clipPath element instead of its own.
   const clipId = useId();
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <rect x="3" y="2.5" width="12" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-      {/* the ambient charge fill, section 8: a rect clipped to the page
-          outline, scaleY off a bottom origin — never a height change
-          (compositor-only, matching the eq bars/media bar discipline
-          this app already uses everywhere else a fill level animates). */}
       <clipPath id={clipId}>
         <rect x="3" y="2.5" width="12" height="13" rx="1.5" />
       </clipPath>
       <rect
         className="charge"
         x="3"
-        // `y="15.5"` never worked: the rect's own unscaled bounds (y 15.5
-        // to 28.5) never overlapped the clip region (y 2.5 to 15.5,
-        // matching the page outline above) at ANY scaleY value, so the
-        // charge fill rendered invisible at every charge level. `y="2.5"`
-        // matches the outline's own top so the rect's full (scaleY(1))
-        // extent exactly fills it; scaling
-        // toward 0 around the bottom-anchored transformOrigin below
-        // shrinks the visible portion upward from the bottom, the
-        // liquid-filling-from-bottom effect the comment above describes.
         y="2.5"
         width="12"
         height="13"
@@ -209,10 +123,6 @@ export function IconStrip({
             className={iconClass(tab, state, isSelected, isCharged)}
             aria-label={iconAriaLabel(tab, newsCount)}
             aria-pressed={isSelected}
-            // A hidden icon is not a real control — the "hidden AND
-            // opacity 0 AND pointer-events none" rule (mirrored in CSS);
-            // `disabled` is the React/DOM-level twin
-            // of that same rule, not a separate decision.
             disabled={!isPresent}
             onClick={isPresent ? () => onSelect?.(tab) : undefined}
           >

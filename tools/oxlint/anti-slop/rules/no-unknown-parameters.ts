@@ -62,7 +62,6 @@ function isInsideTypeGuard(node: ESTree.Node): boolean {
   return false;
 }
 
-/** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
@@ -102,7 +101,6 @@ export const noUnknownParametersRule = defineRule({
           const owner = node as unknown as ESTree.Node & {
             returnType?: { typeAnnotation?: { type?: string } };
           };
-          // Direct check: the function itself is a type guard (v is T)
           if (
             (owner.type === "ArrowFunctionExpression" ||
               owner.type === "FunctionDeclaration" ||

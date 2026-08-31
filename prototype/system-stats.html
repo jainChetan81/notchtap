@@ -5,21 +5,16 @@
 <meta charset="utf-8" />
 <title>notchtap — settings / About / System stats</title>
 <style>
-  /* ---- design tokens, ported from vendor/shared-ui/design/tokens.css
-     (hex values are the same file's own round-trip comments — the source
-     of truth there is oklch, but a static mock has no build step to
-     resolve oklch()-derived component colors, so the documented hex
-     equivalents are used directly) plus the settings-scoped type scale
-     from src/settings/base.css. ---- */
+  /* Mirrors the shared design tokens and settings type scale. */
   :root {
-    --background: #050607;   /* window */
-    --foreground: #f1f2f4;   /* text */
-    --card: #0d0f12;         /* surface */
+    --background: #050607;
+    --foreground: #f1f2f4;
+    --card: #0d0f12;
     --sidebar: #090a0c;
-    --border: #202329;       /* divider */
+    --border: #202329;
     --input: #202329;
-    --muted-foreground: #a2a6ad; /* text-2nd */
-    --primary: #0a84ff;      /* accent */
+    --muted-foreground: #a2a6ad;
+    --primary: #0a84ff;
     --ring: #0a84ff;
 
     --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
@@ -33,8 +28,7 @@
     --fs-body: 11px;
     --fs-title: 19px;
 
-    /* radius-md from src/settings/base.css's @theme inline (0.8 * --radius,
-       --radius: 0.625rem from tokens.css) */
+    /* Mirrors the derived radius-md token. */
     --radius-md: 8px;
   }
 
@@ -70,7 +64,7 @@
     color: #9aa0aa;
   }
 
-  /* ---- settings window shell, src/settings/SettingsApp.tsx ---- */
+  /* Mirrors the SettingsApp window shell. */
   .settings-window {
     display: grid;
     grid-template-columns: 140px minmax(0, 1fr);
@@ -213,7 +207,7 @@
     padding: 16px 16px 24px;
   }
 
-  /* ---- SettingsGroup card chrome, src/settings/controls/controls.tsx ---- */
+  /* Mirrors SettingsGroup card chrome. */
   .settings-group {
     overflow: hidden;
     border-radius: var(--radius-md);
@@ -238,7 +232,6 @@
   }
   .group-content { padding: 8px 13px 12px; }
 
-  /* ---- About: identity row ---- */
   .about-identity {
     display: flex;
     align-items: center;
@@ -317,7 +310,6 @@
     color: var(--muted-foreground);
   }
 
-  /* ---- About: System stat-tile grid — the part this file is named for ---- */
   .about-stat-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -498,10 +490,7 @@
   </div>
 
 <script>
-  // Fake the 2s live-poll AboutSection.tsx does against `get_about_info` —
-  // only the numbers move, the tiles themselves never remount (matching the
-  // real component's comment: the stagger-in above plays once on mount,
-  // not on every poll tick).
+  // Mirrors AboutSection's 2s poll without remounting the stat tiles.
   let appMemMb = 48.2;
   let sysUsedGb = 14.1;
   const sysTotalGb = 24.0;

@@ -1,16 +1,3 @@
-// the shared card-shape stylesheet must load BEFORE
-// each window's own residue, at both real entry points, so context-only
-// declarations win any specificity tie by source order. The ordering
-// lives in these two TypeScript entry files rather than in a CSS
-// `@import`, so it's pinned here by reading their literal source text:
-// a jsdom/vitest run doesn't otherwise observe CSS load order at all.
-//
-// @types/node is a devDependency, so these two
-// Node imports typecheck directly — no @ts-expect-error needed. Node's
-// own `URL` is still imported explicitly (not the ambient global)
-// because jsdom's global `URL` shadow resolves a relative path against a
-// fake http: document location instead of `import.meta.url`'s real
-// file: base.
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -36,10 +23,6 @@ describe("entry-file CSS import order", () => {
     expect(overlayIdx).toBeLessThan(stylesIdx);
   });
 
-  // the overlay window must import shared-ui's design tokens
-  // (--font-sans/--font-mono/--ease-notchtap, etc.) before overlay-card.css
-  // so the token-consuming declarations in that file resolve — same
-  // discipline settings/base.css already follows for the settings window.
   it("main.tsx imports shared-ui tokens.css before overlay-card.css", () => {
     const source = readSource("./main.tsx");
     const tokensIdx = importOrderIndex(source, "@chetanjain/shared-ui/design/tokens.css");
@@ -64,10 +47,6 @@ describe("entry-file CSS import order", () => {
     expect(local.includes("--media-mint:")).toBe(false);
   });
 
-  // settings.css is gone (its rules relocated into
-  // base.css); the load-bearing pair is now base.css (establishes
-  // @layer theme/utilities before any plain CSS) then overlay-card.css
-  // (unlayered, so it still wins any specificity tie by source order).
   it("settings/main.tsx imports base.css before overlay-card.css", () => {
     const source = readSource("./settings/main.tsx");
     const baseIdx = importOrderIndex(source, "./base.css");

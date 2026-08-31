@@ -1,26 +1,11 @@
-//! club crest fetch + on-disk cache.
-//!
-//! **Legal/scope rule (hard, not a style preference)**: crest PNGs are
-//! trademarked club artwork — runtime-cached under
-//! `~/.config/notchtap/crests/` (never inside the repo tree, so
-//! `.gitignore` needs no rule), NEVER committed as a vendored asset.
-
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Generous for a club crest PNG — real-world ESPN crests are a few KB.
 const MAX_CREST_BYTES: usize = 256 * 1024;
 
-/// A crest URL is fetchable only if it is https and points at ESPN's
-/// own CDN — the URL arrives from a network feed, so it is untrusted
-/// input, not a trusted fetch target (same posture as `path_for`'s
-/// team-id sanitization). Enforced pre-fetch by the caller at the
-/// map-building/scheduling side (`poller.rs::team_logos`) against the
-/// initial URL; `crest_client`'s redirect policy (below) additionally
-/// re-applies this same check to every redirect hop `try_fetch` follows,
-/// since a legitimate initial URL passing this check says nothing about
-/// where that server's response might then 302 to.
+/// A crest URL is fetchable only if it is https and points at ESPN's own CDN — the URL arrives from
+/// a network feed, so it is untrusted input.
 pub fn crest_url_allowed(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
@@ -34,9 +19,6 @@ pub fn crest_url_allowed(url: &str) -> bool {
     }
 }
 
-/// Runtime cache of club crest PNGs, keyed by ESPN's numeric team id.
-/// Cheaply `Clone`-able (an `Arc` around the shared attempted-set) so the
-/// espn poller can hand a handle to each spawned background fetch task.
 #[derive(Clone)]
 pub struct CrestCache {
     pub(crate) dir: PathBuf,
@@ -45,10 +27,6 @@ pub struct CrestCache {
 
 impl CrestCache {
     pub fn new(dir: PathBuf) -> Self {
-        // Best-effort at construction time — `try_fetch` still does its own
-        // `create_dir_all` per fetch, which is the correctness backstop if
-        // the dir is deleted mid-run. This one just saves that syscall on
-        // the common path.
         let _ = std::fs::create_dir_all(&dir);
         Self {
             dir,
@@ -56,10 +34,8 @@ impl CrestCache {
         }
     }
 
-    /// Defensive sanitization of the team id used in the cache filename —
-    /// ESPN ids are always plain numeric strings in every checked-in
-    /// fixture, but this is untrusted feed input, not a trusted
-    /// filesystem path, so it's filtered rather than trusted verbatim.
+    /// Defensive sanitization of the team id used in the cache filename — ESPN ids are always plain
+    /// numeric strings in every checked-in fixture, but this is untrusted feed input.
     pub(crate) fn path_for(&self, team_id: &str) -> PathBuf {
         let safe: String = team_id
             .chars()
@@ -68,11 +44,8 @@ impl CrestCache {
         self.dir.join(format!("{safe}.png"))
     }
 
-    /// A cache hit's on-disk path, if this team's crest is already
-    /// cached — pure filesystem check, no network, so this is safe to
-    /// call from anywhere (including the pure/fixture-tested
-    /// `diff_scoreboard`'s caller in the poll loop) and easy to test
-    /// with a temp dir.
+    /// A cache hit's on-disk path, if this team's crest is already cached — pure filesystem check,
+    /// no network.
     pub fn cached_path(&self, team_id: &str) -> Option<PathBuf> {
         if team_id.is_empty() {
             return None;
@@ -81,21 +54,15 @@ impl CrestCache {
         path.exists().then_some(path)
     }
 
-    /// [`cached_path`] as a wire-ready `String` (the shape `EspnMeta.home_crest`/
-    /// `away_crest` carry) — a raw absolute filesystem path, NOT yet a
-    /// servable `asset://`/`crest://` URL (the frontend converts it via
-    /// `convertFileSrc`, keeping this cache serving-route-agnostic).
+    /// [`cached_path`] as a wire-ready `String` (the shape `EspnMeta.home_crest`/ `away_crest`
+    /// carry) — a raw absolute filesystem path.
     pub fn cached_path_string(&self, team_id: &str) -> Option<String> {
         self.cached_path(team_id)
             .map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// Returns `true` exactly once per team per process lifetime (the
-    /// first time this team is asked about and it isn't already cached
-    /// on disk) — the caller should schedule a fetch only when this
-    /// returns `true`. Marks the team attempted immediately (before the
-    /// fetch even starts) so two overlapping calls for the same team
-    /// within one poll can't both schedule a fetch.
+    /// Returns `true` exactly once per team per process lifetime (the first time this team is asked
+    /// about and it isn't already cached on disk).
     pub fn should_fetch(&self, team_id: &str) -> bool {
         if team_id.is_empty() || self.cached_path(team_id).is_some() {
             return false;
@@ -104,11 +71,8 @@ impl CrestCache {
         attempted.insert(team_id.to_string())
     }
 
-    /// Fetch a team's crest and store it under the cache dir. Never
-    /// poller-fatal: every failure (network, non-2xx, oversized body,
-    /// filesystem) is logged and swallowed — the caller already has
-    /// `None` on the wire for this team and the text-abbrev fallback
-    /// renders regardless.
+    /// Fetch a team's crest and store it under the cache dir. Never poller-fatal: every failure
+    /// (network, non-2xx, oversized body, filesystem) is logged and swallowed.
     pub async fn fetch_and_store(&self, client: &reqwest::Client, team_id: &str, url: &str) {
         if let Err(e) = self.try_fetch(client, team_id, url).await {
             tracing::warn!(team_id, url, "crest fetch failed: {e}");
@@ -117,12 +81,6 @@ impl CrestCache {
 
     async fn try_fetch(
         &self,
-        // deliberately unused for the actual request below — see
-        // `crest_client`'s doc comment for why a crest fetch needs its
-        // own client rather than the shared poll client passed in here.
-        // The parameter keeps `fetch_and_store`'s signature aligned with
-        // `poller.rs`'s call site, which shares one client across every
-        // fetch it makes.
         _client: &reqwest::Client,
         team_id: &str,
         url: &str,
@@ -135,18 +93,8 @@ impl CrestCache {
     }
 }
 
-/// A client dedicated to crest fetches, with a redirect policy stricter
-/// than the shared poll client's (`net::build_poll_client`): every hop —
-/// not just the initial URL — must both clear the general SSRF/rebinding
-/// check ([`crate::net::host_is_blocked`]) AND pass [`crest_url_allowed`].
-/// `crest_url_allowed` is otherwise applied only pre-fetch
-/// (`poller.rs::team_logos`), which stops a malicious feed URL from ever
-/// being requested but does nothing to stop a *legitimate* espncdn URL's
-/// server from 302-ing the request somewhere else entirely (internal
-/// host, or just off ESPN's CDN) once the request is already in flight.
-/// Built fresh per fetch rather than cached: crest fetches happen at most
-/// once per team per process lifetime (`should_fetch`), a couple dozen
-/// times total, so there's no pooling benefit worth a shared static.
+/// A client dedicated to crest fetches, with a redirect policy stricter than the shared poll
+/// client's (`net::build_poll_client`): every hop — not just the initial URL.
 fn crest_client() -> reqwest::Result<reqwest::Client> {
     crate::net::client_builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -162,9 +110,7 @@ fn crest_client() -> reqwest::Result<reqwest::Client> {
         .build()
 }
 
-/// Same-dir temp-file + rename atomic write (matches `settings.rs`'s
-/// config/secrets write posture) — a crest fetch racing a read (the
-/// frontend loading the same path) must never observe a partial PNG.
+/// Same-dir temp-file + rename atomic write (matches `settings.rs`'s config/secrets write posture).
 fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let tmp = path.with_extension("png.tmp");
     std::fs::write(&tmp, bytes)?;
@@ -172,10 +118,6 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test-local temp dir (no `tempfile` dev-dependency in this crate) —
-/// a uuid-suffixed subdir of the OS temp dir, cleaned up on drop. `pub(crate)`
-/// so `poller.rs`'s crest-patching tests (`patch_crests`) can share it
-/// rather than reinventing their own.
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::CrestCache;
@@ -233,8 +175,6 @@ mod tests {
 
     #[test]
     fn a_warm_cache_hit_on_disk_is_never_rescheduled() {
-        // simulates what a warm restart finds on disk: a PNG already
-        // written by a previous process, no fetch involved this run.
         let (_dir, cache) = temp_cache();
         std::fs::create_dir_all(&cache.dir).unwrap();
         std::fs::write(cache.path_for("160"), b"not a real png, just bytes").unwrap();
@@ -285,10 +225,6 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_to_a_non_espncdn_host_is_rejected_and_leaves_no_cache_entry() {
-        // crest_client's redirect policy must enforce crest_url_allowed
-        // on every hop, not just the pre-fetch URL — a 302 off espncdn
-        // (here, simulated by a mock 302 pointing anywhere non-espncdn)
-        // must never be followed.
         let (_dir, cache) = temp_cache();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -308,8 +244,6 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_to_a_loopback_or_private_host_is_rejected() {
-        // same enforcement, exercising the `host_is_blocked` half of the
-        // combined check (an SSRF attempt via a crest redirect).
         let (_dir, cache) = temp_cache();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -375,7 +309,6 @@ mod tests {
     #[test]
     fn team_id_is_sanitized_in_the_cache_filename() {
         let (_dir, cache) = temp_cache();
-        // a defensively-hostile team id must not escape the cache dir
         let path = cache.path_for("../../etc/passwd");
         assert_eq!(path.file_name().unwrap(), "etcpasswd.png");
         assert_eq!(path.parent().unwrap(), cache.dir);

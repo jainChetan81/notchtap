@@ -16,7 +16,7 @@ import {
 describe("stampFor", () => {
   it("uses the fixed per-signal table when signal is not generic, regardless of priority", () => {
     expect(stampFor("high", "goal", "score_update")).toBe("Live");
-    expect(stampFor("low", "goal", "news_item")).toBe("Live"); // signal wins over event type here
+    expect(stampFor("low", "goal", "news_item")).toBe("Live");
     expect(stampFor("medium", "halftime", "match_state")).toBe("Break");
     expect(stampFor("medium", "yellow_card", "match_state")).toBe("Card");
     expect(stampFor("medium", "fulltime", "match_state")).toBe("Final");
@@ -95,10 +95,6 @@ describe("ageLabel", () => {
   });
 });
 
-// The presentation precedence machine's own unit coverage — a Visible
-// Notification always wins;
-// otherwise a non-empty Agent Board session count shows the board;
-// otherwise idle.
 describe("presentationMode", () => {
   const empty: SlotState = { state: "empty" };
   const showing: SlotState = {
@@ -138,9 +134,6 @@ describe("presentationMode", () => {
     expect(presentationMode(empty, 0, false)).toBe("idle");
   });
 
-  // Paused quiets the whole notch, so the Agent Board falls through to
-  // the idle rail for the duration — it never stays on screen ticking
-  // with live agent activity.
   it("hides the board while paused, falling through to idle even with sessions present", () => {
     expect(presentationMode(empty, 1, true)).toBe("idle");
     expect(presentationMode(empty, 5, true)).toBe("idle");
@@ -150,10 +143,6 @@ describe("presentationMode", () => {
     expect(presentationMode(empty, 0, true)).toBe("idle");
   });
 
-  // Paused gates PROMOTION, not an already-Visible Notification (rust's
-  // queue owns that, and it finishes its natural Rotation) — so a showing
-  // slot's precedence is untouched here; this frontend table adds no slot
-  // logic of its own.
   it("leaves a Visible Notification's precedence untouched while paused", () => {
     expect(presentationMode(showing, 0, true)).toBe("notification");
     expect(presentationMode(showing, 3, true)).toBe("notification");

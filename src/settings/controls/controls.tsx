@@ -11,13 +11,9 @@ import { ActionStatus, describeActionError, useActionStatus } from "../actionSta
 import { settingsInvoke } from "../ipc";
 import type { TestSource } from "../types";
 
-// Shared row shell for every control kind; `first:border-t-0` gives every row
-// but the first in its group a top divider.
 export const CONTROL_ROW =
   "control-row grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border/60 py-2.5 first:border-t-0";
 
-// shadcn Card shell. gap-0/py-0/ring-0 strip Card's own spacing/ring defaults
-// so they don't double up with the explicit padding below.
 export function SettingsGroup({
   title,
   description,
@@ -28,18 +24,8 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <Card
-      // Card's default `text-sm` is inherited, so it would silently reach the
-      // Appearance preview subtree, which relies on the browser's 16px/normal
-      // baseline; `text-base leading-[normal]` restores exactly that baseline.
-      className="gap-0 overflow-hidden rounded-md border border-border bg-card py-0 text-base leading-[normal] ring-0"
-    >
-      <CardHeader
-        // CardHeader's `[.border-b]:pb-(--card-spacing)` rule keys on the
-        // literal "border-b" token and re-widens padding-bottom; the trailing
-        // `!` forces this pb to win despite that rule's higher specificity.
-        className="gap-[5px] border-b border-border/60 px-[13px] pt-3 pb-[11px]!"
-      >
+    <Card className="gap-0 overflow-hidden rounded-md border border-border bg-card py-0 text-base leading-[normal] ring-0">
+      <CardHeader className="gap-[5px] border-b border-border/60 px-[13px] pt-3 pb-[11px]!">
         <CardTitle className="text-fs-body leading-[1.25] font-[640] text-foreground">
           {title}
         </CardTitle>
@@ -65,9 +51,6 @@ export function ControlCopy({
 }) {
   return (
     <div className="control-copy min-w-0">
-      {/* id lets a sibling fieldset (Segmented's labelled form) point
-          aria-labelledby back here — fieldset isn't a labelable element,
-          so <label for> alone can't associate with it. */}
       <label
         className="control-name block text-fs-body leading-[1.3] font-[590] text-foreground"
         id={`${htmlFor}-label`}
@@ -100,15 +83,9 @@ export function NumberControl({
   min: number;
   max: number;
   unit?: string;
-  /** HTML `step` attribute. Defaults to `1` (integer fields); pass
-   *  `"any"` for decimal fields (e.g. latitude/longitude) so a partial
-   *  value like `12.5` isn't flagged as a `stepMismatch`. */
   step?: number | "any";
   onChange: (value: number) => void;
 }) {
-  // Local raw-string mirror of `value`: a controlled numeric value coerces a
-  // cleared field to 0 and snaps an in-progress "12." back to "12". Keeping
-  // the in-progress text in state lets the user type without being fought.
   const [raw, setRaw] = useState(() => String(value));
 
   useEffect(() => {
@@ -130,8 +107,6 @@ export function NumberControl({
           onChange={(event) => {
             const next = event.currentTarget.value;
             setRaw(next);
-            // Empty or a bare sign/decimal point mid-entry: don't propagate
-            // until the input reads as a real number.
             if (next === "" || next === "-" || next === "." || next === "-.") {
               return;
             }
@@ -141,8 +116,6 @@ export function NumberControl({
             }
           }}
           onBlur={() => {
-            // Leaving the field on an invalid/empty value restores the
-            // last-committed value rather than leaving the box blank.
             if (raw === "" || Number.isNaN(Number(raw))) {
               setRaw(String(value));
             }
@@ -162,8 +135,6 @@ export function NumberControl({
   );
 }
 
-// shadcn Switch plus a visually-hidden Label (ControlCopy renders the visible
-// name); `screen.getByLabelText` resolves it via the label[for] association.
 export function ToggleControl({
   id,
   name,
@@ -231,7 +202,6 @@ export function TestButton({ source }: { source: TestSource }) {
       announce: true,
       okMessage: "Queued",
       errorMessage: (reason) => {
-        // Errors surface inline; the console line helps a dev watching too.
         console.error("send_test_notification failed:", reason);
         return describeActionError(reason);
       },

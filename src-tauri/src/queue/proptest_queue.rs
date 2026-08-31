@@ -1,23 +1,7 @@
-//! Property tests for the single-slot queue: the nine documented
-//! invariants, checked against generated enqueue/rotate sequences.
-
 use super::*;
 use crate::event::{EventMeta, EventPayload, EventSignal, EventType};
 use proptest::prelude::*;
 use uuid::Uuid;
-
-// ------------------------------------------------------------------
-// Op model (docs/TESTING_STRATEGY.md §9.1) — one variant per
-// state-mutating `pub fn` on `SingleSlotQueue`, minus the two
-// pre-cleared exceptions: `enqueue_test` (test-only /notify bypass,
-// not part of the production op model) and `slot_state_if_changed`
-// (the invariant-7 probe, called every step, never generated).
-// `with_rotation_order` is a per-case queue parameter, not a scripted
-// op — generated once per case by `arb_rotation_order()` below
-// (empty, partial, or a full permutation), not scripted mid-run.
-// Invariant 4 below checks the resulting minimum-rank/FIFO-tie
-// promotion order directly.
-// ------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
 enum RotKind {
@@ -42,8 +26,6 @@ enum Op {
     ToggleExpanded,
     Pause,
     Resume,
-    // one variant per new state-mutating pub fn, same rule
-    // this enum's own doc states above.
     Silence,
     Unsilence,
 }
@@ -72,11 +54,6 @@ fn arb_rotation() -> impl Strategy<Value = RotKind> {
     ]
 }
 
-// Per-case rotation_order (docs/TESTING_STRATEGY.md §9.1 invariant 4):
-// shuffle the four SourceKind variants, then truncate to a random
-// 0..=4 length, so empty (pure FIFO), partial (some origins unlisted —
-// rank falls back to rotation_order.len()), and full permutation
-// orders are all reachable across cases.
 fn arb_rotation_order() -> impl Strategy<Value = Vec<SourceKind>> {
     let all = vec![
         SourceKind::Football,
@@ -90,9 +67,6 @@ fn arb_rotation_order() -> impl Strategy<Value = Vec<SourceKind>> {
     })
 }
 
-// small closed set of topic tags (as Some(0..3)) plus None, so
-// supersession (same-topic collisions) actually happens often enough
-// in a 0..50-op script to exercise invariants 2(c) and 6.
 fn arb_topic() -> impl Strategy<Value = Option<u8>> {
     prop_oneof![Just(None), (0u8..3).prop_map(Some)]
 }
@@ -142,11 +116,6 @@ fn build_event(spec: &EnqueueSpec) -> Event {
     }
 }
 
-// ------------------------------------------------------------------
-// harness — direct field access (this module is a descendant of the
-// module `SingleSlotQueue` is defined in, same as `mod tests`).
-// ------------------------------------------------------------------
-
 fn snapshot_waiting(q: &SingleSlotQueue) -> [Vec<(Uuid, SourceKind)>; 3] {
     [
         q.waiting[0]
@@ -164,16 +133,6 @@ fn snapshot_waiting(q: &SingleSlotQueue) -> [Vec<(Uuid, SourceKind)>; 3] {
     ]
 }
 
-// Invariant 4: highest-index non-empty tier, then within that tier the
-// item of minimum rotation_order rank (ties broken by lowest index —
-// i.e. FIFO / earliest arrival). This is a self-contained mirror of
-// production `SingleSlotQueue::best_index_in_tier` — same strict-`<`
-// comparison, so a rank tie keeps the earliest (lowest-index) item,
-// and an origin absent from rotation_order (or an empty order) ranks
-// last via `unwrap_or(rotation_order.len())`.
-// `min_tier` restricts the scan to `Priority::High as usize`
-// (2) while Silenced — mirrors production `pop_highest_priority_
-// waiting`'s own `min_tier` gate. `0` (every tier) otherwise.
 fn predict_promoted(
     snap: &[Vec<(Uuid, SourceKind)>; 3],
     rotation_order: &[SourceKind],
@@ -213,10 +172,6 @@ struct VisSnap {
     origin: SourceKind,
 }
 
-// mirrors production `SingleSlotQueue::full_window_secs`
-// independently (this module mirrors `best_index_in_tier` the same
-// way) — a preempted item's `preempted_remaining_secs` override
-// substitutes for the plain rotation-spec window.
 fn window_secs_mirror(q: &SingleSlotQueue, item: &QueueItem) -> u64 {
     let base = item
         .preempted_remaining_secs
@@ -249,19 +204,11 @@ struct Harness {
     now: Instant,
     max_queued_per_tier: usize,
     rotation_order: Vec<SourceKind>,
-    // invariant 5/6 conservation counters
     enqueued_accepted: u64,
     rotated_out_dropped: u64,
     dismissed: u64,
     skipped_oneshot_dropped: u64,
-    // invariant 7 probe state
     last_some_state: Option<SlotState>,
-    // set by `apply_skip` when Skip re-anchors the SAME
-    // visible item id (the `reanchor_wire_if_skip_repromoted_the_last_
-    // emitted_item` case) — see invariant 7's own comment for why this
-    // narrowly exempts exactly that step from the "never repeats"
-    // check. Reset to `false` at the top of every `apply` call so it
-    // only ever describes the step just taken.
     last_op_was_skip_reanchor: bool,
 }
 
@@ -286,13 +233,6 @@ impl Harness {
         (self.q.visible.is_some() as u64) + self.q.total_waiting() as u64
     }
 
-    // Invariant 8, called at every detected promotion site. A Low
-    // priority (everywhere) or ANY priority while Silenced (a
-    // Breakthrough) must start COMPACT; every other promotion starts
-    // expanded. Reads the promoted item's own
-    // priority via `current_priority()` rather than taking one as a
-    // parameter, so every call site (Enqueue/Tick/Dismiss/Skip alike)
-    // stays untouched.
     fn assert_expanded_at_promotion(&self, promoted_id: Option<Uuid>) {
         let Some(id) = promoted_id else { return };
         let Some(priority) = self.q.current_priority() else {
@@ -325,9 +265,6 @@ impl Harness {
         self.check_blanket_invariants();
     }
 
-    // `min_tier` for `predict_promoted` — restricted to
-    // `Priority::High as usize` while Silenced, mirroring production
-    // `pop_highest_priority_waiting`'s own gate.
     fn predict_min_tier(&self) -> usize {
         if self.q.is_silenced() {
             Priority::High as usize
@@ -347,11 +284,6 @@ impl Harness {
             .as_ref()
             .map(|v| (v.event.id, v.event.priority));
         let paused = self.q.is_paused();
-        // a strictly-higher-priority arrival preempts the
-        // Visible item — unless Paused (absolute), and while Silenced
-        // only a High arrival may preempt (the silence-onset window
-        // can leave a Medium/Low Visible; anything below High must
-        // buffer then, not promote). Mirrors `try_preempt_visible`.
         let should_preempt = match vis_before {
             Some((_, vis_priority)) => {
                 !paused
@@ -364,28 +296,17 @@ impl Harness {
         let result = self.q.enqueue(event, self.now);
 
         let Ok(()) = result else {
-            // Rejected (QueueFull): not part of the 9 documented
-            // invariants, so there is deliberately no
-            // rejection-untouched check here.
             return;
         };
         let after_total = self.total_in_queue();
         if after_total <= before_total {
-            // Merged into an existing item via topic supersede — not
-            // a new item, invariant 2's cap never applies here.
             return;
         }
-        // A genuinely new item was accepted.
         self.enqueued_accepted += 1;
         let promoted = current_vis_id(&self.q) == Some(event_id);
         if promoted {
             self.assert_expanded_at_promotion(Some(event_id));
             if should_preempt {
-                // invariant P1: the interrupted item must
-                // land at the HEAD of its own tier, carrying its
-                // remaining turn — checked precisely (remaining-time
-                // restoration) by the dedicated preemption test suite;
-                // this proptest invariant only pins the ordering.
                 let (old_id, old_priority) =
                     vis_before.expect("should_preempt implies a Visible item existed");
                 let old_tier = old_priority as usize;
@@ -437,7 +358,6 @@ impl Harness {
 
         if let Some(v) = &vis_before {
             if !rotated {
-                // invariant 3: no premature rotation.
                 assert_eq!(
                     after_id,
                     Some(v.id),
@@ -453,8 +373,6 @@ impl Harness {
         }
 
         if paused {
-            // invariant 5: a Tick while paused never promotes, even
-            // though the item above may have just aged out.
             assert!(
                 after_id.is_none(),
                 "invariant 5: a Tick while paused must never promote"
@@ -482,8 +400,6 @@ impl Harness {
         self.q.dismiss_visible(self.now);
 
         if vis_before.is_some() {
-            // dismiss_visible always drops the visible item outright,
-            // Recurring or OneShot alike (unlike Skip).
             self.dismissed += 1;
         }
         let after_id = current_vis_id(&self.q);
@@ -517,19 +433,10 @@ impl Harness {
             if v.recurring {
                 waiting_before[v.tier].push((v.id, v.origin));
             } else {
-                // only the OneShot arm of Skip is a drop (invariant 5).
                 self.skipped_oneshot_dropped += 1;
             }
         }
         let after_id = current_vis_id(&self.q);
-        // Skip re-anchoring the SAME id (a lone Recurring
-        // item requeued then immediately re-promoted, nothing else
-        // waiting to take its place) is the one case
-        // `reanchor_wire_if_skip_repromoted_the_last_emitted_item`
-        // forces a fresh wire emission for even when the new
-        // SlotState is otherwise dedup_eq to the last one emitted —
-        // see invariant 7 below for why that step is exempted from
-        // the "never repeats" check.
         self.last_op_was_skip_reanchor =
             matches!((&vis_before, after_id), (Some(v), Some(a)) if v.id == a);
         if paused {
@@ -551,11 +458,7 @@ impl Harness {
         self.assert_expanded_at_promotion(after_id);
     }
 
-    // Invariants 6(i), 9, 5/6-conservation, and 7 — cheap, always-sound
-    // checks that don't depend on which op just ran.
     fn check_blanket_invariants(&mut self) {
-        // invariant 6(i): a visible topic-supersede top-up never
-        // exceeds the hard extension cap.
         if let Some(item) = &self.q.visible {
             assert!(
                 item.extension_secs <= MAX_EXTENSION_ON_SUPERSEDE_SECS,
@@ -565,9 +468,6 @@ impl Harness {
             );
         }
 
-        // invariant 9: next_deadline, when Some, is exactly the earlier
-        // of the armed auto-retract deadline (half the base window) and
-        // the rotation deadline (promoted_at + window + extension).
         match self.q.next_deadline() {
             Some(deadline) => {
                 let item = self
@@ -595,7 +495,6 @@ impl Harness {
             ),
         }
 
-        // invariants 5/6 conservation.
         let total = self.total_in_queue();
         assert_eq!(
             self.enqueued_accepted,
@@ -603,25 +502,6 @@ impl Harness {
             "invariant 5/6: enqueued-accepted count conservation violated"
         );
 
-        // invariant 7: slot_state_if_changed never repeats a state —
-        // EXCEPT the one skip-re-anchor case flagged above, which
-        // intentionally clears `last_emitted` (rather than weakening
-        // `dedup_eq`) so the wire re-anchors after a skip re-promotes
-        // the same item id; the resulting SlotState is normally still
-        // dedup_eq-DIFFERENT from the last one in production (real
-        // wall-clock time separates the original promotion from the
-        // skip, so `remaining_ms` — the one field dedup_eq excludes —
-        // is never the only thing that moved). This harness can run
-        // an Enqueue immediately followed by a Skip within the same
-        // real-time millisecond, though, since `remaining_ms` is
-        // always computed from the REAL clock (`current_slot_state`'s
-        // non-hovering branch), not the harness's own injected `now`
-        // — producing two byte-identical emissions purely by timing
-        // coincidence, not the double-emission bug this invariant
-        // otherwise exists to catch. The guard below only
-        // exempts that one flagged step; every other op (including a
-        // Skip that does NOT re-anchor the same id) is still held to
-        // the full check.
         if let Some(state) = self.q.slot_state_if_changed() {
             if let Some(prev) = &self.last_some_state {
                 if !self.last_op_was_skip_reanchor {

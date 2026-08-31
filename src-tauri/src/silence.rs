@@ -1,46 +1,26 @@
-//! Pure, clock-free scheduling for **Silenced** — the Silent Period,
-//! Timed Mute and Skip entries in the `docs/GLOSSARY.md` glossary. No function
-//! here reads the system clock: each takes "now" as a plain value and
-//! returns a plain value, the same pure-decision split
-//! `presentation::presentation_mode` uses. The live wiring — a
-//! `SilenceController` driven by `chrono::Local::now()`, a tokio timer
-//! sleeping until `next_boundary`, and the tray menu calling
-//! `start_mute`/`cancel_mute`/`skip_current_window` — lives in `lib.rs`.
+//! Pure, clock-free scheduling for **Silenced** — the Silent Period, Timed Mute and Skip entries in
+//! the `docs/GLOSSARY.md` glossary.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// A minute-of-day: `0` is local midnight, `1439` is 23:59. Never `1440` —
-/// callers normalize via `% 1440`.
+/// A minute-of-day: `0` is local midnight, `1439` is 23:59. Never `1440` — callers normalize via `%
+/// 1440`.
 pub type Minute = u16;
 
-/// Minutes in a day — the modulus every minute-of-day computation wraps on.
 const MINUTES_PER_DAY: u16 = 1440;
 
-/// An ever-increasing minute counter the caller supplies as "now" and
-/// that mute/skip deadlines are stored in. The contract: `value % 1440`
-/// MUST equal the actual local minute-of-day (`local_hour * 60 +
-/// local_minute`), and the value MUST increase by exactly `1440` at every
-/// local midnight — i.e. "days-since-a-fixed-point * 1440 +
-/// minute-of-day", NOT a UTC epoch counter (UTC epoch minutes modulo 1440
-/// do not line up with *local* midnight for any timezone offset that
-/// isn't a whole number of days). [`absolute_minute`] does the conversion
-/// from a `chrono::NaiveDateTime` so callers never hand-roll it.
 pub type AbsoluteMinute = u64;
 
-/// Converts a local wall-clock date+time into an [`AbsoluteMinute`]. Pure —
-/// takes the datetime as a value, never reads the clock itself. Callers
-/// feed it `chrono::Local::now().naive_local()` (or any other source of
-/// local wall-clock time); DST is handled implicitly because this only
-/// ever looks at the wall-clock fields (`hour`/`minute`/day count), never
-/// at a UTC offset.
+/// Converts a local wall-clock date+time into an [`AbsoluteMinute`]. Pure — takes the datetime as a
+/// value, never reads the clock itself.
 pub fn absolute_minute(local: chrono::NaiveDateTime) -> AbsoluteMinute {
     use chrono::{Datelike, Timelike};
     let days = i64::from(local.date().num_days_from_ce());
     let minute_of_day = i64::from(local.time().hour()) * 60 + i64::from(local.time().minute());
-    // `num_days_from_ce` is negative only for dates before 0001-01-01, which
-    // never occurs for a running process's wall clock; the cast is safe.
+    // `num_days_from_ce` is negative only for dates before 0001-01-01, which never occurs for a
+    // running process's wall clock; the cast is safe.
     (days * i64::from(MINUTES_PER_DAY) + minute_of_day) as AbsoluteMinute
 }
 
@@ -48,12 +28,7 @@ fn minute_of_day(now: AbsoluteMinute) -> Minute {
     (now % AbsoluteMinute::from(MINUTES_PER_DAY)) as Minute
 }
 
-/// Minutes from minute-of-day `from` until the next occurrence (possibly
-/// tomorrow) of minute-of-day `target`, strictly greater than zero — i.e.
-/// `from == target` resolves to "tomorrow" (`1440`), never "now". That
-/// "equal means next day, not now" rule is exactly what
-/// [`SilenceController::skip_current_window`] needs: a skip issued at the
-/// exact instant a window starts must re-arm tomorrow, not immediately.
+/// `from == target` resolves to "tomorrow" (`1440`), never "now".
 fn minutes_until_next(from: Minute, target: Minute) -> u16 {
     if target > from {
         target - from
@@ -62,7 +37,6 @@ fn minutes_until_next(from: Minute, target: Minute) -> u16 {
     }
 }
 
-/// Errors parsing a `"HH:MM-HH:MM"` silence window string.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WindowParseError {
     #[error("malformed silence window {0:?}: expected \"HH:MM-HH:MM\" (24h)")]
@@ -73,10 +47,6 @@ pub enum WindowParseError {
     ZeroLength(String),
 }
 
-/// A daily silence window, `[start, end)` in local wall-clock time-of-day.
-/// May cross midnight (`start > end`, e.g. `"23:00-08:00"`) — the default
-/// window (`"00:00-10:00"`) doesn't, but the type supports it since the
-/// config format allows any two times.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Window {
     start: Minute,
@@ -84,10 +54,7 @@ pub struct Window {
 }
 
 impl Window {
-    /// Parses `"HH:MM-HH:MM"`. `start == end` is rejected — that would be
-    /// either a zero-length window (nothing to silence) or, if read as
-    /// "wrap all the way around", a 24-hour window, which the format has
-    /// no unambiguous way to express, so it's simply invalid.
+    /// Parses `"HH:MM-HH:MM"`.
     pub fn parse(s: &str) -> Result<Self, WindowParseError> {
         let (start_str, end_str) = s
             .split_once('-')
@@ -108,16 +75,10 @@ impl Window {
         self.end
     }
 
-    /// Half-open `[start, end)`: the window is active starting exactly at
-    /// `start` and stops being active exactly at `end` (the boundary
-    /// minute itself is NOT in the window). Handles midnight-crossing
-    /// windows (`start > end`) exactly.
     pub fn in_window(&self, minute: Minute) -> bool {
         if self.start < self.end {
             minute >= self.start && minute < self.end
         } else {
-            // start > end: the window is everything from `start` through
-            // midnight up to (not including) `end` the next day.
             minute >= self.start || minute < self.end
         }
     }
@@ -152,11 +113,6 @@ impl fmt::Display for Window {
     }
 }
 
-/// String round-trip so `Window` can sit directly in `config.toml` as
-/// `window = "00:00-10:00"` — `Config::parse`'s `toml::from_str` fails with
-/// a `toml::de::Error` wrapping [`WindowParseError`]'s message when the
-/// string doesn't parse, the same "reject at deserialization" contract
-/// `Priority`/`Units`/`SourceKind` already follow for unknown values.
 impl TryFrom<String> for Window {
     type Error = WindowParseError;
 
@@ -190,18 +146,11 @@ impl<'de> Deserialize<'de> for Window {
     }
 }
 
-/// The pure Silenced state machine: a configured schedule plus session-only
-/// skip/mute state. Holds no timers — [`Self::next_boundary`] tells the
-/// caller how long it can sleep before the verdict could change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SilenceController {
     schedule_enabled: bool,
     window: Window,
-    /// Set by [`Self::skip_current_window`] to the absolute minute of the
-    /// window's next start; the skip is in effect for every `now` strictly
-    /// before that boundary, then re-arms on its own (no explicit clear).
     skip_rearm_at: Option<AbsoluteMinute>,
-    /// Set by [`Self::start_mute`] to the absolute minute the mute ends.
     mute_until: Option<AbsoluteMinute>,
 }
 
@@ -227,52 +176,35 @@ impl SilenceController {
         self.schedule_enabled && self.window.in_window(minute_of_day(now)) && !self.skip_covers(now)
     }
 
-    /// The union of "the Silent Period is active and not skipped" and "a
-    /// Timed Mute is running" — Silenced per the `docs/GLOSSARY.md` glossary.
+    /// The union of "the Silent Period is active and not skipped" and "a Timed Mute is running" —
+    /// Silenced per the `docs/GLOSSARY.md` glossary.
     pub fn is_silenced(&self, now: AbsoluteMinute) -> bool {
         self.mute_active(now) || self.schedule_active(now)
     }
 
-    /// Starts (or extends/replaces) a Timed Mute lasting `duration_minutes`
-    /// from `now`. A second call before the first mute ends simply resets
-    /// the deadline — there's no stacking, matching the tray's "one active
-    /// mute at a time" preset UI.
+    /// Starts (or extends/replaces) a Timed Mute lasting `duration_minutes` from `now`.
     pub fn start_mute(&mut self, duration_minutes: u64, now: AbsoluteMinute) {
         self.mute_until = Some(now + duration_minutes);
     }
 
-    /// Cancels a running Timed Mute early. A no-op if none is running.
+    /// Cancels a running Timed Mute early.
     pub fn cancel_mute(&mut self) {
         self.mute_until = None;
     }
 
-    /// Ends today's Silent Period early. Session-only: it re-arms
-    /// automatically at the window's next start, which is exactly the
-    /// boundary this records. Skipping while
-    /// not in the window (or with the schedule disabled) is harmless — it
-    /// just pre-arms a no-op suppression that expires at the next start
-    /// with nothing having changed.
+    /// Ends today's Silent Period early.
     pub fn skip_current_window(&mut self, now: AbsoluteMinute) {
         let distance = minutes_until_next(minute_of_day(now), self.window.start_minute());
         self.skip_rearm_at = Some(now + u64::from(distance));
     }
 
-    /// The next absolute minute worth re-evaluating [`Self::is_silenced`]
-    /// at — `None` if nothing is scheduled to change it (schedule
-    /// disabled and no mute running). Conservative: when a mute and the
-    /// schedule overlap, this may return a boundary where the verdict
-    /// does not actually flip (e.g. a window end still covered by a
-    /// longer mute); callers sleep until this instant, recompute, and
-    /// sleep again — a spurious wake is harmless, a missed flip is not.
+    /// The next absolute minute worth re-evaluating [`Self::is_silenced`] at — `None` if nothing is
+    /// scheduled to change it (schedule disabled and no mute running).
     pub fn next_boundary(&self, now: AbsoluteMinute) -> Option<AbsoluteMinute> {
         let mute_boundary = self.mute_until.filter(|&until| now < until);
 
         let schedule_boundary = if self.schedule_enabled {
             if self.skip_covers(now) {
-                // Suppressed until the skip re-arms; nothing else about the
-                // schedule matters before then (the window's own end, if
-                // any occurs first, doesn't change an already-false
-                // verdict).
                 self.skip_rearm_at
             } else {
                 let m = minute_of_day(now);
@@ -299,8 +231,6 @@ impl SilenceController {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ---- Window::parse ----
 
     #[test]
     fn parses_a_simple_window() {
@@ -364,8 +294,6 @@ mod tests {
         assert_eq!(w.to_string(), "09:05-17:30");
     }
 
-    // ---- Window::in_window boundary inclusivity ----
-
     #[test]
     fn simple_window_includes_start_excludes_end() {
         let w = Window::parse("00:00-10:00").unwrap();
@@ -388,8 +316,6 @@ mod tests {
         assert!(!w.in_window(22 * 60 + 59));
     }
 
-    // ---- absolute_minute ----
-
     #[test]
     fn absolute_minute_conversion_matches_wall_clock() {
         use chrono::NaiveDate;
@@ -399,15 +325,12 @@ mod tests {
             .unwrap();
         let am = absolute_minute(dt);
         assert_eq!(minute_of_day(am), 9 * 60 + 30);
-        // exactly one day later is exactly 1440 minutes later
         let next_day = NaiveDate::from_ymd_opt(2026, 7, 28)
             .unwrap()
             .and_hms_opt(9, 30, 0)
             .unwrap();
         assert_eq!(absolute_minute(next_day) - am, 1440);
     }
-
-    // ---- SilenceController: schedule only ----
 
     fn default_controller() -> SilenceController {
         SilenceController::new(true, Window::parse("00:00-10:00").unwrap())
@@ -440,8 +363,6 @@ mod tests {
         assert!(!c.is_silenced(12 * 60));
     }
 
-    // ---- Timed Mute ----
-
     #[test]
     fn mute_silences_outside_the_schedule_window() {
         let mut c = default_controller();
@@ -454,8 +375,6 @@ mod tests {
 
     #[test]
     fn mute_outlasting_the_schedule_window_keeps_silencing() {
-        // mute starts at 09:00 for 2h, schedule window ends at 10:00 —
-        // silenced must continue past the schedule boundary to 11:00.
         let mut c = default_controller();
         c.start_mute(120, 9 * 60);
         assert!(c.is_silenced(9 * 60 + 30)); // schedule-covered too
@@ -481,14 +400,10 @@ mod tests {
 
     #[test]
     fn union_of_overlapping_mute_and_schedule_is_silenced() {
-        // mute starting inside the schedule window still reads as
-        // silenced (union, not exclusive)
         let mut c = default_controller();
         c.start_mute(30, 5 * 60);
         assert!(c.is_silenced(5 * 60 + 10));
     }
-
-    // ---- Skip ----
 
     #[test]
     fn skip_suppresses_the_current_window() {
@@ -503,7 +418,6 @@ mod tests {
     fn skip_rearms_at_the_next_window_start() {
         let mut c = default_controller();
         c.skip_current_window(5 * 60);
-        // next start is tomorrow at 00:00, i.e. absolute minute 1440
         assert!(!c.is_silenced(1440 - 1));
         assert!(c.is_silenced(1440));
         assert!(c.is_silenced(1440 + 5 * 60));
@@ -526,8 +440,6 @@ mod tests {
         assert!(c.is_silenced(5 * 60 + 10)); // mute still applies
     }
 
-    // ---- next_boundary ----
-
     #[test]
     fn next_boundary_from_outside_the_window_is_its_start() {
         let c = default_controller();
@@ -544,14 +456,9 @@ mod tests {
     #[test]
     fn next_boundary_prefers_the_sooner_of_mute_and_schedule() {
         let mut c = default_controller();
-        // inside the window (ends at 600); mute ends sooner, at 100
         c.start_mute(100, 0);
         assert_eq!(c.next_boundary(0), Some(100));
 
-        // mute outlasts the schedule window: the window end (600) comes
-        // back first — a conservative wake where the verdict stays
-        // silenced (mute still running) — and re-evaluating from there
-        // yields the mute deadline.
         let mut c2 = default_controller();
         c2.start_mute(1000, 0);
         assert_eq!(c2.next_boundary(0), Some(600));
@@ -570,8 +477,6 @@ mod tests {
     fn next_boundary_while_skipped_is_the_rearm_point_not_the_window_end() {
         let mut c = default_controller();
         c.skip_current_window(0);
-        // window would naturally end at 600, but skip suppresses until the
-        // next start at 1440 — that's the real next boundary.
         assert_eq!(c.next_boundary(0), Some(1440));
     }
 
@@ -580,8 +485,6 @@ mod tests {
         let c = SilenceController::new(false, Window::parse("00:00-10:00").unwrap());
         assert_eq!(c.next_boundary(0), None);
     }
-
-    // ---- Window serde round-trip (used directly by config.rs) ----
 
     #[test]
     fn window_serializes_and_deserializes_as_its_canonical_string() {

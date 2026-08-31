@@ -1,12 +1,3 @@
-// Appearance gallery fixtures — kept separate from the settings shell so
-// the two evolve independently. Covers the states most sensitive to
-// card-CSS drift: the four expanded samples PLUS one compact (collapsed)
-// card, one live ESPN scorecard, and one compact news card (single
-// `.notif-time-inline` timestamp).
-//
-// Deliberately OUT: idle rail / idle hover-peek / bare notch — window-level
-// overlay states (idle clock, hover-driven peek, notchless-vs-notch shell
-// paint) a static per-sample `.preview-stage` box has no honest way to host.
 import type { EspnMeta, SlotState } from "../hooks/useSlotState";
 
 type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
@@ -16,8 +7,6 @@ export interface PreviewSample {
   slot: ShowingSlotState;
 }
 
-// Same base shape as StatusRailCard.test.tsx's ESPN_BASE fixture — kept
-// in lockstep with that file's `EspnMeta` shape.
 const ESPN_BASE: EspnMeta = {
   league: "UCL",
   homeAbbrev: "ARS",
@@ -92,16 +81,12 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       eventType: "generic",
       priority: "high",
       signal: "generic",
-      // The one origin the settings preview can show the agent accent
-      // for — label above says "agent" for this reason.
       origin: "agent",
       expanded: true,
       source: null,
       category: null,
       publishedAtMs: null,
       link: null,
-      // Sample cells keep subtitle/details empty — populated-cell render
-      // path is exercised in StatusRailCard.test.tsx.
       subtitle: null,
       details: [],
       queueTotal: 3,
@@ -136,8 +121,6 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       agentRuntime: null,
     },
   },
-  // The states most sensitive to CSS drift, one per sample below:
-  // compact (collapsed), recurring live scorecard, single-stamp news.
   {
     label: "Compact (collapsed manifest, medium priority)",
     slot: {
@@ -203,10 +186,6 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       expanded: false,
       source: "NDTV",
       category: "business",
-      // News collapses to ONE timestamp — non-null publishedAtMs exercises
-      // the single-stamp compact render (age reads from
-      // `.notif-time-inline`, not a duplicated pill). Fixed epoch ms (not
-      // Date.now()) so the gallery renders deterministically.
       publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
       link: "https://example.com/markets",
       subtitle: null,

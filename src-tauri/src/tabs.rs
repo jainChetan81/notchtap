@@ -1,14 +1,4 @@
-//! The Icon Strip's SELECTION state machine — pure, no AppKit types, no
-//! lock, no I/O, same discipline `hover.rs` follows
-//! (`docs/TESTING_STRATEGY.md` §4.4). `click.rs`'s NSEvent monitor is the
-//! click path, `lib.rs` owns the live `Arc<TabState>`, and the engine's
-//! status loop drives `clear_if_gone` off the same presence snapshot the
-//! strip renders from — every caller calls in, never the other way.
-
-/// The three sources the Icon Strip can select, in the strip's fixed
-/// left-to-right order — the SAME
-/// order `prefix+1..3` maps onto: digits select in strip order, left to
-/// right.
+//! `click.rs`'s NSEvent monitor is the click path, `lib.rs` owns the live `Arc<TabState>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
     Agent,
@@ -17,15 +7,10 @@ pub enum Tab {
 }
 
 impl Tab {
-    /// Fixed strip order — the single source of truth every other "which
-    /// index is which tab" mapping (icon-rect layout, `prefix+N`) reads
-    /// from, so the order can never drift between the two call sites.
     pub const ORDER: [Tab; 3] = [Tab::Agent, Tab::Football, Tab::News];
 
-    /// `prefix+1`..`prefix+3` — `None` for anything outside that range,
-    /// so the caller's "anything else: disarm, do nothing" rule falls
-    /// out of a plain `if let Some(tab) = Tab::from_prefix_digit(k) { … }`
-    /// at the call site rather than needing its own bounds check.
+    /// `prefix+1`..`prefix+3` — `None` for anything outside that range, so the caller's "anything
+    /// else: disarm.
     pub fn from_prefix_digit(digit: u8) -> Option<Tab> {
         match digit {
             1 => Some(Tab::Agent),
@@ -36,10 +21,6 @@ impl Tab {
     }
 }
 
-/// At most one selected Tab, or none: remembered silently across hovers,
-/// and CLEARED (not remembered) if its source stops being live.
-/// `Default` is `None` selected — the empty state is the app's own launch
-/// state and a first-class state, not a placeholder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TabSelection {
     selected: Option<Tab>,
@@ -50,10 +31,8 @@ impl TabSelection {
         self.selected
     }
 
-    /// A click on `tab`: the SAME tab clicked again deselects; a
-    /// different tab moves the selection
-    /// to it. `prefix+1..3` drives this same method — one rule, two
-    /// callers, not two mechanisms.
+    /// A click on `tab`: the SAME tab clicked again deselects; a different tab moves the selection
+    /// to it.
     pub fn select(&mut self, tab: Tab) {
         self.selected = if self.selected == Some(tab) {
             None
@@ -66,12 +45,7 @@ impl TabSelection {
         self.selected = None;
     }
 
-    /// A selection whose icon disappears is cleared, not remembered:
-    /// call after every liveness change with a predicate answering "is
-    /// the CURRENTLY selected tab still present". News is always present
-    /// whenever the strip is up, so this is a no-op for it by
-    /// construction — only agent/football can genuinely go present ->
-    /// absent mid-selection. A no-op when nothing is selected.
+    /// Clears selection when the selected tab is no longer live.
     pub fn clear_if_gone(&mut self, is_present: impl FnOnce(Tab) -> bool) {
         if let Some(tab) = self.selected {
             if !is_present(tab) {
@@ -82,8 +56,8 @@ impl TabSelection {
 }
 
 impl Tab {
-    /// The wire token `tab-selection-changed` carries — the closed set:
-    /// `"agent" | "football" | "news"`.
+    /// The wire token `tab-selection-changed` carries — the closed set: `"agent" | "football" |
+    /// "news"`.
     pub fn wire_label(self) -> &'static str {
         match self {
             Tab::Agent => "agent",
@@ -93,11 +67,8 @@ impl Tab {
     }
 }
 
-/// Which tabs are PRESENT given the current ambient state: news always,
-/// agent/football only while genuinely live. Returned in `Tab::ORDER`
-/// order — the same order
-/// `hover::icon_strip_rects` lays boxes out in, so a caller can zip the
-/// two index-for-index (that pairing is the whole click hit-test).
+/// Which tabs are PRESENT given the current ambient state: news always, agent/football only while
+/// genuinely live.
 pub fn present_tabs(state: &crate::status::StatusState) -> Vec<Tab> {
     Tab::ORDER
         .iter()
@@ -110,13 +81,6 @@ pub fn present_tabs(state: &crate::status::StatusState) -> Vec<Tab> {
         .collect()
 }
 
-/// The one shared, live tab-state bundle (`lib.rs` owns the `Arc`): the
-/// selection itself, the last selection actually emitted over the wire
-/// (`tab-selection-changed` fires on transitions only, mirroring
-/// `emit_hover_changed_if_transitioned`'s discipline), and the presence
-/// snapshot the click monitor hit-tests against — written by the
-/// engine's status loop from the SAME `StatusState` the frontend renders
-/// the strip from, so both sides always derive geometry from one source.
 #[derive(Debug, Default)]
 pub struct TabState {
     pub selection: std::sync::Mutex<TabSelection>,
@@ -124,61 +88,22 @@ pub struct TabState {
     pub presence: std::sync::Mutex<Vec<Tab>>,
 }
 
-/// The ONE shared wire bundle (`lib.rs` owns the `Arc`): the click
-/// monitor, the Prefix keymap, the engine's status loop, the Agent
-/// Board's session-count mirror, and the rss poller's charge feed all
-/// read/write through this rather than each holding its own handle soup
-/// — one `Engine::new` param instead of four.
 #[derive(Debug)]
 pub struct TabWire {
-    /// Live Agent Session count, mirrored by
-    /// `AgentBoardPublisher::publish_if_changed` (which already recomputes
-    /// on every registry change) — the status loop reads it instead of
-    /// taking a second async registry lock inside the queue's own
-    /// critical section.
     pub agent_sessions: std::sync::atomic::AtomicUsize,
-    /// The news-charge state machine (`news_charge.rs`), fed by
-    /// `rss_poller.rs` (`item_landed`/`cycle_end`) and cleared by the
-    /// selection paths (`visit` on selecting the news tab).
     pub news_charge: std::sync::Mutex<crate::news_charge::NewsCharge>,
-    /// Selection + emission + presence — see [`TabState`].
     pub tabs: TabState,
-    /// The Prefix keymap's arm/disarm state machine (`prefix.rs`) plus
-    /// the generation counter its cancellable disarm timer checks — a
-    /// timer only acts if no later arm/consume bumped the generation out
-    /// from under it.
     pub prefix: std::sync::Mutex<crate::prefix::PrefixState>,
     pub prefix_generation: std::sync::atomic::AtomicU64,
-    /// When the NEWEST arm happened. The watchdog stays
-    /// generation-BLIND by design (see `followups_registered` below), so
-    /// this instant — not the generation counter — is what tells an older
-    /// watchdog "a newer legitimate window is still inside its own budget,
-    /// sleep again" instead of force-releasing grabs that window still
-    /// needs. `None` until the first arm; never cleared on disarm, because
-    /// a stale arm instant reads as "long past its deadline" anyway, which
-    /// is exactly the release verdict we want.
+    /// `None` until the first arm; never cleared on disarm, because a stale arm instant reads as
+    /// "long past its deadline" anyway, which is exactly the release verdict we want.
     pub last_arm_at: std::sync::Mutex<Option<std::time::Instant>>,
-    /// The agent below-block's VIEWED session index (`prefix-[` /
-    /// `prefix-]` cycling) — wraps modulo the live session
-    /// count; emitted to the frontend as `agent-viewed-session-changed`.
     pub viewed_session: std::sync::atomic::AtomicUsize,
-    /// Fired whenever `viewed_session` changes for ANY reason (manual
-    /// prefix-key cycling or the auto-advance timer below) — lets the
-    /// auto-advance loop's wait reset on a manual advance instead of
-    /// firing again moments later, so manual navigation resets the
-    /// auto-advance clock. Mirrors the
-    /// `tokio::sync::Notify` pattern `engine.rs`'s own rotation loop
-    /// already uses for "sleep until deadline, wake early on mutation."
+    /// Fired whenever `viewed_session` changes for ANY reason (manual prefix-key cycling or the
+    /// auto-advance timer below).
     pub session_advanced: tokio::sync::Notify,
-    /// TRUE whenever the bare follow-up keys are currently grabbed
-    /// system-wide. The watchdog reads ONLY this — never the generation
-    /// counter — so a wedged runtime, a lost timer, or a panic that
-    /// unwound past the normal release path still gets caught.
+    /// TRUE whenever the bare follow-up keys are currently grabbed system-wide.
     pub followups_registered: std::sync::atomic::AtomicBool,
-    /// Whether a pushed card currently occupies the Slot — mirrored at
-    /// every `emit_slot_state` site so the click monitor (a sync
-    /// main-thread AppKit callback that cannot await the queue) can gate
-    /// on "the strip is actually what's on screen".
     pub slot_occupied: std::sync::atomic::AtomicBool,
 }
 
@@ -202,9 +127,6 @@ impl TabWire {
 }
 
 impl Default for TabWire {
-    /// Test-friendly default; production (`lib.rs`) passes the real
-    /// configured batch size (`rss_max_per_poll` — a "full batch" is
-    /// exactly what one poll cycle is allowed to land).
     fn default() -> Self {
         Self::new(5)
     }

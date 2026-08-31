@@ -57,8 +57,6 @@ describe("tabBelowBlockHandles", () => {
     expect(tabBelowBlockHandles("news")).toBe(true);
   });
 
-  // football is served by IdleHoverPeek's own shipped rendering instead
-  // — see TabBelowBlock.tsx's header comment for the full split.
   it("does not claim football, which reuses the shipped hover peek", () => {
     expect(tabBelowBlockHandles("football")).toBe(false);
   });
@@ -69,8 +67,6 @@ describe("tabBelowBlockHandles", () => {
 });
 
 describe("TabBelowBlock", () => {
-  // the "none" page must fall out of the conditional, not be a case
-  // built for it.
   it("renders nothing with no selection", () => {
     const { container } = renderTab(null);
     expect(container.firstChild).toBeNull();
@@ -93,8 +89,6 @@ describe("TabBelowBlock", () => {
         session({ id: "a", runtime: "codex" }),
         session({ id: "b", runtime: "claude-code" }),
       ]);
-      // AgentBelowBlock keys the runtime wash off the VIEWED session, so
-      // the rendered class is how "which one is viewed" is observable.
       expect(container.querySelector('[data-testid="agent-below-block"]')?.className).toContain(
         "src-codex",
       );
@@ -123,10 +117,6 @@ describe("TabBelowBlock", () => {
   });
 
   describe("news", () => {
-    // Flagged gap, not a bug: `StatusState.news` carries the charge cycle
-    // only — no story content exists on the wire at this commit, so
-    // NewsBelowBlock's own "zero stories renders nothing" floor is what
-    // mounts. The charge itself is still visible, on the news GLYPH.
     it("renders nothing while no story content exists on the wire", () => {
       const { container } = renderTab("news", {
         ...QUIET,

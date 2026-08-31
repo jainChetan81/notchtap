@@ -1,18 +1,5 @@
-//! The News Charge state machine — pure, no I/O, same discipline
-//! `tabs.rs` follows (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many
-//! items have landed since the news icon was last visited and whether a
-//! full batch has accumulated by a poll-cycle boundary.
-//!
-//! `charged` is EDGE-TRIGGERED, not live "is a full batch sitting there
-//! right now" arithmetic re-evaluated on every read: `cycle_end` sets it
-//! once, at the moment a cycle closes with the batch FULL, and only
-//! `visit` clears it — a charge earned on one cycle survives however
-//! many further cycles pass without a visit.
-
-/// Tracks landed-since-visit count and the edge-triggered "charged" flag
-/// for the news icon. `batch_size` is clamped to at least 1 at
-/// construction — a misconfigured `0` would otherwise make every
-/// `fill()` call divide by zero and every cycle instantly "full".
+//! Tracks how many items have landed since the news icon was last visited and whether a full batch
+//! has accumulated by a poll-cycle boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NewsCharge {
     items_since_visit: usize,
@@ -29,38 +16,24 @@ impl NewsCharge {
         }
     }
 
-    /// Call once per item landed by the poller, as items are found —
-    /// mid-cycle, before `cycle_end` closes it out. Does not itself
-    /// decide charged; only `cycle_end` evaluates the batch threshold, so
-    /// the icon never flashes charged mid-cycle on a partial count.
     pub fn item_landed(&mut self) {
         self.items_since_visit += 1;
     }
 
-    /// Call once per poll-cycle boundary (`rss_poller.rs`'s
-    /// `interval.tick()`, after every source in that tick has been
-    /// diffed). Sets `charged` when the accumulated count has reached the
-    /// batch size; leaves an already-`true` flag untouched on a cycle
-    /// that lands nothing new ("stays fired until it clears").
+    /// Call once per poll-cycle boundary (`rss_poller.rs`'s `interval.tick()`, after every source
+    /// in that tick has been diffed).
     pub fn cycle_end(&mut self) {
         if self.items_since_visit >= self.batch_size {
             self.charged = true;
         }
     }
 
-    /// The news icon being visited (selected, or otherwise
-    /// acknowledged) — cleared, not remembered. Resets both the count
-    /// and the charge, re-arming the edge trigger for the next batch.
+    /// The news icon being visited (selected, or otherwise acknowledged) — cleared, not remembered.
     pub fn visit(&mut self) {
         self.items_since_visit = 0;
         self.charged = false;
     }
 
-    /// `0.0..=1.0`, clamped — the interior fill level the icon's charging
-    /// animation reads (`icon-strip.css`'s `.charge` transform, the
-    /// `NEWS_CHARGE_STEP_MS` token). Never exceeds `1.0` even once
-    /// `items_since_visit` overshoots `batch_size` (a cycle can land more
-    /// than one batch's worth at once).
     pub fn fill(&self) -> f32 {
         (self.items_since_visit as f32 / self.batch_size as f32).min(1.0)
     }
@@ -69,8 +42,8 @@ impl NewsCharge {
         self.charged
     }
 
-    /// The literal count badge — items landed since the last visit,
-    /// uncapped (unlike `fill`, which clamps for the animation).
+    /// The literal count badge — items landed since the last visit, uncapped (unlike `fill`, which
+    /// clamps for the animation).
     pub fn count(&self) -> usize {
         self.items_since_visit
     }
@@ -145,11 +118,9 @@ mod tests {
         c.cycle_end();
         assert!(c.is_charged());
 
-        // a later cycle with nothing new lands must not silently unfire it
         c.cycle_end();
         assert!(c.is_charged());
 
-        // nor does a cycle that lands one more item
         c.item_landed();
         c.cycle_end();
         assert!(c.is_charged());

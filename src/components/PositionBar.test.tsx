@@ -18,7 +18,6 @@ describe("segmentFor", () => {
   });
 
   it("maps the current index proportionally past the ceiling", () => {
-    // total=20: each segment is 2 items. floor(current * 10 / total).
     expect(segmentFor(10, 20)).toEqual({ segmentCount: 10, segmentIndex: 5 });
     expect(segmentFor(19, 20)).toEqual({ segmentCount: 10, segmentIndex: 9 });
   });
@@ -41,8 +40,6 @@ describe("PositionBar", () => {
 
   it("renders one segment per item up to the 10-segment ceiling", () => {
     const { container } = render(<PositionBar total={5} current={2} />);
-    // the viewed segment carries ttl-fill instead of ttl-seg, so the
-    // plain-class query below finds the other 4.
     expect(segs(container)).toHaveLength(4);
     expect(container.querySelectorAll(".ttl-bar > *")).toHaveLength(5);
   });

@@ -104,10 +104,6 @@ describe("useSlotState", () => {
       ttlMs: 8000,
       remainingMs: 4000,
     });
-    // must go straight from n1 to n2 — assert the final state only, since
-    // there's no async gap between the two synchronous emits in this test
-    // to observe an intermediate frame at, but a snapshot check on id is
-    // the meaningful assertion either way
     expect(result.current).toMatchObject({
       id: "n2",
       expanded: true,
@@ -156,9 +152,6 @@ describe("useSlotState", () => {
     const { result } = await renderReady();
     emit(SHOWING_N1);
     expect(result.current.state).toBe("showing");
-    // live event payloads must run through the same validator the global
-    // path uses — an incomplete object falls back to empty, not undefined
-    // fields.
     // SAFETY: this payload is intentionally incomplete (missing every field
     // beyond id) so the live-path validator must reject it — the cast only
     // satisfies the compile-time SlotState shape; no field is ever read.
@@ -179,8 +172,6 @@ describe("useSlotState", () => {
     const { unmount } = await renderReady();
     expect(() => unmount()).not.toThrow();
   });
-
-  // --- startup race shield ---
 
   it("reads the eval-planted global as initial state (late-mount side of the race shield)", () => {
     window.__NOTCHTAP_SLOT_STATE__ = SHOWING_N1;
@@ -209,7 +200,6 @@ describe("useSlotState", () => {
       eventType: "generic",
       priority: "medium",
       expanded: false,
-      // signal omitted
     };
     const { result } = renderHook(() => useSlotState());
     expect(result.current).toEqual({ state: "empty" });
@@ -232,10 +222,6 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
-  // `origin` — a closed five-value union, same rejection
-  // discipline as every other enum on this wire (signal/eventType/priority
-  // above). "cmux" replaced by "agent" — the wire never sends
-  // "cmux" anymore (event.rs's `SourceKind` dropped the variant).
   it("accepts a showing payload with each recognized origin value", () => {
     for (const origin of ["football", "news", "manual", "agent"] as const) {
       window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin };
@@ -256,10 +242,6 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // `agentRuntime` — nullable closed-set field mirroring
-  // useAgentState.ts's own `AgentRuntime` wire tokens. Always present
-  // (never optional): null on every non-agent origin, and null/token on
-  // an agent-origin item.
   it("accepts a showing payload with agentRuntime null or any known token", () => {
     for (const agentRuntime of [null, "claude-code", "codex", "kimi", "opencode"] as const) {
       window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "agent", agentRuntime };
@@ -274,20 +256,12 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
-  // Absence-validation precedent: mirrors `source`/`category`'s nullable-
-  // string handling (an absent field fails both the `=== null` and the
-  // closed-list `.includes` arms), not `origin`'s non-nullable check —
-  // agentRuntime is nullable like source/category, so that's the closer
-  // analogue. Either precedent rejects absence identically in practice.
   it("ignores a showing payload missing agentRuntime entirely", () => {
     const { agentRuntime: _agentRuntime, ...missingAgentRuntime } = SHOWING_N1;
     window.__NOTCHTAP_SLOT_STATE__ = missingAgentRuntime;
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // the queue-slider fields ride the same payload — the slider
-  // does arithmetic on them, so the validator must reject anything but
-  // non-negative integers (missing, fractional, negative, wrong type).
   it("accepts a showing payload with a queue-slider position", () => {
     window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, queueTotal: 5, queueDone: 2 };
     const { result } = renderHook(() => useSlotState());
@@ -309,9 +283,6 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // ttlMs/remainingMs (the TTL-bar timing fields) ride the same
-  // payload as queueTotal/queueDone and are validated with the same
-  // discipline (non-negative integer, no fractional/negative/missing).
   it("accepts a showing payload with ttl/remaining timing fields", () => {
     window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, ttlMs: 8000, remainingMs: 3000 };
     const { result } = renderHook(() => useSlotState());
@@ -333,9 +304,6 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // subtitle is null-or-string, details an array of {label, value}
-  // string pairs — the pairs come from untrusted hook input, so a malformed
-  // details (non-array, or an item missing a string label/value) is rejected.
   it("accepts a showing payload carrying a subtitle and detail pairs", () => {
     window.__NOTCHTAP_SLOT_STATE__ = {
       ...SHOWING_N1,
@@ -367,10 +335,6 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // Regression test: EVENT_TYPES must track the backend's EventType enum
-  // (currently generic/score_update/match_state/news_item, event.rs) or a
-  // real rss_poller.rs payload gets silently dropped to empty by the
-  // validator above instead of rendering.
   it("accepts a real news_item payload from the rss poller", () => {
     const news: SlotState = {
       state: "showing",
@@ -405,10 +369,6 @@ describe("useSlotState", () => {
     emit(SHOWING_N1);
     expect(result.current).toEqual(SHOWING_N1);
   });
-
-  // the structured `espn` block — absent (the common case, and
-  // every non-football payload), present-and-valid, and present-but-
-  // malformed (must fall back like every other field).
 
   const VALID_ESPN = {
     league: "UCL",

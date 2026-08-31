@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { presentationFacts } from "./presentationFacts";
 
-// mirrors useStatusState.test.ts's global-seed pattern: set/delete the
-// eval-planted globals between cases so nothing leaks across tests.
 afterEach(() => {
   delete window.__NOTCHTAP_MODE__;
   delete window.__NOTCHTAP_CUTOUT_WIDTH__;
@@ -50,8 +48,6 @@ describe("presentationFacts", () => {
     expect(presentationFacts().cutoutWidth).toBeNull();
   });
 
-  // cutoutHeight validates identically to cutoutWidth — same
-  // reject list, same rule (finite, positive number only).
   it("rejects zero, negative, non-number, and missing cutout heights", () => {
     window.__NOTCHTAP_MODE__ = "notch";
 

@@ -1,40 +1,9 @@
-// The agent tab's below-block — mounted by whichever parent owns the
-// icon-strip's hover-with-a-selection shell. This component only renders
-// what goes INSIDE `.below-block`.
-//
-// It renders the hero (one: the VIEWED session) through the same unified
-// template `AgentHeroCard`/`AgentBoard.tsx` render, at shipped card
-// height — hero only in compact, no roster rows. Below the hero, the
-// session position bar stands in for the roster stack.
-//
-// Deliberately NOT `AgentBoard.tsx` reused wholesale: that component
-// mounts its OWN shell (`.card-assembly.agent-board-shell`), has its own
-// hover-expand mechanism (`expanded` prop, the scrollable roster list),
-// and picks its "primary" session by PRIORITY (highest-ranked state
-// first) rather than by an operator-driven cursor. This tab is a
-// different selection axis entirely — `prefix-[`/`prefix-]`
-// (`PrefixAction::PreviousSession`/`NextSession`) cycles a VIEWED index
-// through ALL sessions in wire order, independent of which one AgentBoard
-// would rank primary. What genuinely IS shared (the hero's title/
-// subtitle/body/facts/priority derivation) is reused via
-// `agentHeroPropsFor`, exported from AgentBoard.tsx for exactly this
-// (see that function's own doc comment) — not a second, drifting copy.
-
 import type { AgentSessionView } from "../hooks/useAgentState";
 import { agentRuntimeClass } from "../lib/presentation";
 import { agentHeroPropsFor } from "./AgentBoard";
 import { AgentHeroCard } from "./NotificationBody";
 import { PositionBar } from "./PositionBar";
 
-/// `prefix-[`/`prefix-]` cycling: wraps at both ends rather
-/// than clamping, so cycling never dead-ends at the first/last session —
-/// same reasoning `Tab::ORDER`-adjacent cycling would want on the rust
-/// side, kept here as the frontend's own pure mirror since the VIEWED
-/// index is frontend-local state (rust only emits which ACTION fired,
-/// via `PrefixAction::PreviousSession`/`NextSession` — it does
-/// not itself track a viewed index; see prefix.rs's own doc on that
-/// split). A non-positive `total` returns 0, matching `PositionBar`'s
-/// own "nothing to show" floor.
 export function cycleSessionIndex(
   current: number,
   total: number,
@@ -54,17 +23,10 @@ export function AgentBelowBlock({
   nowMs,
 }: {
   sessions: AgentSessionView[];
-  /// Not itself clamped by the caller — this component defends against
-  /// an out-of-range index (e.g. the viewed session having just dropped
-  /// out of the snapshot) the same way `PositionBar`'s own `segmentFor`
-  /// clamps, rather than trusting every caller to re-derive a valid
-  /// index before every render.
   viewedIndex: number;
   capturedAtMs: number;
   nowMs: number;
 }) {
-  // Same "nothing to show, render nothing" posture AgentBoard.tsx's own
-  // `sessions.length === 0` guard uses.
   if (sessions.length === 0) {
     return null;
   }

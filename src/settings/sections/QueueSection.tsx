@@ -10,12 +10,6 @@ import { settingsInvoke } from "../ipc";
 import type { QueueItemSummary } from "../types";
 import { PRIORITY_LABELS } from "../types";
 
-// `get_queue` returns summaries with no id and a refresh replaces the
-// whole array — row content is the only stable identity. `occurrenceIndex`
-// disambiguates duplicate identical summaries (same priority/source/title)
-// so rows keep distinct React keys; the running Map stays deterministic
-// across an identical refetch, so rows don't remount and AnimatePresence
-// can tell "still here" from "left".
 function withQueueRowKeys(
   items: QueueItemSummary[],
 ): Array<{ item: QueueItemSummary; rowKey: string }> {
@@ -28,22 +22,12 @@ function withQueueRowKeys(
   });
 }
 
-// Read-only view of the WAITING items behind the visible card (the overlay
-// only exposes queue_total/queue_done dots) plus two controls: Skip current
-// (dismiss visible card, promote next waiting item — via skip_visible's
-// semantics) and Clear queue (drop every waiting item; visible card
-// finishes its normal ttl/rotation). Fetch-on-open + manual Refresh, same
-// as DiagnosticsSection. Titles are UNTRUSTED wire data — plain text only:
-// no dangerouslySetInnerHTML, no <a href>, no markdown rendering.
 export function QueueSection() {
   const [items, setItems] = useState<QueueItemSummary[] | null>(null);
   const loadStatus = useActionStatus("queue-load");
   const skipStatus = useActionStatus("queue-skip");
   const clearStatus = useActionStatus("queue-clear");
 
-  // `announce` is explicit per call, not a static prop — same split as
-  // DiagnosticsSection's own `refresh`: the mount-time read is passive,
-  // the Refresh button's call is a user-initiated attempt.
   function refresh(announce: boolean) {
     void loadStatus.run(() => settingsInvoke("get_queue").then((fetched) => setItems(fetched)), {
       announce,
@@ -82,9 +66,6 @@ export function QueueSection() {
     >
       <ActionStatus status={loadStatus.status} className="queue-load-status" showPending={false} />
       {items === null ? (
-        // Reuses `loadStatus.status.state` — the same signal the ActionStatus
-        // banner above reads — so this never disagrees with the banner
-        // about whether the last attempt failed.
         loadStatus.status.state === "error" ? (
           <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
             Couldn't load the queue — Refresh to retry.
@@ -94,22 +75,12 @@ export function QueueSection() {
         )
       ) : (
         <>
-          {/* Sibling of the <ul> below, not a replacement — see the
-              AnimatePresence comment inside the <ul>. */}
           {items.length === 0 && (
             <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
               Queue is empty.
             </p>
           )}
           <ul className={cn("queue-list flex flex-col", items.length > 0 && "py-1 pb-[11px]")}>
-            {/* initial={false}: first mount and an unchanged Refresh swap
-                (rows keep their keys) never cascade — only rows genuinely
-                appearing/leaving animate; Skip reads as "that one row left",
-                Clear collapses removed rows. <ul> + AnimatePresence stay
-                mounted while empty; the empty-state <p> is the sibling
-                above, gated on `items.length === 0` directly, so it appears
-                while last rows still exit. `py-1 pb-[11px]` gated on
-                `items.length > 0` so an empty <ul> adds no gap. */}
             <AnimatePresence initial={false}>
               {withQueueRowKeys(items).map(({ item, rowKey }) => (
                 <motion.li
@@ -133,9 +104,6 @@ export function QueueSection() {
           </ul>
         </>
       )}
-      {/* Refresh announces (`refresh(true)`), exactly like
-          DiagnosticsSection's Refresh row; the mount-time fetch stays
-          `refresh(false)`. */}
       <div className={CONTROL_ROW}>
         <ControlCopy
           htmlFor="refresh-queue"

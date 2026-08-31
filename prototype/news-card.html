@@ -29,21 +29,13 @@
   .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
   .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
 
-  /* ==== the "physical" rig around the card: a fake macOS menubar with a
-     hardware notch cutout, purely so the card reads in context. Not part of
-     the shipped component itself — StatusRailCard renders only the card. ==== */
+  /* Showcase rig only; StatusRailCard renders the card without this menubar. */
   .rig { position: relative; background: #08090b; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); padding-bottom: 28px; }
   .menubar { position: relative; height: 32px; background: #1c1d20; }
   .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 32px; width: 200px; background: #000; z-index: 2; }
   .stage { position: relative; padding-top: 6px; min-height: 160px; display: flex; justify-content: center; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
 
-  /* ====================================================================
-     the real shell — StatusRailCard.tsx's card-assembly root element,
-     src/overlay/card-chrome.css. A 3-column/2-row CSS grid: flank-left |
-     notch cutout | flank-right on row 1, below-block spanning row 2. No
-     absolute positioning, unlike a naive mock — the grid is load-bearing
-     (keeps .card-assembly's own height real even with nothing painted in
-     the cutout cell). ==================================================== */
+  /* Mirrors StatusRailCard's load-bearing 3-column, 2-row grid shell. */
   .card-assembly {
     position: relative;
     display: grid;
@@ -54,8 +46,6 @@
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
     transition: width 320ms cubic-bezier(0.3, 1.36, 0.44, 1);
   }
-  /* base (non-expanded, showing) width formula — card-chrome.css's
-     unnamed fallback: min(max(400px*scale, cutout+120px*scale), 100%). */
   .card-assembly { --cw: 400px; }
   .card-assembly.expanded { --cw: 500px; }
 
@@ -67,13 +57,9 @@
   .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
   .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; }
 
-  /* FlankClock (src/components/FlankClock.tsx) — .time-only, styles.css */
   .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
 
-  /* StatusDots (src/components/StatusDots.tsx) — src/overlay/status-dots.css.
-     Real behavior: these stay mounted in flank-right THROUGH a showing
-     notification, not just at idle (minimal-notch merge, 89b2184) — a news
-     card does not hide or replace them. */
+  /* StatusDots stay mounted in the right flank while a notification is showing. */
   .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
   .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .status-dot.football { background: var(--overlay-green); }
@@ -83,23 +69,18 @@
   .status-dot.news.active { color: var(--overlay-coral); }
   .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
-  /* below-block: grid-column 1/-1, grid-row 2 — carries the priority
-     accent's content chrome, news-shade, .compact, the manifest, ttl-bar. */
   .below-block {
     grid-column: 1 / -1; grid-row: 2; position: relative; overflow: hidden;
     background: #000; color: var(--overlay-fg);
     border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
   }
 
-  /* ==== priority accent — card-chrome.css's .low/.medium/.high on
-     .card-assembly. Orthogonal to category: this drives .compact::before's
-     edge, .stamp's border/color, and the ttl-bar fill — never the news-shade
-     tint (that's category, below). ==== */
+  /* Priority drives the edge, stamp, and TTL; category drives the news tint. */
   .card-assembly.low    { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
   .card-assembly.medium { --accent: var(--overlay-teal);  --accent-soft: rgba(85,214,189,0.24); }
   .card-assembly.high   { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 
-  /* ==== category tokens, verbatim from src/overlay/news-category.css ==== */
+  /* Mirrors src/overlay/news-category.css. */
   .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
   .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
   .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
@@ -124,8 +105,7 @@
   }
   .news-shade .compact, .news-shade .manifest { position: relative; z-index: 1; }
 
-  /* ==== .compact — src/overlay/masthead-content.css. The Stamp badge sits
-     in the masthead row. The priority edge requires the wider left inset. ==== */
+  /* Mirrors the compact panel in masthead-content.css. */
   .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
   .expanded .compact { min-height: 82px; }
   .compact::before {
@@ -142,9 +122,7 @@
   .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
   .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
 
-  /* the Stamp badge (src/components/Stamp.tsx) — colored by PRIORITY
-     accent, not category. stampFor() returns "Wire" for every news_item
-     regardless of priority; CSS uppercases it. */
+  /* News stamps use the priority accent, not the category color. */
   .stamp {
     align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent);
     font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase;
@@ -155,8 +133,6 @@
     white-space: normal; font-weight: 680; font-size: 13px; line-height: 1.3;
   }
 
-  /* The compact card has one relative-age slot. The chip and age stay
-     together on the left with a 5px gap. */
   .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
   .chip {
     display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
@@ -167,8 +143,6 @@
   .chip-category, .notif-meta-row .notif-time-inline { animation: pill-enter 175ms var(--ease-notchtap) both; }
   @keyframes pill-enter { from { opacity: 0; } to { opacity: 1; } }
 
-  /* The compact hint renders only while collapsed. The ttl bar carries
-     the queue indicator. */
   .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
   .compact-hint kbd {
     display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
@@ -177,8 +151,6 @@
     font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
   }
 
-  /* ==== The expanded manifest contains a label, summary, and keyboard hint.
-     Compact metadata stays in the compact panel above. ==== */
   .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 320ms var(--ease-notchtap), opacity 320ms var(--ease-notchtap); }
   .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
   .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
@@ -198,8 +170,6 @@
     font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
   }
 
-  /* ==== The ttl bar is an absolute floor strip that carries rotation time
-     and queue position. ==== */
   .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); gap: 3px; }
   .ttl-seg { background: rgba(255,255,255,0.08); }
   .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }

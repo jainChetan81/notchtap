@@ -20,9 +20,6 @@ describe("IconStrip", () => {
     const buttons = container.querySelectorAll(".icon");
     expect(buttons).toHaveLength(3);
     expect(TAB_ORDER).toEqual(["agent", "football", "news"]);
-    // class list order mirrors TAB_ORDER -- the strip must never reorder
-    // icons based on which are present, per the design source's "fixed
-    // order" rule.
     const tabsInDom = Array.from(buttons).map((el) =>
       TAB_ORDER.find((tab) => el.classList.contains(tab)),
     );
@@ -121,12 +118,6 @@ describe("IconStrip", () => {
     expect(underFill.style.transform).toBe("scaleY(0)");
   });
 
-  // The charge rect must sit INSIDE the clipPath's y=[2.5, 15.5] bounds.
-  // Drawn at y="15.5" it never overlaps the clip at ANY scaleY value, so
-  // it renders invisible at every charge level even though `scaleY`
-  // computes correctly — which the transform assertion above cannot
-  // catch, since it never checks where the rect actually sits. Pin the
-  // geometry directly.
   it("the charge rect's own y coordinate matches the page outline's top (2.5), so scaleY(1) fills it exactly", () => {
     const { container } = render(<IconStrip {...BASE} />);
     // SAFETY: the `.charge` rect always renders inside the news glyph in the
@@ -144,9 +135,7 @@ describe("IconStrip", () => {
     );
     const clipIds = Array.from(container.querySelectorAll("clipPath")).map((el) => el.id);
     expect(clipIds).toHaveLength(2);
-    expect(new Set(clipIds).size).toBe(2); // both non-empty and distinct
-    // and each glyph's own charge rect references ITS sibling clipPath,
-    // not the other instance's.
+    expect(new Set(clipIds).size).toBe(2);
     const fills = container.querySelectorAll(".icon.news .charge");
     expect(fills[0].getAttribute("clip-path")).toBe(`url(#${clipIds[0]})`);
     expect(fills[1].getAttribute("clip-path")).toBe(`url(#${clipIds[1]})`);

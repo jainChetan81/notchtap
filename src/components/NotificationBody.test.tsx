@@ -1,22 +1,3 @@
-// the football scorecard's own motion contract —
-// the match-state chip morphs rather than cuts, and the score digits roll
-// on a goal (and ONLY on a goal). The component's rendering is otherwise
-// covered end-to-end through StatusRailCard.test.tsx's "live-match
-// football scorecard" block; this file exists for the two things that
-// block can't express, which both need the component rendered DIRECTLY so
-// a prop can be changed in place:
-// - DOM-identity assertions across a re-render (does a clock tick
-// remount the score spans?), and
-// - the CSS rules the animation actually lives in (jsdom has no layout
-// or transition engine, so those are pinned at the string level
-// against the real stylesheet — the same technique
-// celebrationStacking.test.tsx and IdleHoverPeek.test.tsx use).
-//
-// The football hero content lives in `FootballHeroCard`
-// (`NotificationBody.tsx`), rendered through the shared masthead/stamp/
-// accent-stripe template rather than a bespoke `.notif-block` layout.
-// The odometer/chip-morph CSS assertions below target those shared
-// rules, not the component that renders them.
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
@@ -78,23 +59,14 @@ function card(espn: Partial<EspnMeta> = {}) {
   );
 }
 
-/** The two odometer clips, home first. */
 function digits(container: HTMLElement): Element[] {
   return Array.from(container.querySelectorAll(".score-digit"));
 }
 
-/** Every rolling span inside each clip — the span is keyed on the score
- * value, so its identity is what "did the odometer fire?" means, and its
- * COUNT is what "is a roll in flight?" means: mid-roll a clip briefly
- * holds two (the outgoing digit is kept mounted by AnimatePresence,
- * taken out of flow by `mode="popLayout"`, until its exit finishes). */
 function rollsIn(container: HTMLElement, side: 0 | 1): Element[] {
   return Array.from(digits(container)[side].querySelectorAll(".score-digit-roll"));
 }
 
-/** The single settled roll span per side — only valid when no roll is in
- * flight, which every "nothing should have moved" assertion here asserts
- * first via the length check. */
 function rolls(container: HTMLElement): (Element | undefined)[] {
   return [rollsIn(container, 0)[0], rollsIn(container, 1)[0]];
 }
@@ -108,10 +80,6 @@ describe("FootballHeroCard score odometer", () => {
     expect(rolls(container)[1]?.textContent).toBe("1");
   });
 
-  // THE restraint guard: this card re-renders once a minute purely to
-  // move the clock pill on. If the clock tick remounted the score spans,
-  // the digits would roll every minute of the match — the exact opposite
-  // of "the payload moves when, and only when, the payload changes".
   it("a clock tick does not remount either score span (no roll without a goal)", () => {
     const { container, rerender } = render(card());
     const before = rolls(container);
@@ -123,10 +91,6 @@ describe("FootballHeroCard score odometer", () => {
     expect(rolls(container)[1]).toBe(before[1]);
   });
 
-  // Same guard against a same-slot rotation re-emit: an identical
-  // scoreline arriving again is not a goal. Value-keying covers this for
-  // free, which is why the scorecard needs no `.rotation-swap`-style
-  // off-switch (news-category.css).
   it("a re-emit carrying an unchanged scoreline does not remount either score span", () => {
     const { container, rerender } = render(card());
     const before = rolls(container);
@@ -143,19 +107,14 @@ describe("FootballHeroCard score odometer", () => {
     const clipsBefore = digits(container);
     rerender(card({ homeScore: 2 }));
 
-    // the scoring side is mid-roll: the old "1" is still mounted (exiting)
-    // and the new "2" has joined it inside the same clip.
     const home = rollsIn(container, 0);
     expect(home).toHaveLength(2);
     expect(home).toContain(before[0]);
     expect(home.map((span) => span.textContent)).toContain("2");
 
-    // the other side never even re-mounted its span.
     expect(rollsIn(container, 1)).toHaveLength(1);
     expect(rolls(container)[1]).toBe(before[1]);
 
-    // the clips themselves are stable containers — only their contents
-    // change, so the row never re-lays-out around a goal.
     expect(digits(container)[0]).toBe(clipsBefore[0]);
     expect(digits(container)[1]).toBe(clipsBefore[1]);
   });
@@ -164,8 +123,6 @@ describe("FootballHeroCard score odometer", () => {
     const body = ruleBody(overlayCardCss, ".card-root .score-digit");
     expect(body).toContain("overflow: hidden;");
     expect(body).toContain("height: 1em;");
-    // popLayout takes the outgoing digit out of flow — it can only land
-    // back inside the clip if the clip is the positioned ancestor.
     expect(body).toContain("position: relative;");
   });
 });
@@ -202,8 +159,6 @@ describe("FootballHeroCard match-state chip", () => {
     expect(dotBase).toContain("opacity var(--reveal-ms, 260ms) var(--ease-notchtap)");
     const finalDot = ruleBody(overlayCardCss, ".card-root .chip-live.final .live-dot");
     expect(finalDot).toContain("opacity: 0;");
-    // the collapse cancels the chip's own 5px gap exactly, so the label
-    // lands where a dot-less chip would have put it.
     expect(finalDot).toContain("width: 0;");
     expect(finalDot).toContain("margin-right: -5px;");
     expect(ruleBody(overlayCardCss, ".card-root .chip-live")).toContain("gap: 5px;");
@@ -214,8 +169,6 @@ describe("FootballHeroCard match-state chip", () => {
   });
 });
 
-// the crossbar persistent
-// variant — a second, stacked score-block for a secondary live match.
 describe("FootballHeroCard crossbar variant", () => {
   const SECOND_ESPN: EspnMeta = {
     league: "EPL",
@@ -357,13 +310,6 @@ describe("FootballHeroCard crossbar variant", () => {
   });
 });
 
-// the shared fact-pill renderer's
-// two knobs — the optional `.fp-tag` qualifier and the per-call tone —
-// asserted directly on the two components that pass them differently.
-// The mock (`prototype/agent-board.html`, proposal section) gives the
-// agent hero a toned pill in every state and a coloured tag on the two
-// alarm states; a generic (non-agent) card's pills stay neutral, which
-// is the contrast this block pins so the two can't silently converge.
 describe("fact pills: tags and tones", () => {
   function heroWith(facts: Fact[], factsTone: "accent" | "danger" | "safe") {
     return (
@@ -414,8 +360,6 @@ describe("fact pills: tags and tones", () => {
     expect(pills[1].classList.contains("tone-accent")).toBe(false);
   });
 
-  // The other half of the contrast: the generic branch passes no tone at
-  // all, so a manual/CLI card's pills stay the plain neutral pill.
   it("a generic card's pills carry no tone class", () => {
     const slot: Extract<SlotState, { state: "showing" }> = {
       state: "showing",

@@ -1,19 +1,3 @@
-//! Read-only setup-inspection half of `notchtap-agent doctor`: is the
-//! Agent Adapter actually installed, and does the command its hooks
-//! point at resolve to something executable? (Adapter Health only
-//! reports what has been *received*, so un-wired and wired-but-idle
-//! look identical there.)
-//!
-//! **This module NEVER writes.** It must never create, edit, or repair
-//! a runtime's hook config — notchtap never silently edits a user's
-//! global provider configuration.
-//!
-//! Every decision function takes file *contents* (a `&str`), a `bool`,
-//! or an explicit `&Path`, resolving nothing from the environment; the
-//! impure helpers ([`is_executable_file`], [`path_dirs_from_env`],
-//! [`listener_reachable`]) are tiny and hold no decision logic, so
-//! tests never touch the real home directory.
-
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -21,9 +5,7 @@ use std::time::Duration;
 use crate::agents::adapter::runtime_wire_label;
 use crate::agents::model::AgentRuntime;
 
-/// The hook events `AgentsSection.tsx`'s Claude Code setup snippet
-/// installs. Pinned against that file by
-/// `src/settings/hookEventParity.test.ts`.
+/// The hook events `AgentsSection.tsx`'s Claude Code setup snippet installs.
 pub const CLAUDE_CODE_HOOK_EVENTS: [&str; 10] = [
     "SessionStart",
     "SessionEnd",
@@ -38,7 +20,6 @@ pub const CLAUDE_CODE_HOOK_EVENTS: [&str; 10] = [
 ];
 
 /// The hook events `AgentsSection.tsx`'s Codex setup snippet installs.
-/// Pinned against that file by `src/settings/hookEventParity.test.ts`.
 pub const CODEX_HOOK_EVENTS: [&str; 8] = [
     "SessionStart",
     "SessionEnd",
@@ -51,10 +32,6 @@ pub const CODEX_HOOK_EVENTS: [&str; 8] = [
 ];
 
 /// The hook events `AgentsSection.tsx`'s Kimi setup snippet installs.
-/// Pinned against that file by `src/settings/hookEventParity.test.ts`.
-/// Byte-identical to [`CLAUDE_CODE_HOOK_EVENTS`] and deliberately NOT
-/// shared with it — collapsing them would silently couple two
-/// independent providers' contracts.
 pub const KIMI_HOOK_EVENTS: [&str; 10] = [
     "SessionStart",
     "SessionEnd",
@@ -68,38 +45,25 @@ pub const KIMI_HOOK_EVENTS: [&str; 10] = [
     "SubagentStop",
 ];
 
-/// What one runtime's Adapter installation looks like on disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdapterInstall {
-    /// The config file does not exist at the inspected path.
     ConfigMissing,
-    /// The file exists but could not be read or parsed. `reason` is a
-    /// bounded category (an `io::ErrorKind` debug name, or a fixed
-    /// "malformed json"/"malformed toml" string) — NEVER a raw error
-    /// string, which can embed the user's absolute home path.
+    /// `reason` is a bounded category (an `io::ErrorKind` debug name, or a fixed "malformed
+    /// json"/"malformed toml" string) — NEVER a raw error string.
     ConfigUnreadable { reason: String },
-    /// Parsed. `wired` and `missing` are both in the canonical order of
-    /// the corresponding `*_HOOK_EVENTS` const, never file order.
+    /// `wired` and `missing` are both in the canonical order of the corresponding `*_HOOK_EVENTS`
+    /// const, never file order.
     Inspected {
         wired: Vec<String>,
         missing: Vec<String>,
-        /// Every distinct command string found on a notchtap hook entry,
-        /// first-seen order. Normally exactly one; more than one means a
-        /// partially edited install, and each is reported separately.
         commands: Vec<String>,
     },
-    /// OpenCode only: plugin-file presence, no hook list.
     PluginFile { present: bool },
 }
 
-/// What a hook's command string actually points at. The program is the
-/// first whitespace-separated token of the command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandTarget {
-    /// Contains a `/`, and that path is an existing executable file.
     Resolved { path: PathBuf },
-    /// Contains a `/`, but nothing executable is there — the failure
-    /// mode that silently breaks every hook.
     Broken { path: PathBuf },
     /// A bare name (no `/`), which the provider must resolve via PATH.
     BareName {
@@ -110,50 +74,34 @@ pub enum CommandTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeReport {
-    /// The typed Agent Runtime, not a loose token — `render` turns it
-    /// back into its wire label via `adapter::runtime_wire_label`.
     pub runtime: AgentRuntime,
-    /// Already home-relative — produced by [`display_path`] before this
-    /// struct is built, so [`render`] stays a pure formatter with no
-    /// path logic and no `home` parameter.
     pub config_path_display: String,
     pub install: AdapterInstall,
-    /// One entry per distinct command string in
-    /// `AdapterInstall::Inspected.commands`, same order. Empty for every
-    /// other `AdapterInstall` variant.
     pub command_targets: Vec<(String, CommandTarget)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorReport {
     pub listener_ok: bool,
-    /// Why the listener check failed, when it did — so the report can say
-    /// `not reachable (…)` the way `notchtap-agent status` already does.
     /// `None` whenever `listener_ok` is true.
     pub listener_error: Option<String>,
     pub port: u16,
     pub runtimes: Vec<RuntimeReport>,
-    /// The Kimi hook-version line, pre-rendered by the caller from
-    /// `kimi_version::probe_hook_support()`. `None` when not probed.
     pub kimi_note: Option<String>,
 }
 
-// --- inspection (pure: file contents in, report out) -------------------
-
-/// Claude Code's `~/.claude/settings.json`.
 pub fn inspect_claude_code(json: &str) -> AdapterInstall {
     inspect_hooks_json(json, &CLAUDE_CODE_HOOK_EVENTS, AgentRuntime::ClaudeCode)
 }
 
-/// Codex's `~/.codex/hooks.json` — same JSON shape as Claude Code's, so
-/// this is the shared helper with a different const and token.
+/// Codex's `~/.codex/hooks.json` — same JSON shape as Claude Code's, so this is the shared helper
+/// with a different const and token.
 pub fn inspect_codex(json: &str) -> AdapterInstall {
     inspect_hooks_json(json, &CODEX_HOOK_EVENTS, AgentRuntime::Codex)
 }
 
-/// Kimi's `~/.kimi-code/config.toml` — an array of `[[hooks]]` tables
-/// rather than a JSON object, so it gets its own extraction step but the
-/// same [`assemble`] decision.
+/// Kimi's `~/.kimi-code/config.toml` — an array of `[[hooks]]` tables rather than a JSON object, so
+/// it gets its own extraction step but the same [`assemble`] decision.
 pub fn inspect_kimi(toml_text: &str) -> AdapterInstall {
     let Ok(table) = toml_text.parse::<toml::Table>() else {
         return AdapterInstall::ConfigUnreadable {
@@ -167,15 +115,11 @@ pub fn inspect_kimi(toml_text: &str) -> AdapterInstall {
     )
 }
 
-/// OpenCode ships a plugin file, not hook entries, so presence is the
-/// whole check. Taking a `bool` (not a path) keeps this pure — the
-/// caller does the `is_file()`.
+/// OpenCode ships a plugin file, not hook entries, so presence is the whole check.
 pub fn inspect_plugin_file(present: bool) -> AdapterInstall {
     AdapterInstall::PluginFile { present }
 }
 
-/// The shared Claude Code / Codex JSON body: parse, pull every
-/// `(event, command)` pair out of the `hooks` object, decide.
 fn inspect_hooks_json(json: &str, expected: &[&str], runtime: AgentRuntime) -> AdapterInstall {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return AdapterInstall::ConfigUnreadable {
@@ -185,11 +129,6 @@ fn inspect_hooks_json(json: &str, expected: &[&str], runtime: AgentRuntime) -> A
     assemble(&json_hook_pairs(&value), expected, runtime)
 }
 
-/// Every `(event, command)` pair in a `{"hooks": {"Event": [{"hooks":
-/// [{"command": "..."}]}]}}` document. A document with no `hooks` key —
-/// or any entry with a shape this doesn't recognise — yields no pairs
-/// rather than an error: the file parsed fine, the wiring just isn't
-/// there.
 fn json_hook_pairs(value: &serde_json::Value) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let Some(hooks) = value.get("hooks").and_then(|h| h.as_object()) else {
@@ -213,8 +152,7 @@ fn json_hook_pairs(value: &serde_json::Value) -> Vec<(String, String)> {
     pairs
 }
 
-/// Every `(event, command)` pair in a TOML `[[hooks]]` array of tables. A
-/// table missing either key is skipped, never a panic.
+/// A table missing either key is skipped, never a panic.
 fn toml_hook_pairs(table: &toml::Table) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let Some(entries) = table.get("hooks").and_then(|h| h.as_array()) else {
@@ -235,13 +173,8 @@ fn toml_hook_pairs(table: &toml::Table) -> Vec<(String, String)> {
     pairs
 }
 
-/// The wired/missing decision, shared by every config format.
-///
-/// A hook counts as wired when its command *contains* `hook <token>` —
-/// a substring match, not equality, because users are expected to point
-/// at an absolute path (`/Users/x/.local/bin/notchtap-agent hook kimi`).
-/// Iteration is over `expected`, never the file, so `wired`/`missing`
-/// come out in canonical order whatever order the user's file uses.
+/// Iteration is over `expected`, never the file, so `wired`/`missing` come out in canonical order
+/// whatever order the user's file uses.
 fn assemble(
     pairs: &[(String, String)],
     expected: &[&str],
@@ -276,11 +209,6 @@ fn assemble(
     }
 }
 
-// --- command classification + path display (pure) ---------------------
-
-/// Classifies a hook command's program. `path_dirs` is `$PATH` already
-/// split by the caller, and `exists_executable` is injected so this is
-/// unit-testable without touching the filesystem.
 pub fn classify_command(
     command: &str,
     path_dirs: &[PathBuf],
@@ -312,9 +240,8 @@ pub fn classify_command(
     }
 }
 
-/// Renders `path` with the user's home directory replaced by `~`, so no
-/// absolute home path ever reaches the output. Falls back to the full
-/// path when it is not under `home`.
+/// Renders `path` with the user's home directory replaced by `~`, so no absolute home path ever
+/// reaches the output.
 pub fn display_path(path: &Path, home: &Path) -> String {
     match path.strip_prefix(home) {
         Ok(rest) => format!("~/{}", rest.display()),
@@ -322,11 +249,6 @@ pub fn display_path(path: &Path, home: &Path) -> String {
     }
 }
 
-// --- the impure helpers (no decision logic lives here) ----------------
-
-/// The real-filesystem executable predicate: an existing *file* with any
-/// unix execute bit set. `is_file()` first — a directory with the execute
-/// bit is not a program.
 pub fn is_executable_file(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     match std::fs::metadata(p) {
@@ -335,16 +257,14 @@ pub fn is_executable_file(p: &Path) -> bool {
     }
 }
 
-/// `$PATH` split into directories. Empty when `PATH` is unset.
+/// `$PATH` split into directories.
 pub fn path_dirs_from_env() -> Vec<PathBuf> {
     std::env::var_os("PATH")
         .map(|raw| std::env::split_paths(&raw).collect())
         .unwrap_or_default()
 }
 
-/// `Ok(())` when something is listening on `127.0.0.1:port`, `Err(reason)`
-/// otherwise. Impure (opens a socket), deliberately tiny, and prints
-/// nothing so each caller can word its own output.
+/// `Ok(())` when something is listening on `127.0.0.1:port`, `Err(reason)` otherwise.
 pub fn listener_reachable(port: u16) -> Result<(), String> {
     let addr = format!("127.0.0.1:{port}");
     addr.parse()
@@ -355,17 +275,7 @@ pub fn listener_reachable(port: u16) -> Result<(), String> {
         .map(|_| ())
 }
 
-// --- the exit rule + the renderer (pure) ------------------------------
-
-/// FAILURE only when the listener is unreachable, or when NOT ONE runtime
-/// shows any evidence of installation. A runtime the user does not use
-/// must never fail the command.
-///
-/// "Evidence of installation" means: `Inspected` with a non-empty `wired`
-/// list (a partial install still counts — 8/10 is wired-but-incomplete,
-/// not un-wired), or `PluginFile { present: true }`. `ConfigMissing`,
-/// `ConfigUnreadable`, `PluginFile { present: false }`, and `Inspected`
-/// with an empty `wired` list are all "no evidence".
+// A runtime the user does not use must never fail the command.
 pub fn setup_ok(report: &DoctorReport) -> bool {
     if !report.listener_ok {
         return false;
@@ -380,9 +290,7 @@ pub fn setup_ok(report: &DoctorReport) -> bool {
         })
 }
 
-/// The whole human-readable report, as one string. Pure: no printing, no
-/// clock, no filesystem, and no `home` parameter — config paths arrive
-/// already home-relative via [`display_path`].
+/// The whole human-readable report, as one string.
 pub fn render(report: &DoctorReport) -> String {
     let mut out = String::from("notchtap doctor\n\n");
     out.push_str(&format!(
@@ -443,9 +351,6 @@ pub fn render(report: &DoctorReport) -> String {
             out.push_str(&format!("  command: {command} -> {suffix}\n"));
         }
 
-        // The Kimi version gate belongs to the Kimi row visually (it is
-        // the only runtime with one), even though the report carries it
-        // once at the top level.
         if runtime.runtime == AgentRuntime::Kimi {
             if let Some(note) = &report.kimi_note {
                 out.push_str(&format!("  {note}\n"));
@@ -496,8 +401,6 @@ mod tests {
         }
     }
 
-    // --- inspection, JSON ---------------------------------------------
-
     #[test]
     fn claude_code_all_ten_events_wired() {
         let json = json_wiring(&CLAUDE_CODE_HOOK_EVENTS, "notchtap-agent hook claude-code");
@@ -510,7 +413,6 @@ mod tests {
 
     #[test]
     fn claude_code_missing_events_reported_in_canonical_order() {
-        // Scrambled file order, missing two non-adjacent events.
         let present = [
             "SubagentStop",
             "PostToolUseFailure",
@@ -537,7 +439,6 @@ mod tests {
             .iter()
             .map(|e| (*e, "notchtap-agent hook claude-code"))
             .collect();
-        // "Stop" is wired to something else entirely.
         pairs[4] = ("Stop", "echo hello");
         let json = json_from_pairs(&pairs);
         let install = inspect_claude_code(&json);
@@ -587,8 +488,6 @@ mod tests {
         assert_eq!(missing.len(), 10);
         assert!(commands.is_empty());
     }
-
-    // --- inspection, Codex + TOML -------------------------------------
 
     #[test]
     fn codex_all_eight_events_wired() {
@@ -644,8 +543,6 @@ mod tests {
         assert!(missing.is_empty());
     }
 
-    // --- classify_command ---------------------------------------------
-
     #[test]
     fn classify_absolute_path_that_is_executable_resolves() {
         let target = classify_command("/opt/bin/notchtap-agent hook kimi", &[], &|p: &Path| {
@@ -672,18 +569,12 @@ mod tests {
 
     #[test]
     fn classify_absolute_path_that_exists_but_is_not_executable_is_broken() {
-        // `is_executable_file` requires the execute bit, not just
-        // existence. Fixtures are this crate's own committed files —
-        // never anything under the user's home directory.
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let cargo_toml = manifest_dir.join("Cargo.toml");
         assert!(cargo_toml.is_file(), "fixture must exist");
         assert!(!is_executable_file(&cargo_toml));
         assert!(!is_executable_file(&manifest_dir));
 
-        // Run against the REAL fixture path with the REAL predicate: an
-        // injected always-false closure would make this identical to the
-        // "path does not exist" case this test exists to distinguish.
         let command = cargo_toml.to_str().expect("fixture path is utf-8");
         assert!(
             !command.contains(char::is_whitespace),
@@ -743,8 +634,6 @@ mod tests {
         );
     }
 
-    // --- display_path + inspect_plugin_file ---------------------------
-
     #[test]
     fn display_path_shortens_home_and_passes_other_paths_through() {
         let home = Path::new("/Users/example");
@@ -769,8 +658,6 @@ mod tests {
             AdapterInstall::PluginFile { present: false }
         );
     }
-
-    // --- render + is_healthy ------------------------------------------
 
     fn wired_claude_code_report() -> DoctorReport {
         DoctorReport {
@@ -810,7 +697,6 @@ mod tests {
 
     #[test]
     fn render_carries_the_listener_failure_reason_when_there_is_one() {
-        // A bare "not reachable" tells a user nothing they can act on.
         let mut down = wired_claude_code_report();
         down.listener_ok = false;
         down.listener_error = Some("Connection refused (os error 61)".to_string());
@@ -820,7 +706,6 @@ mod tests {
             "got:\n{out}"
         );
 
-        // No reason available -> the bare form, never "not reachable ()".
         down.listener_error = None;
         let bare = render(&down);
         assert!(bare.contains("not reachable\n"), "got:\n{bare}");
@@ -829,12 +714,10 @@ mod tests {
 
     #[test]
     fn setup_ok_fails_only_on_a_dead_listener_or_zero_evidence() {
-        // 1. Listener down, everything wired -> unhealthy.
         let mut down = wired_claude_code_report();
         down.listener_ok = false;
         assert!(!setup_ok(&down));
 
-        // 2. Listener up, no runtime shows any evidence -> unhealthy.
         let nothing = DoctorReport {
             listener_ok: true,
             listener_error: None,
@@ -875,9 +758,6 @@ mod tests {
         };
         assert!(!setup_ok(&nothing));
 
-        // 3. Listener up, one partial install (8/10) + three missing
-        // configs -> healthy. A partial install is still an install,
-        // and a runtime the user doesn't use must never fail this.
         let mut partial = nothing.clone();
         partial.runtimes[2].install = AdapterInstall::Inspected {
             wired: KIMI_HOOK_EVENTS[..8]
@@ -893,8 +773,6 @@ mod tests {
         partial.runtimes[1].install = AdapterInstall::ConfigMissing;
         assert!(setup_ok(&partial));
 
-        // 4. Listener up, only the OpenCode plugin file present ->
-        // healthy.
         let mut plugin_only = nothing.clone();
         plugin_only.runtimes[1].install = AdapterInstall::ConfigMissing;
         plugin_only.runtimes[3].install = AdapterInstall::PluginFile { present: true };

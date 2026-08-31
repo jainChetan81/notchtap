@@ -31,8 +31,6 @@ describe("NewsBatchHeader", () => {
     expect(head?.textContent).not.toContain("cycle ended");
     expect(head?.textContent).toContain("0 fresh");
     expect(container.querySelector(".batch-head .sep")).toBeNull();
-    // exactly two children survive with cycleEndedAgo null: the count
-    // span and the nav wrapper — no sep/ago fragment in between.
     expect(head?.children).toHaveLength(2);
   });
 

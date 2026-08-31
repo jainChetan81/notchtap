@@ -1,9 +1,3 @@
-// String-level parity pin between sourceColors.ts (the
-// Settings-window swatch table) and the CSS that actually paints the
-// overlay — same "cheap but effective" register as
-// src/overlayCardMirror.test.ts's selector scanner, not a CSS parser.
-// Every hex in the TS tables must appear (case-insensitive) somewhere
-// in the relevant stylesheet(s), so the two can't silently drift.
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -25,8 +19,6 @@ const sourceIdentityCss = readCss("../overlay/source-identity.css");
 const newsCategoryCss = readCss("../overlay/news-category.css");
 const tokensCss = readCss("../../vendor/shared-ui/design/tokens.css");
 
-// var()-backed entries: their hex lives in tokens.css, not the overlay
-// stylesheet itself.
 const VAR_BACKED_CSS = tokensCss;
 
 function expectHexAppearsIn(hex: string, css: string) {
@@ -58,9 +50,6 @@ describe("sourceColors parity with source-identity.css / news-category.css", () 
     expect(Object.keys(SOURCE_CATEGORY_COLORS).sort()).toEqual([...CATEGORY_TOKENS].sort());
   });
 
-  // var()-backed: manual/football/agent/news all resolve to
-  // --overlay-blue / --overlay-green / --overlay-amber / --overlay-coral
-  // tokens.
   const VAR_BACKED_ORIGINS: SourceOriginToken[] = ["manual", "football", "agent", "news"];
 
   it("every var()-backed origin hex appears in tokens.css", () => {

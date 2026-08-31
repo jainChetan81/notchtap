@@ -1,24 +1,11 @@
-/* ==== news card: category system (shader + masthead + pills) ====
-   sports/business converge onto --overlay-green/--overlay-amber (same
-   values, color-mix in place of the hand-computed rgba alphas) — the other
-   four categories have no shared-inventory token to point at yet, so they
-   keep their own literal hex/rgba pairs unchanged. */
 .card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
 .card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
 .card-root .cat-business { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 .card-root .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
-/* science's own category — the only clearly free hue region left once
-   tech (cyan) and sports (green) are accounted for, so it splits off from
-   tech rather than sharing cyan. Same literal-hex idiom as
-   politics/tech/world above (no shared-inventory token yet). */
 .card-root .cat-science  { --cat: #f2a2c8; --cat-deep: rgba(242,162,200,0.15); --cat-pill: rgba(242,162,200,0.13); }
 .card-root .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
-/* KEPT: a single 12s-per-leg (24s round trip) positional drift of an
-   oversized (-30% inset), already-translucent gradient — reads as ambient
-   "alive" background texture, not a brightness/opacity flicker in
-   peripheral vision. */
 .card-root .news-shade::before {
   content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
@@ -28,11 +15,6 @@
   pointer-events: none;
   will-change: transform;
 }
-/* SHAPE only — the drift path is a curve, not a straight line, so the
-   return leg traces that curve in reverse rather than retracing a rail.
-   The intermediate stops are deliberately NOT collinear with the
-   endpoints (33% leans further left than its share, 66% further up).
-   One composited transform either way. */
 @keyframes shade-drift {
   0%   { transform: translate3d(0, 0, 0); }
   33%  { transform: translate3d(-7%, -2%, 0); }
@@ -42,18 +24,8 @@
 
 .card-root .news-shade .compact,
 .card-root .news-shade .manifest,
-/* `.batch-head` needs the same treatment — it sits above `.news-shade::before`'s
-   z-index:0 ambient wash too. The rule is split from the comma list so
-   this file's per-rule doc comments stay attached to the right block. */
 .card-root .news-shade .batch-head { position: relative; z-index: 1; }
 
-/* `.masthead-row` pairs the masthead with the priority Stamp badge
-   (Stamp sits in the header, for both card types). The generic branch's
-   title row shares this SAME masthead-row/`.masthead` markup too (kicker
-   text instead of a source name), so these rules are not news-only.
-   `.masthead` itself grows to fill the row (`flex: 1`) so its
-   own trailing hairline (`::after`) still fills exactly the space before
-   the Stamp badge. */
 .card-root .masthead-row {
   display: flex;
   align-items: center;
@@ -64,8 +36,6 @@
 .card-root .masthead {
   display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
   font: 700 8px/1 var(--font-mono);
-  /* letter-spacing on the shared 3-step 0.08/0.12/0.16em scale every
-     8-9px mono uppercase label in the overlay uses. */
   letter-spacing: 0.16em; text-transform: uppercase;
   color: rgba(255, 255, 255, 0.38);
 }
@@ -78,10 +48,6 @@
   font-size: 13px; line-height: 1.3;
 }
 
-/* ==== the unified chip language: `.notif-meta-row` is the pills
-   container; `.chip-category` is the category pill. The age label does
-   NOT use `.chip` — it lives in the plain `.notif-time-inline` slot
-   instead, so there is no `.chip-age`. ==== */
 .card-root .chip {
   display: inline-flex;
   align-items: center;
@@ -106,32 +72,11 @@
   border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
 }
 
-/* the news meta row's enter animation. `both` fill-mode keeps the element
-   at its `from` state before the delayed animation starts, matching
-   motion's `initial` prop. Uses `var(--swap-exit-ms, 175ms)` so it
-   never drifts from the shared token. Fade-only, no stagger and no
-   `translateY` slide leg: this pair replays on EVERY same-slot rotation
-   (news items rotating ~10s, live-match signal updates, ...), not just
-   the initial idle->showing promotion, so a stagger+slide would be a
-   small but real ceremony tax paid every rotation. The fade alone reads
-   identically pleasant on both legs. A same-slot rotation does not replay this
-   fade at all — StatusRailCard.tsx puts a `rotation-swap` class on
-   `.card-content` (mirroring its own `data-rotation-swap` test hook)
-   whenever `isRotation` is true, and the override rule immediately
-   below wins there (one extra class, so higher specificity regardless
-   of source order): the chip/age-label simply rides the parent
-   `.card-content`'s own opacity fade instead of paying a second,
-   redundant fade on top of it. A genuine promotion (idle->showing)
-   still gets this entrance in full — `isRotation` is always false
-   there, so `.rotation-swap` never applies. */
 .card-root .chip-category,
 .card-root .notif-meta-row .notif-time-inline {
   animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both;
 }
 
-/* the rotation-leg off-switch — higher specificity than the base rule
-   above (one extra class), so it wins unconditionally once
-   `.rotation-swap` is present, regardless of source order. */
 .card-root .rotation-swap .chip-category,
 .card-root .rotation-swap .notif-meta-row .notif-time-inline {
   animation: none;
@@ -147,10 +92,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .card-root .manifest-label {
-  /* 8px, `.detail-label`'s size (manifest.css) — the same field-label
-     role in a different render (compact vs expanded). */
   font: 700 8px/1 var(--font-mono);
-  /* letter-spacing on the shared 3-step 0.08/0.12/0.16em scale. */
   letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--cat);
   margin-bottom: 7px;
@@ -159,21 +101,11 @@
   font-size: 12px;
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.85);
-  /* clamped so a worst-case server payload (body up to ~500 chars, or a
-     long news summary) cannot push the manifest block's content past the
-     fixed 300px window, clipping the ttl-bar floor below it
-     (`.below-block`'s own `overflow: hidden` just hard-crops instead).
-     Same -webkit-box clamp idiom as `.title.headline`. */
   display: -webkit-box;
   -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* `.manifest-meta` (source/published-time/category for news; the source
-   label for generic) lives in the compact card only — masthead + meta
-   row / subtitle row — never repeated in the expanded panel.
-   Manifest.tsx's `.manifest-block` is exactly label + `.manifest-text`
-   + `.manifest-footer` for both branches now. */
 .card-root .manifest-footer {
   margin-top: 10px;
   display: flex;
@@ -181,23 +113,10 @@
 }
 .card-root .manifest-hint {
   font: 700 9px/1 var(--font-mono);
-  /* letter-spacing on the shared 3-step 0.08/0.12/0.16em scale. */
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.4);
 }
 
-/* the news tab's batch header — small on purpose. A tab-summoned news
-   card is not a promotion (nothing pushed it, the operator asked for
-   it), so it has to say how big the pile is and let them walk it. Set
-   in the masthead's own mono type so it reads as card chrome, not a
-   toolbar.
-
-   The position indicator is the shared `PositionBar` component
-   (`.ttl-bar`/`.ttl-seg` above), not a bespoke dot strip.
-   See `src/components/NewsBatchHeader.tsx`'s own header comment.
-
-   `.batch-nav`'s `margin-left: auto` pushes nav buttons to the row's
-   right edge so they sit flush right against "N fresh · cycle ended". */
 .card-root .batch-head {
   display: flex;
   align-items: center;

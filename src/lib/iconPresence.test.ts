@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { StatusState } from "../useStatusState";
 import { iconPresenceFor } from "./iconPresence";
 
-// The same all-gates-off shape `useStatusState.ts`'s own FALLBACK_STATUS
-// uses — every test below starts from "nothing is happening" and turns
-// exactly one thing on, so a mapping that leaked between sources would
-// fail loudly rather than being masked by a busy fixture.
 const QUIET: StatusState = {
   paused: false,
   waiting: 0,
@@ -73,22 +69,12 @@ describe("iconPresenceFor — the presence/liveness table", () => {
     });
   });
 
-  // the early return at the top of `iconPresenceFor` — the one
-  // branch the fixtures above never reach. It is not a defensive
-  // afterthought: the settings-window Appearance preview and most
-  // component tests render `StatusRailCard` with no status wire at all,
-  // so this IS their presence table. It must agree with `useStatusState`'s
-  // FALLBACK_STATUS (all gates off) rather than being a second literal
-  // that can drift from it — which is exactly what the QUIET row below
-  // pins, by asserting the two produce the identical table.
   it("treats a missing status wire as the all-gates-off fallback", () => {
     expect(iconPresenceFor(undefined)).toEqual({
       agent: "hidden",
       football: "hidden",
       news: "present",
     });
-    // the whole point of that early return: no wire reads exactly like a
-    // quiet wire, so the preview and the live overlay never disagree.
     expect(iconPresenceFor(undefined)).toEqual(iconPresenceFor(QUIET));
   });
 

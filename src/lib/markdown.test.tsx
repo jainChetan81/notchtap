@@ -2,9 +2,6 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderInlineMarkdown } from "./markdown";
 
-// same jsdom cleanup gap as StatusRailCard.test.tsx — this project's
-// vitest config doesn't set test.globals, so RTL's auto-cleanup never
-// registers; without this, containers leak across tests.
 afterEach(cleanup);
 
 function renderMarkdown(text: string): HTMLElement {

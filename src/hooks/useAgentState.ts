@@ -2,18 +2,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { isDetailArray, isNonNegativeInteger, isNullableString } from "../lib/guards";
 
-// The Agent Board's `agent-state` channel — same delivery discipline as
-// slot-state/status-state: runtime-validated payload, dead-listener
-// console.error, overlay stays receive-only. No sorting, lifecycle
-// inference, expiry, or history merging here — `sessions` arrives
-// already Rust-ordered and renders as-is. No `__NOTCHTAP_*__` boot-shield
-// seed yet: fresh loads start empty and pick up the live channel.
-
 const AGENT_RUNTIMES = ["claude-code", "codex", "kimi", "opencode"] as const;
 export type AgentRuntime = (typeof AGENT_RUNTIMES)[number];
 
-// Mirrors rust's `AgentSessionState` wire tokens (closed set) — an
-// unrecognized state drops that session from the validated payload.
 const AGENT_SESSION_STATES = [
   "starting",
   "working",
@@ -40,13 +31,8 @@ export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 export type AgentDetail = { label: string; value: string };
 export type AgentProject = { name: string | null; cwd: string | null };
 export type AgentHost = { name: string | null; bundleId: string | null };
-// A session's active subagent, when the runtime reports one — `id` always
-// present; `label`/`state` nullable like every adapter-optional string.
 export type AgentSubagent = { id: string; label: string | null; state: string | null };
 
-// One entry of a session's bounded transition history, oldest first — the
-// same "no sorting" rule the wire snapshot carries. `elapsedMs` is
-// clock-derived, same live-tick shape as the session's own.
 export type AgentTransition = { state: AgentSessionState; elapsedMs: number };
 
 export type AgentSessionView = {
@@ -58,11 +44,7 @@ export type AgentSessionView = {
   details: AgentDetail[];
   project: AgentProject | null;
   host: AgentHost | null;
-  // `null` (not just absent) when there is no active subagent.
   subagent: AgentSubagent | null;
-  // Clock-derived at capture (`capturedAtMs` is the anchor); the frontend
-  // derives live time locally — a continuously-varying field never rides
-  // the wire (mirrors rust's dedup exemption rule).
   elapsedMs: number;
   retentionRemainingMs: number | null;
   history: AgentTransition[];
@@ -76,21 +58,11 @@ export type AdapterHealthView = {
 export type AgentState = {
   revision: number;
   capturedAtMs: number;
-  /// The Agent BOARD's list — summons-gated on the rust side
-  /// (`board.rs::gate_presence`), empty whenever nothing needs the
-  /// operator; drives whether the Board is on screen.
   sessions: AgentSessionView[];
-  /// The PULL surface's list — same ordered slice before the gate; the
-  /// agent tab's below-block renders this one (a clicked-open tab is a
-  /// user-initiated view, not a summoning). Optional on this type only
-  /// because older payloads predate the field — `useAgentState` always
-  /// fills it (see `sanitizeAgentState`).
   tabSessions?: AgentSessionView[];
   adapterHealth: AdapterHealthView[];
 };
 
-/// What the hook hands back: `tabSessions` always present — consumers
-/// never repeat `?? []`.
 export type ResolvedAgentState = AgentState & { tabSessions: AgentSessionView[] };
 
 function emptyAgentState(): ResolvedAgentState {
@@ -127,8 +99,6 @@ function isValidHost(v: unknown): v is AgentHost {
   return isNullableString(o.name) && isNullableString(o.bundleId);
 }
 
-// Same null-tolerant idiom as project/host: null, or `id` required with
-// nullable `label`/`state`.
 function isValidSubagent(v: unknown): v is AgentSubagent {
   if (v === null) {
     return true;
@@ -191,13 +161,9 @@ function isValidSession(v: unknown): v is AgentSessionView {
     isDetailArray(o.details) &&
     (!("project" in v) || o.project === undefined || isValidProject(o.project)) &&
     (!("host" in v) || o.host === undefined || isValidHost(o.host)) &&
-    // Absent/null-tolerant like project/host — older payloads without
-    // `subagent` must not drop the session.
     (!("subagent" in v) || o.subagent === undefined || isValidSubagent(o.subagent)) &&
     isNonNegativeInteger(o.elapsedMs) &&
     (o.retentionRemainingMs === null || isNonNegativeInteger(o.retentionRemainingMs)) &&
-    // Optional at validation time (defaults to `[]` below) — older
-    // payloads without it must not drop the session.
     (!("history" in v) ||
       o.history === undefined ||
       (Array.isArray(o.history) && o.history.every(isValidTransition)))
@@ -213,9 +179,7 @@ function isValidAdapterHealth(v: unknown): v is AdapterHealthView {
   return typeof o.runtime === "string" && typeof o.status === "string";
 }
 
-// Arbitrary rust-serialized JSON crossing the IPC boundary — validated,
-// not trusted. A malformed session is DROPPED, not the whole payload:
-// one bad adapter shouldn't blank the board for every other session.
+// IPC payloads are untrusted; malformed sessions are dropped without blanking valid peers.
 export function isValidAgentState(v: unknown): v is AgentState {
   if (typeof v !== "object" || v === null) {
     return false;
@@ -240,9 +204,6 @@ export function isValidAgentState(v: unknown): v is AgentState {
     isNonNegativeInteger(o.revision) &&
     isNonNegativeInteger(o.capturedAtMs) &&
     Array.isArray(o.sessions) &&
-    // Absent tolerated (older payloads); present-and-not-an-array rejects
-    // the whole payload, like `sessions`. Per-session validation happens
-    // in the sanitizer via `isValidSession`.
     (!("tabSessions" in v) || o.tabSessions === undefined || Array.isArray(o.tabSessions)) &&
     Array.isArray(o.adapterHealth) &&
     // SAFETY: Array.isArray check above guarantees adapterHealth is array; widen to unknown[] for element check.
@@ -250,7 +211,6 @@ export function isValidAgentState(v: unknown): v is AgentState {
   );
 }
 
-// The one per-session pass both lists share — can't drift apart.
 function sanitizeSessions(list: AgentSessionView[] | undefined): AgentSessionView[] {
   return (list ?? [])
     .filter(isValidSession)
@@ -261,7 +221,6 @@ function sanitizeAgentState(v: AgentState): ResolvedAgentState {
   return {
     ...v,
     sessions: sanitizeSessions(v.sessions),
-    // Always an array after this — safe `[]` for an omitted field.
     tabSessions: sanitizeSessions(v.tabSessions),
   };
 }
@@ -277,8 +236,6 @@ export function useAgentState(): ResolvedAgentState {
       if (isValidAgentState(payload)) {
         setState(sanitizeAgentState(payload));
       }
-      // Invalid payload dropped, not blanked — keep showing the last good
-      // board, never a jarring blank-then-refill.
     })
       .then((fn) => {
         if (unmounted) {

@@ -1,44 +1,3 @@
-//! Provider-neutral wire parsing of the schema-v1 `POST /agent/events`
-//! body into [`registry::AgentEvent`], and the ONE place the hard caps
-//! table lives. Pure — no HTTP, no registry mutation, no clock reads.
-//! [`parse_wire_event`] returns either a [`ParsedAgentEvent`] ready for
-//! [`registry::AgentRegistry::apply_event`] (via `http.rs`'s
-//! `agent_events_handler`) or a typed [`AdapterError`] — every variant a
-//! `400`. `413` is the router's `DefaultBodyLimit` layer, which uses
-//! [`MAX_BODY_BYTES`] from this same table so the body cap isn't a
-//! second, drifting magic number.
-//!
-//! ## The caps table
-//!
-//! | field | cap | constant |
-//! |---|---:|---|
-//! | body | 64 KiB | [`MAX_BODY_BYTES`] |
-//! | event/session/native-event/Host IDs | 256 bytes each | [`MAX_ID_BYTES`] |
-//! | summary | 500 Unicode scalars | [`MAX_SUMMARY_SCALARS`] |
-//! | project name / Host name / labels | 120 Unicode scalars | [`MAX_NAME_OR_LABEL_SCALARS`] |
-//! | cwd / detail values | 1,024 Unicode scalars | [`MAX_VALUE_SCALARS`] |
-//! | details | 12 | [`MAX_DETAILS`] |
-//! | capabilities | 16 | [`MAX_CAPABILITIES`] |
-//! | subagents represented per event | 16 | [`MAX_SUBAGENTS_PER_EVENT`] |
-//! | retained transitions per session | 50 | [`registry::MAX_TRANSITIONS_PER_SESSION`] (re-exported below) |
-//! | remembered event IDs (LRU) | 2,048 | [`registry::MAX_REMEMBERED_EVENT_IDS`] (re-exported below) |
-//!
-//! The last two rows are *defined* in `registry.rs`, where they bound
-//! the registry's own bookkeeping (`AgentSession::push_history`'s
-//! eviction and `AgentRegistry::remember_event_id`'s LRU); they are
-//! re-exported here so this table is complete in one place. Hard caps
-//! are centralized in this module.
-//!
-//! `subagents represented per event` ([`MAX_SUBAGENTS_PER_EVENT`]) is a
-//! forward guard: schema v1 carries at most one `subagent` object per
-//! event, so this cap can never bind today. This module's own tests
-//! assert it rather than only declaring it.
-//!
-//! All string fields are trimmed and control characters
-//! (`char::is_control`) are stripped BEFORE any cap is applied or the
-//! value is stored — never the other way around, so a control character
-//! can't be used to hide otherwise-over-cap content from the trim.
-
 use thiserror::Error;
 
 use super::model::{
@@ -47,25 +6,17 @@ use super::model::{
 };
 use super::registry::AgentEvent;
 
-// Re-exported so the caps table above is complete from this one module —
-// see this file's top doc comment for why these two stay defined in
-// `registry.rs`. Nothing outside this module's own tests reads the
-// re-export; the `pub use` exists so a reader following this file's doc
-// table finds a real, resolvable path.
 #[allow(unused_imports)]
 pub use super::registry::{MAX_REMEMBERED_EVENT_IDS, MAX_TRANSITIONS_PER_SESSION};
 
-/// Body cap. Also the router's `DefaultBodyLimit` value
-/// (`http.rs::router`) — the ONE 64 KiB constant both `/notify` and
-/// `/agent/events` share.
+/// Body cap.
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
-/// event/session/native-event/Host IDs, bytes not scalars — these are
-/// opaque provider identifiers, not display text.
+/// event/session/native-event/Host IDs, bytes not scalars — these are opaque provider identifiers,
+/// not display text.
 pub const MAX_ID_BYTES: usize = 256;
 /// `summary`, in Unicode scalar values.
 pub const MAX_SUMMARY_SCALARS: usize = 500;
-/// project name / Host name / detail+subagent labels, in Unicode
-/// scalar values.
+/// project name / Host name / detail+subagent labels, in Unicode scalar values.
 pub const MAX_NAME_OR_LABEL_SCALARS: usize = 120;
 /// cwd / detail values, in Unicode scalar values.
 pub const MAX_VALUE_SCALARS: usize = 1024;
@@ -73,17 +24,12 @@ pub const MAX_VALUE_SCALARS: usize = 1024;
 pub const MAX_DETAILS: usize = 12;
 /// `capabilities` array length.
 pub const MAX_CAPABILITIES: usize = 16;
-/// subagents represented per event — see this file's top doc comment for
-/// why schema v1 can never actually reach this cap.
+/// subagents represented per event — see this file's top doc comment for why schema v1 can never
+/// actually reach this cap.
 pub const MAX_SUBAGENTS_PER_EVENT: usize = 16;
 
-/// The only supported `schemaVersion`. Any other value is a `400`.
 const SUPPORTED_SCHEMA_VERSION: u64 = 1;
 
-/// Typed wire-parsing errors (CLAUDE.md's rule: `thiserror` + matchable
-/// variants for library/internal modules). `http.rs` maps every variant
-/// to `400` — see this module's top doc comment for why `413` is handled
-/// one layer up instead.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AdapterError {
     #[error("malformed json: {0}")]
@@ -98,12 +44,8 @@ pub enum AdapterError {
     MalformedEnum { field: &'static str, value: String },
 }
 
-/// The raw wire shape. Every field is `Option` here — even
-/// ones the schema treats as conceptually required — so this struct can
-/// never fail to deserialize on its own; [`parse_wire_event`] does its
-/// own presence/shape validation afterward and returns a precise
-/// [`AdapterError`] variant rather than deferring to serde's own
-/// (harder to categorize) missing-field message.
+/// Every field is `Option` here — even ones the schema treats as conceptually required — so this
+/// struct can never fail to deserialize on its own.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WireEvent {
@@ -152,29 +94,17 @@ struct WireSubagent {
     state: Option<String>,
 }
 
-/// The parsed, normalized result of one `/agent/events` POST body:
-/// [`AgentEvent`] is what `AgentRegistry::apply_event` consumes;
-/// `native_event` is kept alongside it ONLY for the
-/// `agent.native_event` structured log field (`http.rs`'s handler) —
-/// the registry has no field for it and needs none: it's a diagnostics
-/// label, not registry state.
 #[derive(Debug, Clone)]
 pub struct ParsedAgentEvent {
     pub event: AgentEvent,
     pub native_event: String,
 }
 
-/// Strips control characters before storage or rendering, trimming outer
-/// whitespace FIRST. The order is load-bearing: stripping first would
-/// leave whitespace that sat next to a removed control character
-/// untrimmed at the edges. Trim, then strip.
 fn sanitize_trim(s: &str) -> String {
     s.trim().chars().filter(|c| !c.is_control()).collect()
 }
 
-/// Truncates to at most `max` Unicode scalar values (`char`s) — never
-/// splits a codepoint. Used for the display-ish fields (summary, name,
-/// label, cwd/detail value) whose cap is specified in scalars.
+/// Truncates to at most `max` Unicode scalar values (`char`s) — never splits a codepoint.
 fn cap_scalars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
@@ -183,9 +113,6 @@ fn cap_scalars(s: &str, max: usize) -> String {
     }
 }
 
-/// Truncates to at most `max_bytes` bytes without splitting a UTF-8
-/// codepoint. Used for the ID fields, whose cap is 256 bytes each —
-/// they're opaque identifiers, not display text measured in scalars.
 fn cap_bytes(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
@@ -201,10 +128,6 @@ fn sanitize_id(s: &str) -> String {
     cap_bytes(&sanitize_trim(s), MAX_ID_BYTES)
 }
 
-/// Sanitizes a project/Host name or a detail/subagent label (120-scalar
-/// cap); collapses an empty (or now-empty-after-sanitizing) value to
-/// `None`, mirroring `http.rs::sanitize_subtitle`'s house style for
-/// optional display text.
 fn sanitize_name_or_label(s: &str) -> Option<String> {
     let s = cap_scalars(&sanitize_trim(s), MAX_NAME_OR_LABEL_SCALARS);
     if s.is_empty() {
@@ -214,8 +137,6 @@ fn sanitize_name_or_label(s: &str) -> Option<String> {
     }
 }
 
-/// Sanitizes a cwd or a detail value (1,024-scalar cap); same
-/// empty-collapses-to-`None` rule as [`sanitize_name_or_label`].
 fn sanitize_value(s: &str) -> Option<String> {
     let s = cap_scalars(&sanitize_trim(s), MAX_VALUE_SCALARS);
     if s.is_empty() {
@@ -234,11 +155,6 @@ fn sanitize_summary(s: &str) -> Option<String> {
     }
 }
 
-/// Detail labels/values are always kept as (possibly empty) `String`s
-/// on [`AgentDetail`] (unlike the `Option`-collapsing helpers above) —
-/// emptiness is instead the drop signal for the whole pair, applied by
-/// the caller ([`parse_wire_event`]) after sanitizing, mirroring
-/// `http.rs::sanitize_details`' own "drop empty-label pairs" rule.
 fn sanitize_detail_label(s: &str) -> String {
     cap_scalars(&sanitize_trim(s), MAX_NAME_OR_LABEL_SCALARS)
 }
@@ -247,9 +163,6 @@ fn sanitize_detail_value(s: &str) -> String {
     cap_scalars(&sanitize_trim(s), MAX_VALUE_SCALARS)
 }
 
-/// Runtime wire tokens. `notchtap-agent hook <runtime>` pins the
-/// kebab-case form (`hook claude-code`), so the wire `runtime` string
-/// follows that convention rather than `snake_case`.
 fn parse_runtime(s: &str) -> Result<AgentRuntime, AdapterError> {
     match s {
         "claude-code" => Ok(AgentRuntime::ClaudeCode),
@@ -274,13 +187,6 @@ fn parse_kind(s: &str) -> Result<AgentEventKind, AdapterError> {
     }
 }
 
-/// Validated but NOT authoritative: the registry (`registry::next_state`)
-/// alone decides `AgentSession::state` from `kind` + `terminal`. The
-/// wire `state` field is the adapter's own belief. It is
-/// carried onto `AgentEvent::declared_state` for one narrow job — telling
-/// a genuine session start apart from a mid-session informational event,
-/// which are otherwise byte-identical on the wire — and a malformed value
-/// is rejected as `400` rather than silently ignored.
 fn parse_state(s: &str) -> Result<AgentSessionState, AdapterError> {
     match s {
         "starting" => Ok(AgentSessionState::Starting),
@@ -297,12 +203,6 @@ fn parse_state(s: &str) -> Result<AgentSessionState, AdapterError> {
     }
 }
 
-/// Inverse of [`parse_runtime`] — the exact wire token an adapter itself
-/// would send for `runtime`, NOT a display label (that's
-/// `agents::notification`'s own `runtime_display_name`, a Settings/card
-/// concern this parsing module has no business owning).
-/// `AgentSignal.runtime` (`event.rs`) is this function's one caller
-/// outside this module's own round-trip test.
 pub fn runtime_wire_label(runtime: AgentRuntime) -> &'static str {
     match runtime {
         AgentRuntime::ClaudeCode => "claude-code",
@@ -312,8 +212,8 @@ pub fn runtime_wire_label(runtime: AgentRuntime) -> &'static str {
     }
 }
 
-/// Inverse of [`parse_kind`] — see [`runtime_wire_label`]'s doc for why
-/// this lives here rather than being re-derived in `notification.rs`.
+/// Inverse of [`parse_kind`] — see [`runtime_wire_label`]'s doc for why this lives here rather than
+/// being re-derived in `notification.rs`.
 pub fn kind_wire_label(kind: AgentEventKind) -> &'static str {
     match kind {
         AgentEventKind::PermissionRequested => "permission_requested",
@@ -324,12 +224,8 @@ pub fn kind_wire_label(kind: AgentEventKind) -> &'static str {
     }
 }
 
-/// Inverse of [`parse_state`] — the exact wire token an adapter would
-/// send for `state`, same "wire token, not a display label" rule as
-/// [`runtime_wire_label`]/[`kind_wire_label`]. `agents/board.rs`
-/// (`AgentSessionView.state`, the `agent-state` IPC) is this function's
-/// one live caller — the overlay's `useAgentState.ts` validates against
-/// this exact string set.
+/// Inverse of [`parse_state`] — the exact wire token an adapter would send for `state`, same "wire
+/// token, not a display label" rule as [`runtime_wire_label`]/[`kind_wire_label`].
 pub fn state_wire_label(state: AgentSessionState) -> &'static str {
     match state {
         AgentSessionState::Starting => "starting",
@@ -342,9 +238,6 @@ pub fn state_wire_label(state: AgentSessionState) -> &'static str {
     }
 }
 
-/// Inverse of [`parse_capability`] — same wire-token rule as
-/// [`state_wire_label`] above. `agents/board.rs` is this function's one
-/// live caller (`AgentSessionView.capabilities`).
 pub fn capability_wire_label(capability: AgentCapability) -> &'static str {
     match capability {
         AgentCapability::SessionLifecycle => "session_lifecycle",
@@ -376,9 +269,6 @@ fn parse_capability(s: &str) -> Result<AgentCapability, AdapterError> {
 }
 
 /// Parses and validates one `/agent/events` POST body.
-/// Pure: no clock read, no registry access — the caller (`http.rs`'s
-/// `agent_events_handler`) is the one that calls
-/// `AgentRegistry::apply_event` with the result.
 pub fn parse_wire_event(body: &[u8]) -> Result<ParsedAgentEvent, AdapterError> {
     let wire: WireEvent =
         serde_json::from_slice(body).map_err(|e| AdapterError::MalformedJson(e.to_string()))?;
@@ -477,8 +367,6 @@ pub fn parse_wire_event(body: &[u8]) -> Result<ParsedAgentEvent, AdapterError> {
         }
         None => None,
     };
-    // Schema v1 carries at most one subagent object per event — see this
-    // module's top doc comment on MAX_SUBAGENTS_PER_EVENT.
     debug_assert!(subagent.iter().count() <= MAX_SUBAGENTS_PER_EVENT);
 
     let event = AgentEvent {
@@ -722,8 +610,6 @@ mod tests {
         ));
     }
 
-    // --- caps: at, above, and trim behavior --------------------------
-
     #[test]
     fn id_cap_exactly_256_bytes_is_kept_whole() {
         let id = "e".repeat(MAX_ID_BYTES);
@@ -746,7 +632,6 @@ mod tests {
 
     #[test]
     fn id_cap_truncation_does_not_split_a_multibyte_codepoint() {
-        // each 'é' is 2 bytes — pad so the cap boundary lands mid-character.
         let id = "é".repeat(MAX_ID_BYTES); // 2 * MAX_ID_BYTES bytes total
         let body = format!(
             r#"{{"schemaVersion": 1, "eventId": "{id}", "runtime": "codex", "sessionId": "s", "nativeEvent": "x", "kind": "completed", "state": "completed"}}"#
@@ -865,8 +750,6 @@ mod tests {
             "subagents",
             "open_or_focus",
         ];
-        // 16 entries, repeating the 8 known values twice — parsing has no
-        // dedup step, only a count cap.
         let caps: Vec<&str> = all.iter().chain(all.iter()).copied().collect();
         assert_eq!(caps.len(), MAX_CAPABILITIES);
         let caps_json = caps
@@ -883,7 +766,6 @@ mod tests {
 
     #[test]
     fn capabilities_cap_above_16_is_truncated_to_16() {
-        // 17 valid entries — cycle through the 8 known capability strings.
         let known = [
             "session_lifecycle",
             "permission_requests",
@@ -907,9 +789,6 @@ mod tests {
 
     #[test]
     fn max_subagents_per_event_cap_is_sixteen() {
-        // The cap is a forward guard — schema v1 can only ever produce
-        // 0 or 1 subagents per event (see this module's top doc
-        // comment), so this test just pins the declared constant.
         assert_eq!(MAX_SUBAGENTS_PER_EVENT, 16);
     }
 
@@ -921,11 +800,6 @@ mod tests {
 
     #[test]
     fn control_characters_are_stripped_and_whitespace_trimmed() {
-        // Build the JSON body via serde_json's own serializer so the BEL
-        // (U+0007) control character is correctly JSON-escaped, never
-        // embedded as a raw byte (a raw control byte inside a JSON
-        // string is invalid JSON and would fail to parse before this
-        // module ever saw it).
         let raw_summary = "  hascontrol\u{7}chars  ";
         let body = serde_json::json!({
             "schemaVersion": 1,
@@ -958,11 +832,6 @@ mod tests {
         assert_eq!(parsed.event.sequence, Some(42));
     }
 
-    // --- `runtime_wire_label`/`kind_wire_label` round-trip
-    // exactly against `parse_runtime`/`parse_kind` — used by
-    // `agents::notification`'s `AgentSignal` to emit the same wire token
-    // an adapter itself would send, never a display label. ---
-
     #[test]
     fn runtime_wire_label_round_trips_every_variant_through_parse_runtime() {
         for runtime in [
@@ -989,11 +858,6 @@ mod tests {
             assert_eq!(parse_kind(label).unwrap(), kind);
         }
     }
-
-    // --- `state_wire_label`/`capability_wire_label` round-trip
-    // exactly against `parse_state`/`parse_capability` — used by
-    // `agents::board`'s `agent-state` IPC snapshot, same "wire token, not
-    // a display label" discipline the two round-trip tests above pin. ---
 
     #[test]
     fn state_wire_label_round_trips_every_variant_through_parse_state() {

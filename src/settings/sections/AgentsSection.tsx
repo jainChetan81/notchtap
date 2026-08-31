@@ -27,15 +27,6 @@ import type {
 } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
-// --- adapter card static content ---------------------------------------
-//
-// Sourced from the committed `adapters/*/README.md` setup snippets (and
-// the OpenCode plugin's own header comment) — inlined as constants so
-// the section works with no extra IPC round trip. Each snippet is the
-// EXACT text a user copies into the EXACT target file named alongside
-// it; notchtap never writes these itself — it never silently edits a
-// user's global provider configuration.
-
 type AdapterConfigKey = keyof AgentRuntimesConfig;
 
 interface AdapterCardCopy {
@@ -160,10 +151,6 @@ const AVAILABILITY_LABELS = {
   unavailable: "Unavailable",
 } satisfies Record<AdapterAvailability, string>;
 
-// tone redesign: a binary active/not chip couldn't say "partial" apart
-// from "unavailable" — both just read as un-emphasized. Real tri-state
-// color so a glance at the dot tells you which of the three it is,
-// without reading the word.
 const AVAILABILITY_TONE = {
   available: "positive",
   partial: "caution",
@@ -210,10 +197,6 @@ function patchRuntime(
   });
 }
 
-// Shared label/value field shape for the expanded panel's real facts —
-// mirrors HistoryRow's `history-detail-field` stacked pair
-// (HistorySection.tsx) so the two settings-window disclosure surfaces
-// read as one visual language rather than two competing ones.
 const AGENT_DETAIL_LABEL_CLASS =
   "agent-detail-label text-fs-caption tracking-[0.04em] text-muted-foreground uppercase";
 const AGENT_DETAIL_VALUE_CLASS =
@@ -230,9 +213,6 @@ function AdapterCard({
   patchConfig: (patch: Partial<Config>) => void;
   health: AdapterHealthDto | undefined;
 }) {
-  // Handy "Models"-page reference: compact by default, click to reveal
-  // real detail — no per-card lift needed, nothing outside this card
-  // ever reads another card's expanded state.
   const [expanded, setExpanded] = useState(false);
   const { status: copyStatus, run: runCopy } = useActionStatus(`agent-copy-${copy.configKey}`);
   const { status: testStatus, run: runTest } = useActionStatus(`agent-test-${copy.configKey}`);
@@ -260,23 +240,8 @@ function AdapterCard({
   return (
     <div className="agent-card border-t border-border/60 py-3 first:border-t-0">
       <div className="agent-card-header flex items-center justify-between gap-2">
-        {/* Disclosure trigger: identity dot + name ONLY. The health chip
-            and the enable switch below are siblings, not children, of
-            this button — deliberately, so they stay visible and
-            independently clickable while the card is collapsed (the
-            switch is a primary control, not detail). A native <details> can't
-            express that split (everything but <summary> hides when
-            closed), so this is a plain controlled disclosure
-            (aria-expanded/aria-controls) instead of this file's sibling
-            HistorySection.tsx convention. */}
         <button
           type="button"
-          // `transition-transform` doesn't cover Tailwind v4's `scale-*`
-          // utility (a standalone `scale` property), so the press scale
-          // snaps instead of animating; and `aria-controls` must not point
-          // at an id with no matching element — the detail panel is
-          // conditionally MOUNTED (not just hidden), so while collapsed
-          // there is no `detailId` element in the DOM at all.
           className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-[scale] duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
@@ -295,13 +260,6 @@ function AdapterCard({
               {AVAILABILITY_LABELS[health.status]}
             </MetaChip>
           ) : null}
-          {/* sr-only label + bare Switch (not the full ToggleControl row)
-              — ToggleControl's own ControlCopy name/help pair is sized
-              for a full-width settings row, not this compact header;
-              the accessible name ("Enable {label}") is unchanged so the
-              existing "enabled-runtime toggle round-trips" test still
-              resolves it via screen.findByLabelText regardless of
-              expanded state. */}
           <Label htmlFor={toggleId} className="sr-only">
             {`Enable ${copy.label}`}
           </Label>
@@ -314,16 +272,6 @@ function AdapterCard({
       </div>
 
       {expanded ? (
-        // Mounted only while expanded (not a native <details>/CSS-hide):
-        // keeps the setup snippet's Copy/Send-test buttons out of the
-        // tab order entirely while collapsed, rather than fighting the
-        // "interactive control nested in a hidden-but-still-focusable
-        // subtree" trap a CSS-only hide would create. `animate-in
-        // fade-in slide-in-from-top-1` (tw-animate-css, already imported
-        // by base.css) plays reliably on insertion — a plain CSS
-        // `transition` does not fire the same way across a display:none
-        // boundary. duration/ease match this file's other motion
-        // (Segmented.tsx's `duration-[140ms] ease-notchtap`).
         <div
           id={detailId}
           className="agent-card-detail mt-3 flex flex-col gap-3 animate-in fade-in slide-in-from-top-1 duration-[140ms] ease-notchtap"
@@ -349,10 +297,6 @@ function AdapterCard({
             </div>
           ) : null}
           {health && health.capabilities.length > 0 ? (
-            // Structured list, not a comma-joined string dressed as a
-            // pill — each capability is its own line, no decorative chip
-            // shape (the operator's explicit complaint about the old
-            // "Capabilities: a, b, c" row).
             <div className="agent-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
               <span className={AGENT_DETAIL_LABEL_CLASS}>Capabilities</span>
               <ul
@@ -378,12 +322,6 @@ function AdapterCard({
           </div>
 
           <div className={CONTROL_ROW}>
-            {/* `htmlFor` deliberately does not match any element id below —
-                same convention `TestButtonRow` (controls.tsx) already uses:
-                these two rows label a plain <Button> by its own visible
-                text, not a form control a <label for> should actually
-                associate with (associating would make the LABEL text win as
-                the button's accessible name over its own text content). */}
             <ControlCopy
               htmlFor={`agent-copy-${copy.configKey}-label`}
               name="Setup snippet"
@@ -429,13 +367,6 @@ function AdapterCard({
   );
 }
 
-// Static preview rows for the five Agent Board
-// states — a simple, truthful text summary (runtime /
-// state / summary), not a full card mockup. The Agent Board itself lives
-// in the overlay (`App.tsx`), which the settings window never renders —
-// see AppearanceSection's own preview-fixture doc for why the settings
-// window's previews are always a lighter stand-in, never the live
-// component.
 const PREVIEW_FIXTURES: ReadonlyArray<{ label: string; runtime: string; summary: string }> = [
   {
     label: "Waiting on permission",
@@ -494,12 +425,6 @@ export function AgentsSection({
     return health?.find((h) => h.runtime === wireRuntime);
   }
 
-  // Preview fixtures label a runtime by its display name (or, for the
-  // "multiple sessions" row, a combo of names) rather than the wire
-  // token — resolve back to an ADAPTER_CARDS entry when there's exactly
-  // one match so the chip's dot stays in lockstep with the adapter
-  // card's own colour; combo rows get no dot (no single colour is
-  // honest there).
   function runtimeDotFor(runtimeLabel: string): string | undefined {
     const card = ADAPTER_CARDS.find((c) => c.label === runtimeLabel);
     return card ? SOURCE_RUNTIME_COLORS[card.wireRuntime] : undefined;
