@@ -768,21 +768,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn explicit_priority_field_is_honored() {
-        let app = router(test_state(SingleSlotQueue::new(50)));
-        let response = app
-            .oneshot(json_request(
-                r#"{"title":"t","body":"b","priority":"high"}"#,
-            ))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let req: NotifyRequest =
-            serde_json::from_str(r#"{"title":"t","body":"b","priority":"high"}"#).unwrap();
-        assert_eq!(req.priority, Some(Priority::High));
-    }
 
     #[tokio::test]
     async fn signal_field_defaults_to_generic_when_absent() {

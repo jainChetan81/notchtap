@@ -276,29 +276,6 @@ mod tests {
         )
     }
 
-    #[test]
-    fn silence_should_flip_is_none_when_already_matching() {
-        assert_eq!(silence_should_flip(false, false), None);
-        assert_eq!(silence_should_flip(true, true), None);
-    }
-
-    #[test]
-    fn silence_should_flip_reports_the_new_state_on_a_mismatch() {
-        assert_eq!(silence_should_flip(false, true), Some(true));
-        assert_eq!(silence_should_flip(true, false), Some(false));
-    }
-
-    #[test]
-    fn silence_indicator_label_names_the_current_state() {
-        assert_eq!(silence_indicator_label(true), "Silenced");
-        assert_eq!(silence_indicator_label(false), "Not Silenced");
-    }
-
-    #[test]
-    fn silence_tray_title_shows_a_glyph_only_while_silenced() {
-        assert_eq!(silence_tray_title(true), Some("☾"));
-        assert_eq!(silence_tray_title(false), None);
-    }
 
     #[test]
     fn toggle_pause_updates_label_and_promotes_on_resume() {

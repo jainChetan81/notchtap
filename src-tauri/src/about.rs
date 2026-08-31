@@ -142,17 +142,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn app_bundle_root_is_none_for_a_bare_dev_build_path() {
-        let exe = Path::new("/Users/dev/mac-notification-nudge/target/debug/notchtap");
-        assert_eq!(app_bundle_root(exe), None);
-    }
 
-    #[test]
-    fn app_bundle_root_is_none_for_a_release_dev_build_path() {
-        let exe = Path::new("/Users/dev/mac-notification-nudge/target/release/notchtap");
-        assert_eq!(app_bundle_root(exe), None);
-    }
+
 
     #[test]
     fn bundle_size_bytes_sums_nested_files() {

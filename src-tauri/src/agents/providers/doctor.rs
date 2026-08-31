@@ -647,17 +647,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn inspect_plugin_file_maps_presence_to_the_two_variants() {
-        assert_eq!(
-            inspect_plugin_file(true),
-            AdapterInstall::PluginFile { present: true }
-        );
-        assert_eq!(
-            inspect_plugin_file(false),
-            AdapterInstall::PluginFile { present: false }
-        );
-    }
+
 
     fn wired_claude_code_report() -> DoctorReport {
         DoctorReport {

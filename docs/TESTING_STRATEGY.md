@@ -13,9 +13,9 @@ rather than repeating them.
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 958 lib-crate tests + 3 integration-binary tests = 961 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 875 lib-crate tests + 3 integration-binary tests = 878 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 748 tests across 39 test files | `npx vitest run` |
+| frontend | 599 tests across 33 test files | `npx vitest run` |
 | ci | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example surface listed in §4 has passing coverage. the recurring
@@ -77,11 +77,18 @@ deterministic, and wrong-by-default if untested:
 
 tdd is **not** worth it, and shouldn't be forced, for:
 
+- trivial getters, default constructors, boolean labels, static mapping
+  tables, prop/class/text passthrough, or framework behavior — cover them
+  through a meaningful caller, not an isolated unit test
 - css animation timing/easing — write it, eyeball it, adjust
 - the native swift `NSScreen` shim — nothing to assert without the
   physical screen
 - tauri window creation/positioning calls — thin wrappers around a
   native api; a unit test would just re-assert the mock
+
+A small function still earns a direct test when it is the security or
+validation boundary, encodes an edge case or state transition, pins a
+cross-language contract, or prevents a known regression.
 
 ---
 

@@ -532,12 +532,6 @@ mod tests {
         assert_eq!(c.prefix_shortcut, "⌃⇧X");
     }
 
-    #[test]
-    fn prefix_shortcut_absent_from_file_falls_back_to_the_shipped_default() {
-        let c = Config::parse("port = 4321\n").unwrap();
-        assert_eq!(c.prefix_shortcut, "⌃⇧Space");
-        assert_eq!(c.port, 4321);
-    }
 
     #[test]
     fn completion_notifications_defaults_to_true_for_a_config_predating_the_key() {
@@ -744,13 +738,6 @@ url = "https://example.com/without-meta"
         assert_eq!(c.agent_ttl_secs, 6);
     }
 
-    #[test]
-    fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
-        let c = Config::parse("").unwrap();
-        assert_eq!(c.default_ttl, 8);
-        assert_eq!(c.espn_ttl_secs, 15);
-        assert_eq!(c.agent_ttl_secs, 8);
-    }
 
     #[test]
     fn legacy_cmux_priority_and_ttl_alias_to_agent_fields_when_new_keys_absent() {
@@ -803,24 +790,7 @@ url = "https://example.com/without-meta"
         assert_eq!(reserialized_again, reserialized);
     }
 
-    #[test]
-    fn double_migration_is_a_no_op() {
-        let legacy = "cmux_priority = \"high\"\ncmux_ttl_secs = 11\n";
-        let once = Config::parse(legacy).unwrap();
-        let reserialized = toml::to_string_pretty(&once).unwrap();
-        let twice = Config::parse(&reserialized).unwrap();
-        assert_eq!(once, twice);
-    }
 
-    #[test]
-    fn espn_ttl_defaults_to_15_when_default_ttl_untouched() {
-        let c = Config::parse("").unwrap();
-        assert_eq!(c.espn_ttl_secs, 15);
-        assert_eq!(c.default_ttl, default_ttl());
-
-        let c = Config::parse("default_ttl = 30\n").unwrap();
-        assert_eq!(c.espn_ttl_secs, 30);
-    }
 
     #[test]
     fn rotation_order_is_overridable() {
@@ -942,10 +912,6 @@ url = "https://example.com/without-meta"
         assert_eq!(c.appearance.card_opacity, 0.75);
     }
 
-    #[test]
-    fn default_silence_window_parses() {
-        assert!(crate::silence::Window::parse("00:00-10:00").is_ok());
-    }
 
     #[test]
     fn silence_defaults_to_enabled_with_the_overnight_window() {

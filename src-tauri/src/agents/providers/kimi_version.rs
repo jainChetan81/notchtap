@@ -205,22 +205,6 @@ mod tests {
         assert!(matches!(result, HookSupport::Unavailable { .. }));
     }
 
-    #[test]
-    fn missing_detection_is_unavailable_with_no_detected_version() {
-        let result = HookSupport::Unavailable {
-            detected: None,
-            minimum: MINIMUM_HOOK_VERSION_STR,
-        };
-        assert!(matches!(
-            result,
-            HookSupport::Unavailable { detected: None, .. }
-        ));
-    }
-
-    #[test]
-    fn probe_hook_support_never_panics_regardless_of_local_kimi_install() {
-        let _ = probe_hook_support();
-    }
 
     #[test]
     fn run_bounded_returns_stdout_on_success() {

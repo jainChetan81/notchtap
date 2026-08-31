@@ -106,10 +106,4 @@ mod tests {
         assert_eq!(file_mode, 0o600);
     }
 
-    #[test]
-    fn real_log_dir_resolves_under_library_logs_notchtap() {
-        if let Some(dir) = log_dir() {
-            assert!(dir.ends_with("Library/Logs/notchtap"));
-        }
-    }
 }

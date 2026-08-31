@@ -282,10 +282,6 @@ mod tests {
         assert_eq!(deep_link_for(AgentRuntime::ClaudeCode, "claude-code"), None);
     }
 
-    #[test]
-    fn focus_highest_ranked_is_a_quiet_no_op_on_empty_registry() {
-        focus_highest_ranked(&[]);
-    }
 
     #[test]
     fn decide_focus_ignores_lower_ranked_sessions_entirely() {

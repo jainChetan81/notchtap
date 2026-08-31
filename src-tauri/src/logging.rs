@@ -304,18 +304,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn read_recent_lines_fewer_lines_than_n_returns_all() {
-        let dir = temp_dir();
-        let path = dir.join("notchtap.log");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(&path, "one\ntwo\nthree\n").unwrap();
 
-        assert_eq!(
-            read_recent_lines_from(&path, 200).unwrap(),
-            vec!["one", "two", "three"]
-        );
-    }
 
     #[test]
     fn read_recent_lines_more_lines_than_n_returns_only_last_n() {

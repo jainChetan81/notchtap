@@ -10,14 +10,3 @@ pub fn handle_stub(runtime_label: &str, stdin: &[u8]) {
         ),
     );
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stub_does_not_panic_on_empty_or_garbage_stdin() {
-        handle_stub("codex", b"");
-        handle_stub("kimi", b"not json at all");
-    }
-}

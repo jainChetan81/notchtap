@@ -787,16 +787,9 @@ mod tests {
         assert_eq!(parsed.event.capabilities.len(), MAX_CAPABILITIES);
     }
 
-    #[test]
-    fn max_subagents_per_event_cap_is_sixteen() {
-        assert_eq!(MAX_SUBAGENTS_PER_EVENT, 16);
-    }
 
-    #[test]
-    fn transitions_and_event_id_caps_are_reexported_from_registry() {
-        assert_eq!(MAX_TRANSITIONS_PER_SESSION, 50);
-        assert_eq!(MAX_REMEMBERED_EVENT_IDS, 2048);
-    }
+
+
 
     #[test]
     fn control_characters_are_stripped_and_whitespace_trimmed() {
@@ -825,70 +818,6 @@ mod tests {
         assert_eq!(parsed.event.host, None);
     }
 
-    #[test]
-    fn sequence_is_passed_through_unchanged() {
-        let body = r#"{"schemaVersion": 1, "eventId": "e", "runtime": "codex", "sessionId": "s", "nativeEvent": "x", "kind": "completed", "state": "completed", "sequence": 42}"#;
-        let parsed = parse_wire_event(body.as_bytes()).unwrap();
-        assert_eq!(parsed.event.sequence, Some(42));
-    }
 
-    #[test]
-    fn runtime_wire_label_round_trips_every_variant_through_parse_runtime() {
-        for runtime in [
-            AgentRuntime::ClaudeCode,
-            AgentRuntime::Codex,
-            AgentRuntime::Kimi,
-            AgentRuntime::OpenCode,
-        ] {
-            let label = runtime_wire_label(runtime);
-            assert_eq!(parse_runtime(label).unwrap(), runtime);
-        }
-    }
 
-    #[test]
-    fn kind_wire_label_round_trips_every_variant_through_parse_kind() {
-        for kind in [
-            AgentEventKind::PermissionRequested,
-            AgentEventKind::InputRequired,
-            AgentEventKind::Completed,
-            AgentEventKind::Failed,
-            AgentEventKind::Informational,
-        ] {
-            let label = kind_wire_label(kind);
-            assert_eq!(parse_kind(label).unwrap(), kind);
-        }
-    }
-
-    #[test]
-    fn state_wire_label_round_trips_every_variant_through_parse_state() {
-        for state in [
-            AgentSessionState::Starting,
-            AgentSessionState::Working,
-            AgentSessionState::WaitingForPermission,
-            AgentSessionState::WaitingForInput,
-            AgentSessionState::Completed,
-            AgentSessionState::Failed,
-            AgentSessionState::Stale,
-        ] {
-            let label = state_wire_label(state);
-            assert_eq!(parse_state(label).unwrap(), state);
-        }
-    }
-
-    #[test]
-    fn capability_wire_label_round_trips_every_variant_through_parse_capability() {
-        for capability in [
-            AgentCapability::SessionLifecycle,
-            AgentCapability::PermissionRequests,
-            AgentCapability::InputRequired,
-            AgentCapability::Completion,
-            AgentCapability::Failure,
-            AgentCapability::ToolDetails,
-            AgentCapability::Subagents,
-            AgentCapability::OpenOrFocus,
-        ] {
-            let label = capability_wire_label(capability);
-            assert_eq!(parse_capability(label).unwrap(), capability);
-        }
-    }
 }

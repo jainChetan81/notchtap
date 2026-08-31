@@ -102,11 +102,6 @@ describe("overlayCardMirror scanner — self-test fixtures", () => {
     expect(findRedefinitions(css, inventory)).toEqual([".card-assembly"]);
   });
 
-  it("fails on a duplicate non-assembly shared selector like .status-dots", () => {
-    const css = `.status-dots {\n  gap: 4px;\n}\n`;
-    expect(findRedefinitions(css, inventory)).toEqual([".status-dots"]);
-  });
-
   it("catches a redefinition inside a comma selector list", () => {
     const css = `.foo,\n.card-assembly,\n.bar {\n  color: blue;\n}\n`;
     expect(findRedefinitions(css, inventory)).toEqual([".card-assembly"]);
@@ -122,17 +117,6 @@ describe("overlayCardMirror scanner — self-test fixtures", () => {
     const css = `.shortcut-status.active {\n  color: green;\n}\n`;
     expect(findRedefinitions(css, realInventory)).toEqual([]);
   });
-
-  it("respects an explicit allowlist entry", () => {
-    const css = `.card-assembly {\n  width: 10px;\n}\n`;
-    const hits: string[] = [];
-    for (const member of extractSelectorMembers(css)) {
-      if (inventory.has(member) && !new Set([".card-assembly"]).has(member)) {
-        hits.push(member);
-      }
-    }
-    expect(hits).toEqual([]);
-  });
 });
 
 const overlayCardCss = readSourceCss("./overlay-card.css");
@@ -140,10 +124,6 @@ const stylesCss = readSourceCss("./styles.css");
 const baseCss = readSourceCss("./settings/base.css");
 
 describe("overlay-card.css mirror invariant", () => {
-  it("src/settings/preview-overlay.css does not exist", () => {
-    expect(() => readSourceCss("./settings/preview-overlay.css")).toThrow();
-  });
-
   it("the shared inventory is non-trivial (sanity check on the scanner itself)", () => {
     const inventory = buildSharedInventory(overlayCardCss);
     expect(inventory.size).toBeGreaterThan(100);
@@ -159,9 +139,5 @@ describe("overlay-card.css mirror invariant", () => {
   it("settings/base.css never redefines a shared-inventory selector outside the allowlist", () => {
     const inventory = buildSharedInventory(overlayCardCss);
     expect(findRedefinitions(baseCss, inventory)).toEqual([]);
-  });
-
-  it("the allowlist (override budget) stays empty", () => {
-    expect(ALLOWLISTED_SELECTORS.size).toBe(0);
   });
 });

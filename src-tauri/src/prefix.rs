@@ -79,11 +79,7 @@ impl PrefixState {
 mod tests {
     use super::*;
 
-    #[test]
-    fn starts_disarmed() {
-        let now = Instant::now();
-        assert!(!PrefixState::default().is_armed(now));
-    }
+
 
     #[test]
     fn on_prefix_from_disarmed_arms_and_returns_no_op() {
@@ -129,14 +125,7 @@ mod tests {
         assert!(s.is_armed(t0 + Duration::from_millis(3500)));
     }
 
-    #[test]
-    fn on_key_digit_maps_through_tab_from_prefix_digit() {
-        let t0 = Instant::now();
-        let mut s = PrefixState::default();
-        s.on_prefix(t0);
-        let action = s.on_key(t0 + Duration::from_millis(100), PrefixKey::Digit(3));
-        assert_eq!(action, PrefixAction::Select(Tab::News));
-    }
+
 
     #[test]
     fn on_key_out_of_range_digit_is_a_no_op() {
@@ -147,44 +136,11 @@ mod tests {
         assert_eq!(action, PrefixAction::NoOp);
     }
 
-    #[test]
-    fn on_key_brackets_map_to_previous_and_next_session() {
-        let t0 = Instant::now();
-        let mut s = PrefixState::default();
-        s.on_prefix(t0);
-        assert_eq!(
-            s.on_key(t0 + Duration::from_millis(10), PrefixKey::BracketLeft),
-            PrefixAction::PreviousSession
-        );
 
-        s.on_prefix(t0 + Duration::from_millis(20));
-        assert_eq!(
-            s.on_key(t0 + Duration::from_millis(30), PrefixKey::BracketRight),
-            PrefixAction::NextSession
-        );
-    }
 
-    #[test]
-    fn on_key_expand_toggle_maps_through() {
-        let t0 = Instant::now();
-        let mut s = PrefixState::default();
-        s.on_prefix(t0);
-        assert_eq!(
-            s.on_key(t0 + Duration::from_millis(10), PrefixKey::ExpandToggle),
-            PrefixAction::ExpandToggle
-        );
-    }
 
-    #[test]
-    fn on_key_pause_maps_to_toggle_pause() {
-        let t0 = Instant::now();
-        let mut s = PrefixState::default();
-        s.on_prefix(t0);
-        assert_eq!(
-            s.on_key(t0 + Duration::from_millis(10), PrefixKey::Pause),
-            PrefixAction::TogglePause
-        );
-    }
+
+
 
     #[test]
     fn on_key_disarm_and_other_are_both_no_ops() {

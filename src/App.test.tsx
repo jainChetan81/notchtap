@@ -304,18 +304,6 @@ describe("App", () => {
       );
     });
 
-    it("falls through to the hud synthetic vars if notch mode never got a measurement", () => {
-      window.__NOTCHTAP_MODE__ = "hud";
-      window.__NOTCHTAP_CUTOUT_WIDTH__ = null;
-      window.__NOTCHTAP_CUTOUT_HEIGHT__ = null;
-      render(<App />);
-      expect(document.documentElement.style.getPropertyValue("--notchtap-cutout-width")).toBe(
-        "200px",
-      );
-      expect(document.documentElement.style.getPropertyValue("--notchtap-cutout-height")).toBe(
-        "32px",
-      );
-    });
   });
 
   describe("Agent Board precedence", () => {
@@ -486,19 +474,6 @@ describe("App", () => {
         await Promise.resolve();
       });
       expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
-    });
-
-    it("ignores an unknown tab token instead of rendering a broken page", async () => {
-      const { container } = render(<App />);
-      emitAgentTabSession();
-      emitHover(true);
-      emitTabSelection({ selected: "definitely-not-a-tab" });
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
-      expect(container.querySelector(".idle-peek")).not.toBeNull();
     });
 
     it("drops back to the ambient peek when an unknown token follows a good one", async () => {

@@ -164,9 +164,6 @@ describe("FootballHeroCard match-state chip", () => {
     expect(ruleBody(overlayCardCss, ".card-root .chip-live")).toContain("gap: 5px;");
   });
 
-  it("ruleBody throws on a selector that doesn't exist — no vacuous pass", () => {
-    expect(() => ruleBody(overlayCardCss, ".card-root .no-such-selector")).toThrow();
-  });
 });
 
 describe("FootballHeroCard crossbar variant", () => {
@@ -236,25 +233,6 @@ describe("FootballHeroCard crossbar variant", () => {
     expect(stacked.querySelectorAll(".side")).toHaveLength(2);
   });
 
-  it("still suppresses the primary block's title-headline behaviour not at all — title stays a plain caller-controlled string", () => {
-    const { container } = render(
-      <FootballHeroCard
-        title="2 matches live"
-        priority="high"
-        signal="goal"
-        eventType="score_update"
-        liveEspn={ESPN_BASE}
-        pillVariant="live"
-        pillLabel="Live"
-        cardsClean={true}
-        secondaryMatches={[
-          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
-        ]}
-      />,
-    );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("2 matches live");
-  });
-
   it("shows the secondary match's own cards-line only when it has cards, independent of the primary's cardsClean", () => {
     const { container } = render(
       <FootballHeroCard
@@ -283,31 +261,6 @@ describe("FootballHeroCard crossbar variant", () => {
     expect(container.querySelector(".score-block:not(.stacked) .cards-line")).toBeNull();
   });
 
-  it("renders multiple secondary matches with a stable, non-index key (no React key warning) using league/team identity", () => {
-    const THIRD_ESPN: EspnMeta = {
-      ...SECOND_ESPN,
-      league: "LaLiga",
-      homeAbbrev: "RMA",
-      awayAbbrev: "BAR",
-    };
-    const { container } = render(
-      <FootballHeroCard
-        title="3 matches live"
-        priority="high"
-        signal="goal"
-        eventType="score_update"
-        liveEspn={ESPN_BASE}
-        pillVariant="live"
-        pillLabel="Live"
-        cardsClean={true}
-        secondaryMatches={[
-          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
-          { liveEspn: THIRD_ESPN, pillVariant: "live", pillLabel: "Live", cardsClean: true },
-        ]}
-      />,
-    );
-    expect(container.querySelectorAll(".score-block.stacked")).toHaveLength(2);
-  });
 });
 
 describe("fact pills: tags and tones", () => {

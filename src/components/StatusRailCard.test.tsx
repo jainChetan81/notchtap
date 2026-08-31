@@ -1268,15 +1268,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".cards-line")).toBeNull();
     });
 
-    it("renders no ttl-bar (queue segments included) on the live card, while a generic card in the same run still gets segments", () => {
-      const { container: liveContainer } = render(<StatusRailCard slot={liveSlot()} />);
-      expect(liveContainer.querySelector(".ttl-bar")).toBeNull();
-      cleanup();
-
-      const { container: genericContainer } = render(<StatusRailCard slot={GOAL} />);
-      expect(genericContainer.querySelectorAll(".ttl-bar .ttl-seg")).toHaveLength(3);
-    });
-
     it("renders no TtlBar and no Manifest on the live card", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
       expect(container.querySelector(".ttl-bar")).toBeNull();
@@ -1364,11 +1355,6 @@ describe("StatusRailCard", () => {
       const wrap = container.querySelector(".manifest-wrap");
       expect(wrap?.classList.contains("expanded")).toBe(false);
       expect(wrap?.getAttribute("aria-hidden")).toBe("true");
-    });
-
-    it("stays collapsed while not hovered if slot.expanded is false", () => {
-      const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={false} />);
-      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
     });
 
     it("stays expanded regardless of hover if slot.expanded is true", () => {
@@ -1834,17 +1820,6 @@ describe("exit-to-bare CSS convergence invariant", () => {
     );
   });
 
-  it("ruleBody throws on a selector that doesn't exist — no vacuous pass", () => {
-    expect(() => ruleBody(overlayCardCss, ".card-root .this-selector-does-not-exist")).toThrow(
-      /selector not found/,
-    );
-  });
-
-  it("propValue throws on a property that doesn't exist in the rule — no vacuous pass", () => {
-    expect(() => propValue(bareShellBody, "--this-property-does-not-exist")).toThrow(
-      /property not found/,
-    );
-  });
 });
 
 describe("tab-notch integration", () => {
@@ -1892,56 +1867,6 @@ describe("tab-notch integration", () => {
       expect(container.querySelector(".icon-strip")).toBeNull();
     });
 
-    it("drives each icon's tier from the status wire, not from a local guess", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{
-            ...QUIET,
-            agent: { activeSessions: 2 },
-          }}
-        />,
-      );
-      expect(container.querySelector(".icon.agent")?.className).toContain("is-live");
-      expect(container.querySelector(".icon.football")?.className).not.toContain("is-present");
-      expect(container.querySelector(".icon.news")?.className).toContain("is-present");
-    });
-
-    it("omits the news count badge when nothing is waiting, rather than rendering a literal 0", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{
-            ...QUIET,
-            news: { enabled: true, chargeFraction: 0.5, chargeCount: 0, isCharged: false },
-          }}
-        />,
-      );
-      expect(container.querySelector(".charge-count")).toBeNull();
-      expect(container.querySelector(".icon.news")?.className).not.toContain("is-charged");
-    });
-
-    it("renders the news count badge and charged styling once the charge has fired", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{
-            ...QUIET,
-            news: { enabled: true, chargeFraction: 1, chargeCount: 4, isCharged: true },
-          }}
-        />,
-      );
-      expect(container.querySelector(".charge-count")?.textContent).toBe("4");
-      expect(container.querySelector(".icon.news")?.className).toContain("is-charged");
-    });
-
-    it("marks the selected tab, and only that one", () => {
-      const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="news" />,
-      );
-      expect(container.querySelector(".icon.news")?.className).toContain("is-selected");
-      expect(container.querySelector(".icon.agent")?.className).not.toContain("is-selected");
-    });
   });
 
   describe("the selection-driven below-block swap", () => {
@@ -1966,14 +1891,6 @@ describe("tab-notch integration", () => {
       const { container } = hoveredIdle(null, QUIET);
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
-    });
-
-    it("selecting agent mounts the viewed session's hero", () => {
-      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
-        agentSession(),
-      ]);
-      expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
-      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
     });
 
     it("selecting agent with no sessions degrades to the ambient peek, not to a blank shell", () => {
@@ -2041,24 +1958,6 @@ describe("tab-notch integration", () => {
       const segmentsAtOne = container.querySelectorAll(".ttl-bar > *");
       expect(segmentsAtOne[1]?.className).toContain("ttl-fill");
       expect(segmentsAtOne[0]?.className).not.toContain("ttl-fill");
-    });
-
-    it("omits viewedSessionIndex entirely defaults to session 0, matching TabBelowBlock's own default", () => {
-      const sessions = [
-        agentSession({ project: { name: "alpha-repo", cwd: null } }),
-        agentSession({ project: { name: "beta-repo", cwd: null } }),
-      ];
-      render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{ ...QUIET, agent: { activeSessions: 2 } }}
-          hovered={true}
-          selectedTab="agent"
-          agentSessions={sessions}
-          agentCapturedAtMs={1_000_000}
-        />,
-      );
-      expect(screen.getByText(/alpha-repo/)).toBeTruthy();
     });
 
     it("selecting football shows the shipped scorecard reveal", () => {

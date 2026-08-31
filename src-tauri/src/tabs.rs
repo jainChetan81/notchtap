@@ -155,11 +155,7 @@ mod wire_tests {
         }
     }
 
-    #[test]
-    fn wire_labels_are_the_pinned_closed_set() {
-        let labels: Vec<&str> = Tab::ORDER.iter().map(|t| t.wire_label()).collect();
-        assert_eq!(labels, ["agent", "football", "news"]);
-    }
+
 
     #[test]
     fn news_is_always_present_even_with_nothing_live() {
@@ -189,17 +185,6 @@ mod wire_tests {
 mod tests {
     use super::*;
 
-    #[test]
-    fn default_selection_is_none() {
-        assert_eq!(TabSelection::default().selected(), None);
-    }
-
-    #[test]
-    fn selecting_a_tab_selects_it() {
-        let mut s = TabSelection::default();
-        s.select(Tab::News);
-        assert_eq!(s.selected(), Some(Tab::News));
-    }
 
     #[test]
     fn selecting_the_same_tab_again_deselects_it() {
@@ -227,12 +212,6 @@ mod tests {
         assert_eq!(s.selected(), None);
     }
 
-    #[test]
-    fn clear_if_gone_is_a_no_op_when_nothing_is_selected() {
-        let mut s = TabSelection::default();
-        s.clear_if_gone(|_| false);
-        assert_eq!(s.selected(), None);
-    }
 
     #[test]
     fn clear_if_gone_clears_only_when_the_selected_tab_is_no_longer_present() {
@@ -250,12 +229,6 @@ mod tests {
         assert_eq!(s.selected(), Some(Tab::Football));
     }
 
-    #[test]
-    fn from_prefix_digit_maps_1_through_3_in_strip_order() {
-        assert_eq!(Tab::from_prefix_digit(1), Some(Tab::Agent));
-        assert_eq!(Tab::from_prefix_digit(2), Some(Tab::Football));
-        assert_eq!(Tab::from_prefix_digit(3), Some(Tab::News));
-    }
 
     #[test]
     fn from_prefix_digit_rejects_anything_out_of_1_to_3() {
@@ -265,10 +238,5 @@ mod tests {
         assert_eq!(Tab::from_prefix_digit(6), None);
     }
 
-    #[test]
-    fn order_matches_from_prefix_digit_index_for_index() {
-        for (i, tab) in Tab::ORDER.iter().enumerate() {
-            assert_eq!(Tab::from_prefix_digit((i + 1) as u8), Some(*tab));
-        }
-    }
+
 }

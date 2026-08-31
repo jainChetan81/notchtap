@@ -33,22 +33,6 @@ describe("NewsBelowBlock", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("carries the below-block/news-shade/category classes the shipped wash reads from", () => {
-    const { container } = render(
-      <NewsBelowBlock
-        stories={[story({ category: "tech" })]}
-        currentIndex={0}
-        freshCount={5}
-        cycleEndedAgo="2m"
-        expanded={false}
-      />,
-    );
-    const block = container.querySelector('[data-testid="news-below-block"]');
-    expect(block?.classList.contains("below-block")).toBe(true);
-    expect(block?.classList.contains("news-shade")).toBe(true);
-    expect(block?.classList.contains("cat-tech")).toBe(true);
-  });
-
   it("falls back to the generic category class when a story carries no category", () => {
     const { container } = render(
       <NewsBelowBlock
@@ -145,19 +129,6 @@ describe("NewsBelowBlock", () => {
     expect(container.querySelector(".notif-meta-row")).toBeNull();
   });
 
-  it("renders the real Wire stamp for a news story", () => {
-    const { container } = render(
-      <NewsBelowBlock
-        stories={[story()]}
-        currentIndex={0}
-        freshCount={0}
-        cycleEndedAgo={null}
-        expanded={false}
-      />,
-    );
-    expect(container.querySelector(".stamp")?.textContent).toBe("Wire");
-  });
-
   it("mounts the existing Manifest, toggling its expanded state from the expanded prop", () => {
     const { container, rerender } = render(
       <NewsBelowBlock
@@ -185,21 +156,6 @@ describe("NewsBelowBlock", () => {
     wrap = container.querySelector(".manifest-wrap");
     expect(wrap?.classList.contains("expanded")).toBe(true);
     expect(wrap?.getAttribute("aria-hidden")).toBe("false");
-  });
-
-  it("feeds the position bar the full story count and the current index", () => {
-    const { container } = render(
-      <NewsBelowBlock
-        stories={[story(), story(), story()]}
-        currentIndex={1}
-        freshCount={0}
-        cycleEndedAgo={null}
-        expanded={false}
-      />,
-    );
-    const segments = Array.from(container.querySelectorAll(".ttl-bar > *"));
-    expect(segments).toHaveLength(3);
-    expect(segments[1].className).toBe("ttl-fill");
   });
 
   it("clamps an out-of-range currentIndex instead of crashing on a stale index", () => {

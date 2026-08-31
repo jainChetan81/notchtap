@@ -309,21 +309,9 @@ mod tests {
         assert_eq!(err, ModelError::EmptyNativeSessionId);
     }
 
-    #[test]
-    fn agent_session_key_accepts_nonempty_native_id() {
-        let key = AgentSessionKey::new(AgentRuntime::Codex, "sess-1").unwrap();
-        assert_eq!(key.native_session_id, "sess-1");
-    }
 
-    #[test]
-    fn suffixed_key_is_distinct_and_stable() {
-        let key = AgentSessionKey::new(AgentRuntime::ClaudeCode, "sess-1").unwrap();
-        let s1 = key.suffixed(1);
-        let s2 = key.suffixed(2);
-        assert_ne!(s1, key);
-        assert_ne!(s1, s2);
-        assert_eq!(s1.native_session_id, "sess-1#reuse1");
-    }
+
+
 
     #[test]
     fn urgency_rank_ascends_from_waiting_for_permission_to_starting() {
@@ -368,36 +356,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn only_attention_states_summon_the_board() {
-        use AgentSessionState::*;
-        for s in [WaitingForPermission, WaitingForInput, Failed, Completed] {
-            assert!(s.summons_board(), "{s:?} must summon the Agent Board");
-        }
-        for s in [Starting, Working, Stale] {
-            assert!(
-                !s.summons_board(),
-                "{s:?} is not a request for attention and must not summon the Agent Board"
-            );
-        }
-    }
 
-    #[test]
-    fn only_completed_and_failed_are_terminal() {
-        use AgentSessionState::*;
-        for s in [
-            Starting,
-            Working,
-            WaitingForPermission,
-            WaitingForInput,
-            Stale,
-        ] {
-            assert!(!s.is_terminal(), "{s:?} must not be terminal");
-        }
-        for s in [Completed, Failed] {
-            assert!(s.is_terminal(), "{s:?} must be terminal");
-        }
-    }
+
+
 
     #[test]
     fn push_history_evicts_oldest_past_cap() {

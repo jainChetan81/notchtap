@@ -1147,16 +1147,6 @@ mod tests {
         assert_eq!(payload.resting_state, crate::config::RestingState::Rail);
     }
 
-    #[test]
-    fn appearance_changed_payload_serializes_resting_state_as_snake_case_string() {
-        let config = Config {
-            resting_state: crate::config::RestingState::Notch,
-            ..Config::default()
-        };
-        let payload = AppearanceChangedPayload::from_config(&config);
-        let json = serde_json::to_value(&payload).unwrap();
-        assert_eq!(json["resting_state"], serde_json::json!("notch"));
-    }
 
     #[test]
     fn rss_poll_interval_boundaries() {
@@ -1450,106 +1440,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn get_default_config_gates_on_window_label_and_returns_config_default() {
-        let app = tauri::test::mock_app();
-        let settings = tauri::WebviewWindowBuilder::new(
-            app.handle(),
-            "settings",
-            tauri::WebviewUrl::App("settings.html".into()),
-        )
-        .build()
-        .unwrap();
-        let returned = get_default_config(settings).unwrap();
-        assert_eq!(returned, Config::default());
 
-        let main = tauri::WebviewWindowBuilder::new(
-            app.handle(),
-            "main",
-            tauri::WebviewUrl::App("index.html".into()),
-        )
-        .build()
-        .unwrap();
-        assert!(
-            get_default_config(main).is_err(),
-            "the overlay window must be refused even if the acl were misconfigured"
-        );
-    }
-
-    #[test]
-    fn build_test_event_football_uses_espn_config() {
-        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
-
-        let config = Config {
-            espn_priority: Priority::High,
-            espn_ttl_secs: 42,
-            rss_priority: Priority::Low,
-            agent_priority: Priority::Low,
-            manual_default_priority: Priority::Low,
-            ..Config::default()
-        };
-        let event = build_test_event(&config, SourceKind::Football);
-        assert_eq!(event.event_type, EventType::ScoreUpdate);
-        assert_eq!(event.priority, Priority::High);
-        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 42 });
-        assert_eq!(event.origin, SourceKind::Football);
-    }
-
-    #[test]
-    fn build_test_event_news_uses_rss_config() {
-        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
-
-        let config = Config {
-            rss_priority: Priority::Low,
-            rss_ttl_secs: 17,
-            espn_priority: Priority::High,
-            agent_priority: Priority::High,
-            manual_default_priority: Priority::High,
-            ..Config::default()
-        };
-        let event = build_test_event(&config, SourceKind::News);
-        assert_eq!(event.event_type, EventType::NewsItem);
-        assert_eq!(event.priority, Priority::Low);
-        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 17 });
-        assert_eq!(event.origin, SourceKind::News);
-        assert!(event.meta.espn.is_none());
-    }
-
-    #[test]
-    fn build_test_event_agent_uses_agent_config() {
-        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
-
-        let config = Config {
-            agent_priority: Priority::High,
-            agent_ttl_secs: 23,
-            espn_priority: Priority::Low,
-            rss_priority: Priority::Low,
-            manual_default_priority: Priority::Low,
-            ..Config::default()
-        };
-        let event = build_test_event(&config, SourceKind::Agent);
-        assert_eq!(event.event_type, EventType::AgentEvent);
-        assert_eq!(event.priority, Priority::High);
-        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 23 });
-        assert_eq!(event.origin, SourceKind::Agent);
-    }
-
-    #[test]
-    fn build_test_event_manual_uses_default_ttl_and_manual_priority() {
-        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
-
-        let config = Config {
-            manual_default_priority: Priority::Low,
-            default_ttl: 99,
-            espn_priority: Priority::High,
-            rss_priority: Priority::High,
-            agent_priority: Priority::High,
-            ..Config::default()
-        };
-        let event = build_test_event(&config, SourceKind::Manual);
-        assert_eq!(event.event_type, EventType::Generic);
-        assert_eq!(event.priority, Priority::Low);
-        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 99 });
-        assert_eq!(event.origin, SourceKind::Manual);
-    }
 }

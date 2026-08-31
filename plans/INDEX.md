@@ -230,8 +230,8 @@ re-verify against current code before acting.
   - A preempted card does not actually resume at the head of its tier:
     `push_front` is overridden by `best_index_in_tier`'s rotation-order
     rank, contradicting the documented contract (`queue.rs`).
-  - The CSS↔TS colour parity pin is a whole-file `toContain`; swapped
-    hexes still pass (`sourceColors.test.ts`).
+  - CSS↔TS colour tables remain hand-copied with no automated parity pin;
+    swapped values require visual review.
   - Every event after a terminal one mints a new suffixed session
     (phantom Board rows; `reuse_generations` never pruned)
     (`registry.rs`).

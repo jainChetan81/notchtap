@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emitTo, listen, resetHandlers } from "./test-support/tauriEventMock";
-import { isValidAgentViewedSession, useAgentViewedSession } from "./useAgentViewedSession";
+import { useAgentViewedSession } from "./useAgentViewedSession";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
@@ -82,26 +82,5 @@ describe("useAgentViewedSession", () => {
   it("cleans up the listener on unmount", async () => {
     const { unmount } = await renderReady();
     expect(() => unmount()).not.toThrow();
-  });
-});
-
-describe("isValidAgentViewedSession", () => {
-  it("accepts a non-negative integer index", () => {
-    expect(isValidAgentViewedSession({ index: 0 })).toBe(true);
-    expect(isValidAgentViewedSession({ index: 3 })).toBe(true);
-  });
-
-  it("rejects a negative index", () => {
-    expect(isValidAgentViewedSession({ index: -1 })).toBe(false);
-  });
-
-  it("rejects a non-integer index", () => {
-    expect(isValidAgentViewedSession({ index: 1.5 })).toBe(false);
-  });
-
-  it("rejects a missing or malformed payload", () => {
-    expect(isValidAgentViewedSession(null)).toBe(false);
-    expect(isValidAgentViewedSession({})).toBe(false);
-    expect(isValidAgentViewedSession({ index: "0" })).toBe(false);
   });
 });

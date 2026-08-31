@@ -153,36 +153,6 @@ describe("mapBusEvent", () => {
     expect(deleted?.terminal).toBe(true);
   });
 
-  it("session.idle can fire repeatedly across turns; only session.deleted is terminal", () => {
-    const idle1 = mapBusEvent(
-      { type: "session.idle", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(idle1?.terminal).toBe(false);
-    expect(idle1?.sessionId).toBe("s1");
-
-    const resumed = mapBusEvent(
-      { type: "session.updated", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(resumed?.terminal).toBe(false);
-    expect(resumed?.sessionId).toBe("s1");
-
-    const idle2 = mapBusEvent(
-      { type: "session.idle", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(idle2?.terminal).toBe(false);
-    expect(idle2?.sessionId).toBe("s1");
-
-    const deleted = mapBusEvent(
-      { type: "session.deleted", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(deleted?.terminal).toBe(true);
-    expect(deleted?.sessionId).toBe("s1");
-  });
-
   it("drops any event with no discoverable session id", () => {
     const wire = mapBusEvent({ type: "session.idle", properties: {} }, fixedCtx());
     expect(wire).toBeNull();

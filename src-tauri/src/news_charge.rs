@@ -53,13 +53,6 @@ impl NewsCharge {
 mod tests {
     use super::*;
 
-    #[test]
-    fn starts_empty_and_uncharged() {
-        let c = NewsCharge::new(5);
-        assert_eq!(c.count(), 0);
-        assert_eq!(c.fill(), 0.0);
-        assert!(!c.is_charged());
-    }
 
     #[test]
     fn items_landing_raise_the_fill_fraction_but_do_not_charge_mid_cycle() {
@@ -159,13 +152,6 @@ mod tests {
         assert!(c.is_charged(), "the second item completes a fresh batch");
     }
 
-    #[test]
-    fn visit_with_nothing_landed_is_a_harmless_no_op() {
-        let mut c = NewsCharge::new(4);
-        c.visit();
-        assert_eq!(c.count(), 0);
-        assert!(!c.is_charged());
-    }
 
     #[test]
     fn zero_batch_size_is_clamped_to_one_to_avoid_a_divide_by_zero() {

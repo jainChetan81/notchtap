@@ -146,10 +146,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn status_state_event_name_is_pinned() {
-        assert_eq!(STATUS_STATE_EVENT, "status-state");
-    }
+
 
     #[test]
     fn serializes_camel_case_with_live_match() {
@@ -162,11 +159,6 @@ mod tests {
         assert_eq!(json["news"]["enabled"], true);
     }
 
-    #[test]
-    fn serializes_live_as_null_when_nothing_in_play() {
-        let json = serde_json::to_value(status(None)).unwrap();
-        assert!(json["football"]["live"].is_null());
-    }
 
     #[test]
     fn change_guard_emits_once_then_stays_silent_until_a_real_change() {

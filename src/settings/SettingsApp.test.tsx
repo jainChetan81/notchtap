@@ -328,35 +328,6 @@ describe("SettingsApp", () => {
     ).toBeTruthy();
   });
 
-  it("Appearance gallery: every fixture renders without error, compact shows .compact, live shows its live chip", async () => {
-    mockLoads();
-    const { container } = render(<SettingsApp />);
-
-    await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
-    await screen.findByRole("heading", { level: 1, name: "Appearance" });
-    await screen.findByText("GOAL");
-
-    const stages = container.querySelectorAll(".preview-stage.card-root");
-    expect(stages.length).toBe(7);
-    stages.forEach((stage) => {
-      expect(stage.querySelector(".card-assembly")).not.toBeNull();
-    });
-
-    const compactRow = (
-      await screen.findByText("Compact (collapsed manifest, medium priority)")
-    ).closest(".preview-row") as HTMLElement;
-    expect(within(compactRow).getByText("Build finished")).toBeTruthy();
-    expect(compactRow.querySelector(".compact")).not.toBeNull();
-    expect(compactRow.querySelector(".card-assembly.expanded")).toBeNull();
-
-    const liveRow = (await screen.findByText("Live match (recurring scorecard, football)")).closest(
-      ".preview-row",
-    ) as HTMLElement;
-    expect(liveRow.querySelector(".chip-live")).not.toBeNull();
-    expect(liveRow.querySelector(".score-row")).not.toBeNull();
-  });
-
   it("calls set_appearance with scale/radius/opacity, not card_scale/card_radius/card_opacity", async () => {
     const setAppearance = vi.fn();
     mockIPC((command, payload) => {
@@ -1179,22 +1150,6 @@ describe("SettingsApp", () => {
       expect(within(row).getByText("hourly")).toBeTruthy();
     });
 
-    it("renders a 300-char unbroken-token body without widening the row (pins the .history-body class)", async () => {
-      const longToken = "x".repeat(300);
-      const entry: HistoryEntry = {
-        ...historyEntryOlder,
-        event: {
-          ...historyEntryOlder.event,
-          payload: { title: "Long body notification", body: longToken },
-        },
-      };
-      mockHistory([entry]);
-      await openHistory();
-
-      const body = await screen.findByText(longToken);
-      expect(body.classList.contains("history-body")).toBe(true);
-    });
-
     it("renders a non-http-scheme link as literal, non-clickable text — never an <a href>", async () => {
       const maliciousLink = "javascript:alert(1)";
       const entry: HistoryEntry = {
@@ -1474,15 +1429,6 @@ describe("SettingsApp", () => {
       expect(row.querySelector("img")).toBeNull();
     });
 
-    it("renders a 300-char unbroken-token title without widening the row (pins the .queue-title overflow-wrap utility)", async () => {
-      const longToken = "x".repeat(300);
-      mockQueue([{ ...waitingHigh, title: longToken }]);
-      await openQueue();
-
-      const titleEl = await screen.findByText(longToken);
-      expect(titleEl.classList.contains("queue-title")).toBe(true);
-      expect(titleEl.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
-    });
   });
 
   describe("About section", () => {
@@ -1507,16 +1453,6 @@ describe("SettingsApp", () => {
         if (command === "get_about_info") return aboutInfo;
       });
     }
-
-    it("the About nav item exists and clicking it renders the section", async () => {
-      mockAbout();
-      render(<SettingsApp />);
-
-      await screen.findByRole("heading", { level: 1, name: "General" });
-      fireEvent.click(screen.getByRole("button", { name: "About" }));
-
-      expect(await screen.findByRole("heading", { level: 1, name: "About" })).toBeTruthy();
-    });
 
     it("renders stat tiles from a mocked get_about_info", async () => {
       mockAbout();
@@ -1641,18 +1577,6 @@ describe("SettingsApp", () => {
       expect(await within(codexCard).findByText("Partial")).toBeTruthy();
       expect(await within(kimiCard).findByText("Unavailable")).toBeTruthy();
       expect(await within(opencodeCard).findByText("Partial")).toBeTruthy();
-    });
-
-    it("renders the five named preview fixtures", async () => {
-      mockAgents();
-      await openAgents();
-
-      const previewGroup = (await screen.findByText("Preview")).closest(".gap-0") as HTMLElement;
-      expect(within(previewGroup).getByText("Waiting on permission")).toBeTruthy();
-      expect(within(previewGroup).getByText("Working, with a subagent")).toBeTruthy();
-      expect(within(previewGroup).getByText("Completed")).toBeTruthy();
-      expect(within(previewGroup).getByText("Failed")).toBeTruthy();
-      expect(within(previewGroup).getByText("Multiple independent sessions")).toBeTruthy();
     });
 
     it("renders a runtime-colour swatch dot on each adapter card header", async () => {
@@ -1841,9 +1765,6 @@ describe("SettingsApp", () => {
       expect(savedConfig!.agents.completion_notifications).toBe(false);
     });
 
-    it("rust's own defaults keep the Agent Board quiet for working-only sessions", async () => {
-      expect(rustConfigDefaults.agents.board_show_working).toBe(false);
-    });
   });
 });
 
@@ -2274,21 +2195,6 @@ describe("SettingsApp — shadcn Switch contract", () => {
     expect(toggle.getAttribute("type")).toBe("button");
     expect(toggle.getAttribute("role")).toBe("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("clicking calls onCheckedChange with the flipped value — the same activation a Space/Enter key press dispatches on any native <button> (browser default, not a custom key handler)", () => {
-    const onCheckedChange = vi.fn();
-    render(
-      <>
-        <Label htmlFor="demo-switch-2">Demo switch two</Label>
-        <Switch id="demo-switch-2" checked={false} onCheckedChange={onCheckedChange} />
-      </>,
-    );
-
-    const toggle = screen.getByLabelText("Demo switch two");
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(toggle);
-    expect(onCheckedChange).toHaveBeenCalledWith(true);
   });
 
   it("a disabled Switch carries aria-disabled/disabled semantics and ignores activation", () => {

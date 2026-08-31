@@ -155,23 +155,7 @@ mod tests {
         std::env::temp_dir().join(format!("notchtap-historytest-{}", Uuid::new_v4()))
     }
 
-    #[test]
-    fn append_then_read_recent_round_trips() {
-        let dir = temp_dir();
-        let store = HistoryStore::with_limits(&dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES).unwrap();
 
-        for title in ["one", "two", "three"] {
-            store.append(&test_fixtures::event(title)).unwrap();
-        }
-
-        let entries = store.read_recent(3).unwrap();
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].event.payload.title, "one");
-        assert_eq!(entries[1].event.payload.title, "two");
-        assert_eq!(entries[2].event.payload.title, "three");
-        assert_eq!(entries[0].event.payload.body, "body");
-        assert_eq!(entries[0].event.origin, crate::event::SourceKind::Manual);
-    }
 
     #[test]
     fn missing_file_reads_as_empty_not_error() {

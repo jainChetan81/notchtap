@@ -285,15 +285,7 @@ impl HealthTracker {
             .and_then(|r| r.last_accepted_event_ms)
     }
 
-    #[cfg(test)]
-    fn last_error(&self, runtime: AgentRuntime) -> Option<AdapterErrorCategory> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .records
-            .get(&runtime)
-            .and_then(|r| r.last_error_category)
-    }
+
 
     /// The one impure input this module needs: a (cached) Kimi hook- support read.
     pub fn kimi_hook_support(&self, now: Instant) -> HookSupport {
@@ -359,55 +351,9 @@ mod tests {
         AgentRuntimesConfig::default()
     }
 
-    #[test]
-    fn claude_code_declares_the_full_seven_capability_set() {
-        assert_eq!(declared_capabilities(AgentRuntime::ClaudeCode).len(), 7);
-    }
 
-    #[test]
-    fn codex_is_missing_input_required_and_failure() {
-        let caps = declared_capabilities(AgentRuntime::Codex);
-        assert!(!caps.contains(&AgentCapability::InputRequired));
-        assert!(!caps.contains(&AgentCapability::Failure));
-    }
 
-    #[test]
-    fn opencode_is_missing_subagents() {
-        let caps = declared_capabilities(AgentRuntime::OpenCode);
-        assert!(!caps.contains(&AgentCapability::Subagents));
-    }
 
-    #[test]
-    fn disabled_runtime_is_always_unavailable() {
-        assert_eq!(
-            availability_for(AgentRuntime::ClaudeCode, false, None),
-            AdapterAvailability::Unavailable
-        );
-    }
-
-    #[test]
-    fn claude_code_enabled_is_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::ClaudeCode, true, None),
-            AdapterAvailability::Available
-        );
-    }
-
-    #[test]
-    fn codex_enabled_is_partial_not_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::Codex, true, None),
-            AdapterAvailability::Partial
-        );
-    }
-
-    #[test]
-    fn opencode_enabled_is_partial_not_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::OpenCode, true, None),
-            AdapterAvailability::Partial
-        );
-    }
 
     #[test]
     fn kimi_enabled_but_hook_unsupported_is_unavailable() {
@@ -519,26 +465,9 @@ mod tests {
         assert_eq!(best_effort_runtime_hint(b"not json"), None);
     }
 
-    #[test]
-    fn record_accepted_then_read_back_last_accepted() {
-        let tracker = HealthTracker::new();
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), None);
-        tracker.record_accepted(AgentRuntime::Codex, 1_000);
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), Some(1_000));
-        tracker.record_accepted(AgentRuntime::Codex, 2_000);
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), Some(2_000));
-    }
 
-    #[test]
-    fn record_error_then_read_back_last_error() {
-        let tracker = HealthTracker::new();
-        assert_eq!(tracker.last_error(AgentRuntime::Kimi), None);
-        tracker.record_error(AgentRuntime::Kimi, AdapterErrorCategory::MalformedPayload);
-        assert_eq!(
-            tracker.last_error(AgentRuntime::Kimi),
-            Some(AdapterErrorCategory::MalformedPayload)
-        );
-    }
+
+
 
     #[test]
     fn per_runtime_bookkeeping_does_not_cross_contaminate() {

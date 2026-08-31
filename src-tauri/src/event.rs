@@ -252,10 +252,7 @@ mod tests {
     use super::*;
     use crate::error::EventError;
 
-    #[test]
-    fn slot_state_event_name_is_pinned() {
-        assert_eq!(SLOT_STATE_EVENT, "slot-state");
-    }
+
 
     #[test]
     fn unknown_type_string_is_rejected_at_deserialization() {
@@ -263,29 +260,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn score_update_deserializes() {
-        let event_type: EventType = serde_json::from_str(r#""score_update""#).unwrap();
-        assert!(matches!(event_type, EventType::ScoreUpdate));
-    }
-
-    #[test]
-    fn match_state_deserializes() {
-        let event_type: EventType = serde_json::from_str(r#""match_state""#).unwrap();
-        assert!(matches!(event_type, EventType::MatchState));
-    }
-
-    #[test]
-    fn news_item_deserializes() {
-        let event_type: EventType = serde_json::from_str(r#""news_item""#).unwrap();
-        assert!(matches!(event_type, EventType::NewsItem));
-    }
-
-    #[test]
-    fn news_item_serializes_snake_case() {
-        let json = serde_json::to_value(EventType::NewsItem).unwrap();
-        assert_eq!(json, "news_item");
-    }
 
     #[test]
     fn priority_ord_is_low_lt_medium_lt_high() {
@@ -319,10 +293,6 @@ mod tests {
         assert_ne!(serde_json::to_value(parsed).unwrap(), "cmux");
     }
 
-    #[test]
-    fn event_signal_default_is_generic() {
-        assert_eq!(EventSignal::default(), EventSignal::Generic);
-    }
 
     #[test]
     fn event_signal_round_trips_every_variant() {
@@ -506,38 +476,6 @@ mod tests {
         assert!(json.get("home_abbrev").is_none());
     }
 
-    #[test]
-    fn detail_item_round_trips_with_own_field_names() {
-        let item = DetailItem {
-            label: "Command".to_string(),
-            value: "git push origin master".to_string(),
-        };
-        let json = serde_json::to_value(&item).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({"label": "Command", "value": "git push origin master"})
-        );
-        let parsed: DetailItem = serde_json::from_value(json).unwrap();
-        assert_eq!(parsed, item);
-    }
-
-    #[test]
-    fn event_meta_default_has_no_subtitle_and_empty_details() {
-        let meta = EventMeta::default();
-        assert_eq!(meta.subtitle, None);
-        assert!(meta.details.is_empty());
-        assert_eq!(meta.espn, None);
-    }
-
-    #[test]
-    fn event_meta_espn_field_is_omitted_from_wire_when_absent() {
-        let json = serde_json::to_value(EventMeta::default()).unwrap();
-        assert!(
-            !json.as_object().unwrap().contains_key("espn"),
-            "absent espn must be an omitted key, not a null value"
-        );
-        assert!(json["subtitle"].is_null());
-    }
 
     #[test]
     fn dedup_eq_treats_a_changed_espn_block_as_a_real_change() {

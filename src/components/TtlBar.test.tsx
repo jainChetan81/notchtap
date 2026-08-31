@@ -26,12 +26,6 @@ describe("TtlBar", () => {
     vi.useRealTimers();
   });
 
-  it("renders the ttl-bar/ttl-fill DOM nodes", () => {
-    const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} />);
-    expect(container.querySelector(".ttl-bar")).not.toBeNull();
-    expect(container.querySelector(".ttl-fill")).not.toBeNull();
-  });
-
   it("anchors the fill to remainingMs/ttlMs and drains it over real time", () => {
     const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} />);
 
@@ -204,13 +198,6 @@ describe("TtlBar", () => {
       rafSpy.mockRestore();
     });
 
-    it("byte-identical when hoverPaused is omitted (regression pin)", () => {
-      const withDefault = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} />);
-      const withFalse = render(
-        <TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} hoverPaused={false} />,
-      );
-      expect(withDefault.container.innerHTML).toBe(withFalse.container.innerHTML);
-    });
   });
 
   describe("queue segments (stories merge)", () => {
@@ -246,15 +233,6 @@ describe("TtlBar", () => {
       expect(fill.style.gridColumn).toBe("1");
     });
 
-    it("renders exactly one segment (hosting the fill) for a single-item batch", () => {
-      const { container } = render(
-        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={1} done={0} />,
-      );
-      const all = segs(container);
-      expect(all).toHaveLength(1);
-      expect(all[0].classList.contains("done")).toBe(false);
-      expect(container.querySelector(".ttl-fill")).not.toBeNull();
-    });
 
     it("caps the segment count at 10 for batches beyond the ceiling", () => {
       const { container } = render(

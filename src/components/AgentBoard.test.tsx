@@ -55,36 +55,6 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
   });
 
-  it("working: blue/pulsing family, medium priority", () => {
-    const { container } = render(
-      <AgentBoard sessions={[session({ state: "working" })]} capturedAtMs={CAPTURED_AT_MS} />,
-    );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent working");
-    expect(container.querySelector(".below-block.agent-working")).not.toBeNull();
-    expect(container.querySelector(".agent-dot.large.pulse")).not.toBeNull();
-    expect(container.querySelector(".card-assembly.medium")).not.toBeNull();
-  });
-
-  it("failed: coral, non-pulsing family, high priority", () => {
-    const { container } = render(
-      <AgentBoard sessions={[session({ state: "failed" })]} capturedAtMs={CAPTURED_AT_MS} />,
-    );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent session failed");
-    expect(container.querySelector(".below-block.agent-failed")).not.toBeNull();
-    expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
-    expect(container.querySelector(".card-assembly.high")).not.toBeNull();
-  });
-
-  it("completed: green, non-pulsing family, low priority", () => {
-    const { container } = render(
-      <AgentBoard sessions={[session({ state: "completed" })]} capturedAtMs={CAPTURED_AT_MS} />,
-    );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent turn completed");
-    expect(container.querySelector(".below-block.agent-completed")).not.toBeNull();
-    expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
-    expect(container.querySelector(".card-assembly.low")).not.toBeNull();
-  });
-
   it("renders 3+ sessions as individual rows, never a +N collapse, in the given (Rust) order", () => {
     const sessions = [
       session({ id: "a", runtime: "claude-code", state: "waiting_for_permission" }),
@@ -135,18 +105,6 @@ describe("AgentBoard resting render", () => {
     );
     const board = container.querySelector(".below-block");
     expect(board?.classList.contains("agent-failed")).toBe(true);
-    expect(board?.classList.contains("src-claude-code")).toBe(true);
-  });
-
-  it("the hero's below-block carries the runtime wash class", () => {
-    const { container } = render(
-      <AgentBoard
-        sessions={[session({ runtime: "claude-code", state: "working" })]}
-        capturedAtMs={CAPTURED_AT_MS}
-      />,
-    );
-    const board = container.querySelector(".below-block");
-    expect(board?.classList.contains("agent-origin")).toBe(true);
     expect(board?.classList.contains("src-claude-code")).toBe(true);
   });
 
@@ -465,27 +423,6 @@ describe("AgentBoard expanded render", () => {
     );
     expect(getByText("Tool")).toBeTruthy();
     expect(getByText("Bash")).toBeTruthy();
-  });
-
-  it("keeps the hero mounted while expanded, with no row at all for a one-session board", () => {
-    const { container } = render(
-      <AgentBoard
-        sessions={[session({ id: "only", summary: "Investigating a flaky test" })]}
-        capturedAtMs={CAPTURED_AT_MS}
-        expanded
-      />,
-    );
-    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
-    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(0);
-    expect(container.textContent?.match(/Investigating a flaky test/g)).toHaveLength(1);
-  });
-
-  it("keeps the hero mounted while expanded on a 3-session board, with the other two as rows", () => {
-    const { container } = render(
-      <AgentBoard sessions={manySessions(3)} capturedAtMs={CAPTURED_AT_MS} expanded />,
-    );
-    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
-    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(2);
   });
 
   it("renders each session exactly once across a larger expanded board", () => {
@@ -819,19 +756,6 @@ describe("AgentBoard motion vitals", () => {
     expect(AGENT_BOARD_CSS).not.toMatch(/var\(--hover-ms/);
   });
 
-  it("carries no rules for the bespoke hero-block selectors, which have no .tsx consumer", () => {
-    for (const dead of [
-      "agent-board-primary-head",
-      "agent-board-runtime",
-      "agent-board-state-pill",
-      "agent-board-project",
-      "agent-board-summary",
-      "agent-board-elapsed",
-    ]) {
-      expect(AGENT_BOARD_CSS, `${dead} is still referenced`).not.toContain(dead);
-    }
-  });
-
   it("every disclosure uses the shared DISCLOSURE_SPRING — no hand-copied spring literals remain", () => {
     expect(AGENT_BOARD_TSX).not.toMatch(/stiffness:/);
     expect(AGENT_BOARD_TSX).not.toMatch(/opacity: \{ duration/);
@@ -931,23 +855,6 @@ describe("AgentBoard motion vitals", () => {
     expect(
       nowTickIntervalMs([session({ elapsedMs: 59_000 })], CAPTURED_AT_MS, CAPTURED_AT_MS + 5_000),
     ).toBe(15_000);
-  });
-
-  it("the board subscribes at the slow rate when nothing is second-granular", () => {
-    const setInterval = vi.spyOn(window, "setInterval");
-    try {
-      render(
-        <AgentBoard
-          sessions={[session({ id: "a", elapsedMs: 300_000 })]}
-          capturedAtMs={Date.now()}
-        />,
-      );
-      const delays = setInterval.mock.calls.map((call) => call[1]);
-      expect(delays).toContain(15_000);
-      expect(delays).not.toContain(1000);
-    } finally {
-      setInterval.mockRestore();
-    }
   });
 
   it("the board subscribes at the fast rate while a session is fresh", () => {

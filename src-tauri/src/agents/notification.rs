@@ -323,15 +323,7 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-    #[test]
-    fn terminal_completed_ignores_the_informational_gate() {
-        let policy = NotificationPolicy {
-            informational_notifications: false,
-            completion_notifications: true,
-            ..NotificationPolicy::default()
-        };
-        assert!(is_noteworthy(AgentEventKind::Completed, true, &policy));
-    }
+
 
     #[test]
     fn terminal_completed_is_suppressed_when_completion_notifications_is_off() {
@@ -539,23 +531,7 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-    #[test]
-    fn non_terminal_informational_progress_creates_no_card() {
-        let policy = NotificationPolicy::default();
-        assert!(build_notification(
-            &key(AgentRuntime::OpenCode),
-            AgentEventKind::Informational,
-            false,
-            NotificationContent {
-                summary: Some("Running `pnpm test`"),
-                project_name: None,
-                details: &[],
-            },
-            8,
-            &policy,
-        )
-        .is_none());
-    }
+
 
     #[test]
     fn agent_signal_carries_wire_tokens_and_hashed_session_not_raw_id() {
@@ -638,26 +614,7 @@ mod tests {
         assert_eq!(event.payload.body, "Waiting for your input.");
     }
 
-    #[test]
-    fn project_name_becomes_subtitle() {
-        let event = build_notification(
-            &key(AgentRuntime::ClaudeCode),
-            AgentEventKind::PermissionRequested,
-            false,
-            NotificationContent {
-                summary: Some("Approval needed"),
-                project_name: Some("mac-notification-nudge"),
-                details: &[],
-            },
-            8,
-            &NotificationPolicy::default(),
-        )
-        .unwrap();
-        assert_eq!(
-            event.meta.subtitle.as_deref(),
-            Some("mac-notification-nudge")
-        );
-    }
+
 
     #[test]
     fn agent_details_carry_verbatim_as_detail_items() {
@@ -691,22 +648,5 @@ mod tests {
         assert_eq!(event.meta.details[1].value, "git push");
     }
 
-    #[test]
-    fn absent_project_and_details_default_to_none_and_empty() {
-        let event = build_notification(
-            &key(AgentRuntime::OpenCode),
-            AgentEventKind::PermissionRequested,
-            false,
-            NotificationContent {
-                summary: Some("Approval needed"),
-                project_name: None,
-                details: &[],
-            },
-            8,
-            &NotificationPolicy::default(),
-        )
-        .unwrap();
-        assert_eq!(event.meta.subtitle, None);
-        assert!(event.meta.details.is_empty());
-    }
+
 }

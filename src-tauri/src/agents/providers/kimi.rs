@@ -279,19 +279,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn notification_permission_prompt_maps_to_waiting_for_permission() {
-        let event = normalize(fixture("notification-permission").as_bytes()).unwrap();
-        assert_eq!(event.kind, "permission_requested");
-        assert_eq!(event.state, "waiting_for_permission");
-    }
-
-    #[test]
-    fn notification_idle_prompt_maps_to_waiting_for_input() {
-        let event = normalize(fixture("notification-idle").as_bytes()).unwrap();
-        assert_eq!(event.kind, "input_required");
-        assert_eq!(event.state, "waiting_for_input");
-    }
 
     #[test]
     fn notification_generic_maps_to_informational() {

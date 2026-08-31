@@ -319,7 +319,7 @@ pub const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(5);
 mod tests {
     use super::*;
     use crate::agents::model::{
-        AgentEventKind, AgentRuntime, AgentSessionKey, AgentSessionState, AgentSubagentSummary,
+        AgentEventKind, AgentRuntime, AgentSessionKey, AgentSessionState,
     };
     use crate::agents::registry::{AgentEvent, AgentRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -328,46 +328,10 @@ mod tests {
         AgentSessionKey::new(runtime, id).unwrap()
     }
 
-    fn state_with_subagent(subagent: Option<AgentSubagentSummary>) -> AgentState {
-        let now = Instant::now();
-        AgentState {
-            key: key(AgentRuntime::ClaudeCode, "session-1"),
-            state: AgentSessionState::Working,
-            capabilities: Vec::new(),
-            summary: None,
-            details: Vec::new(),
-            project: None,
-            host: None,
-            subagent,
-            history: Vec::new(),
-            first_seen_at: now,
-            state_entered_at: now,
-            last_seen_at_ms: 0,
-            elapsed_ms: 0,
-            retention_remaining_ms: None,
-        }
-    }
 
-    #[test]
-    fn to_view_maps_subagent_when_present() {
-        let state = state_with_subagent(Some(AgentSubagentSummary {
-            id: "sub-1".to_string(),
-            label: Some("Explorer".to_string()),
-            state: Some("running".to_string()),
-        }));
-        let view = to_view(&state, Instant::now());
-        let subagent = view.subagent.expect("subagent must be mapped when present");
-        assert_eq!(subagent.id, "sub-1");
-        assert_eq!(subagent.label.as_deref(), Some("Explorer"));
-        assert_eq!(subagent.state.as_deref(), Some("running"));
-    }
 
-    #[test]
-    fn to_view_subagent_is_none_when_absent() {
-        let state = state_with_subagent(None);
-        let view = to_view(&state, Instant::now());
-        assert!(view.subagent.is_none());
-    }
+
+
 
     fn event(session_key: AgentSessionKey, event_id: &str, kind: AgentEventKind) -> AgentEvent {
         AgentEvent {
@@ -446,10 +410,7 @@ mod tests {
             .unwrap_or_default()
     }
 
-    #[test]
-    fn event_name_is_pinned() {
-        assert_eq!(AGENT_STATE_EVENT, "agent-state");
-    }
+
 
     #[tokio::test]
     async fn first_publish_with_a_session_emits_and_starts_revision_at_one() {

@@ -1784,13 +1784,6 @@ mod tests {
         assert_eq!(espn.away_crest, None);
     }
 
-    #[test]
-    fn live_card_off_leaves_espn_meta_none() {
-        let events = live_cycle_events(false);
-        for event in &events {
-            assert_eq!(event.meta.espn, None);
-        }
-    }
 
     #[test]
     fn live_card_on_clean_match_omits_cards_cell() {
@@ -1907,19 +1900,6 @@ mod tests {
         assert_eq!(resp.items.len(), 1);
     }
 
-    #[test]
-    fn classify_rich_type_maps_all_four_locked_kinds() {
-        assert_eq!(classify_rich_type("foul"), Some(RichEventKind::Foul));
-        assert_eq!(classify_rich_type("offside"), Some(RichEventKind::Offside));
-        assert_eq!(
-            classify_rich_type("var-check"),
-            Some(RichEventKind::VarCheck)
-        );
-        assert_eq!(
-            classify_rich_type("substitution"),
-            Some(RichEventKind::Substitution)
-        );
-    }
 
     #[test]
     fn classify_rich_type_drops_scoreboard_owned_types_outright() {

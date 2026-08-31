@@ -58,17 +58,6 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
 
-    #[test]
-    fn default_port_matches_the_repo_wide_9789_default() {
-        assert_eq!(DEFAULT_PORT, 9789);
-    }
-
-    #[test]
-    fn resolve_port_falls_back_to_default_when_unset() {
-        if std::env::var("NOTCHTAP_PORT").is_err() {
-            assert_eq!(resolve_port(), DEFAULT_PORT);
-        }
-    }
 
     #[tokio::test]
     async fn deliver_to_an_unreachable_port_fails_open() {
