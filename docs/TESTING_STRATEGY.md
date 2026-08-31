@@ -15,12 +15,13 @@ rather than repeating them.
 |---|---|---|
 | rust unit/integration | 875 lib-crate tests + 3 integration-binary tests = 878 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 599 tests across 33 test files | `npx vitest run` |
-| ci | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
+| frontend | 0 automated tests — manual verification only | §6 checklist |
+| OpenCode adapter | 30 tests in one TypeScript file | `npx vitest run` |
+| ci | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, adapter vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
-every example surface listed in §4 has passing coverage. the recurring
-manual hardware checklist is §6 — never "done", re-run per relevant
-change.
+Rust decision surfaces and the standalone OpenCode adapter have automated
+coverage. Frontend behavior and the recurring hardware checklist are
+verified manually in §6 per relevant change.
 
 ---
 
@@ -54,7 +55,8 @@ where it pays off.
 | rust http layer | `axum` + `tower`'s `ServiceExt::oneshot` | routes tested in-process — no real socket bind, no port cleanup, no flaky "address in use" |
 | rust external-http decision surfaces | `wiremock` | only for fetch-path decision logic (redirects, size caps, 304s, fallback chains); parsers and delta logic stay pure functions against committed fixtures — never a live network call in any test |
 | rust property tests | `proptest` (dev-dependency) | the queue's generated-adversary suite, §7 |
-| frontend unit/component | `vitest` + `@testing-library/react` | shares the vite config; tests behaviour (what's rendered), not implementation details |
+| OpenCode adapter | `vitest` | tests the standalone TypeScript plugin without a live runtime or network |
+| frontend | manual verification | keeps the rendering layer small and avoids mock-heavy component tests |
 | rust doc-tests | built-in | the public `queue`/`event` apis carry runnable examples that double as documentation. not the coverage layer — keep them few and lifecycle-shaped |
 
 ---
@@ -180,25 +182,18 @@ likely real failure) has a dedicated test.
 
 ### 4.5 frontend slot render state (react/ts)
 
-`useSlotState` + `App.tsx`: renders `empty` as nothing; renders
-`showing` with the right priority/expanded/source classes; a new
-payload replaces content without an intermediate empty frame; listener
-cleanup on unmount. the runtime payload validator rejects malformed
-`slot-state` payloads field by field (missing/invalid `origin`,
-`agentRuntime`, timing fields, espn block). the frontend renders every
-promoted event it receives without enforcing any cap itself — cap and
-promotion authority live rust-side.
+No automated frontend tests. Verify the overlay manually with representative
+idle, notification, live-match, news, Agent Board, hover, tab, rotation, and
+malformed-event scenarios from §6. Rust remains the authority for caps,
+promotion, queueing, and published wire state; the frontend only validates
+incoming payload shape and renders accepted snapshots.
 
 ### 4.6 animation rendering (css/react) — manual by design
 
-no automated visual regression: the tooling cost (screenshot diffing,
-baseline management) isn't justified for a personal tool whose
-keyframe sets are trivially eyeball-able. re-evaluate only if per-type
-styling starts regressing during unrelated css edits. string-level CSS
-pins are the exception where a rule's *existence or byte-equality* is
-load-bearing (celebration z-index stacking, exit-to-bare convergence,
-transition-property lists, token wiring) — jsdom can't measure layout,
-so those pin the stylesheet text instead.
+no automated visual regression or stylesheet string tests: the tooling
+and maintenance cost isn't justified for a personal tool whose rendering
+and keyframes are cheap to inspect directly. Re-evaluate only if frontend
+regressions become frequent enough to justify browser-level coverage.
 
 ### 4.7 espn football poller (rust, `poller.rs`)
 
@@ -245,11 +240,10 @@ fixtures:
   validate-then-persist ordering, streamed size cap) is
   wiremock-tested; only the spawn loop stays thin-by-design
 
-frontend: masthead render, clamped headline, category/age pills,
-lookup-table cases with unknown-category and null-metadata fallbacks,
-the news manifest layout.
+Frontend news rendering is verified manually with representative stories,
+missing metadata, long headlines, category colors, and manifest expansion.
 
-### 4.9 settings window (rust + vitest)
+### 4.9 settings window (rust + manual frontend verification)
 
 the app's one frontend→rust invoke surface, so the suite's job is
 twofold: pure-logic coverage, plus pinning the security boundary.
@@ -269,12 +263,10 @@ twofold: pure-logic coverage, plus pinning the security boundary.
   whole-permission-set compare against `capabilities/settings.json`,
   and the `generate_handler!` parse — a new command that misses any leg
   of `ARCHITECTURE.md` §9's contract fails a test, not a review
-- frontend (vitest, `SettingsApp.test.tsx` + section suites): form
-  round-trips from a mocked `get_config`; save rejection renders the
-  error list; every action reports its outcome (announced errors
-  deduplicate, successes clear); queue/history sections render, clear,
-  and skip through their commands; real semantic HTML pins (fieldset/
-  legend, lists, tables, `role=switch`)
+- frontend (manual): verify config loading and saving, validation errors,
+  action status, queue/history controls, Agent setup, previews, semantic
+  labels, keyboard navigation, and disabled/loading states against the
+  real Rust command surface
 - security boundary, pinned two ways: `capabilities/default.json`
   unchanged in any diff (review-level), and — manual, once per
   mechanism change — `invoke("get_config")` from the *main* window's
@@ -330,18 +322,13 @@ normalized event (never inferred from title/body wording). Codex's set
 is deliberately smaller — its input-required/terminal-failure gaps are
 declared, not fixtured.
 
-**frontend**: `useAgentState` renders rust's ordered payload without
-frontend-side lifecycle inference (validators reject malformed
-sessions/subagents/tabSessions); `AgentBoard` — resting/expanded
-precedence, per-session rendering, status icons, meta lines,
-motion-vitals pins; the Settings Agents section — controls round-trip
-config, adapter cards render mocked health, send-test invokes with the
-card's own runtime; `hookEventParity.test.ts` pins `doctor.rs`'s hook
-event lists against the Settings setup snippets per runtime
-(region-scoped, because two runtimes share an event set). the OpenCode
-plugin (`adapters/opencode/notchtap.test.ts`, included in the root
-vitest run) covers its event mapping, port resolution, and delivery
-against a mocked `fetch` — no real OpenCode runtime or network.
+**frontend**: manually verify that `useAgentState` renders Rust's ordered
+payload without frontend-side lifecycle inference, including Board
+resting/expanded precedence, per-session details, status icons, and the
+Settings Agents workflow. The OpenCode plugin
+(`adapters/opencode/notchtap.test.ts`, included in the root Vitest run)
+keeps automated coverage for event mapping, port resolution, privacy, and
+fail-open delivery against a mocked `fetch` — no live runtime or network.
 
 ### 4.11 hover, tabs, prefix, click (rust + frontend)
 
@@ -352,14 +339,9 @@ against a mocked `fetch` — no real OpenCode runtime or network.
   and wire-label sets, the charge state machine, the arm/disarm/timeout
   machine, `watchdog_verdict`'s deadline table, and click hit-testing
   (present-list/rect zip, gap and out-of-band misses)
-- frontend: tab-selection seam tests in `App`, `tabWireParity.test.ts`
-  (the tab identity pin across `tabs.rs`/`lib.rs`/`IconStrip`/
-  `iconPresence`), and `stripGeometryParity.test.ts` — a text-level pin
-  holding `hover.rs`'s strip constants, `icon-strip.css`'s per-icon
-  footprint, and `card-chrome.css`'s strip-visible `--cw` growth terms
-  to the same numbers. cross-language parity pins like these are the
-  standing pattern wherever rust and css/ts must agree on the same
-  geometry or identity list.
+- frontend tab selection, prefix shortcuts, icon ordering, and Rust↔CSS
+  strip geometry are verified manually on both presentation modes; keep
+  the shared constants visibly named and review both sides together.
 
 ### 4.12 history, status, engine, support modules
 
@@ -426,9 +408,9 @@ change.
 
 ## 6. manual verification checklist
 
-recurring, physical-hardware verification — re-run the relevant rows
-per change; this list is never "done". `cargo test` and
-`npx vitest run` must both be clean before any of this counts.
+Recurring frontend and physical-hardware verification — re-run the relevant
+rows per change; this list is never "done". Rust and adapter checks are
+prerequisites, not substitutes for this manual pass.
 
 - [ ] manual push → visible animation, both machines
 - [ ] startup log shows **notch** mode on the macbook — the hud
@@ -547,17 +529,18 @@ grant more than the rotation window).
 
 ## 8. no global coverage percentage gate
 
-resist tracking one repo-wide coverage number — it rewards testing
-trivial getters and framework glue. the bar instead: every example
-surface listed in §4 for a component has a passing test before work on
-that component is called done.
+Resist tracking one repo-wide coverage number — it rewards testing trivial
+getters and framework glue. Rust decision surfaces need focused automated
+coverage; frontend changes need the relevant manual checks from §6.
 
 ## 9. running the suite
 
 - `cargo test` (from `src-tauri/`) — all rust unit + integration
   tests, including the doc-tests
-- `npx vitest run` (from repo root) — all frontend unit tests
-- both must run clean before any work is called done
+- `npx vitest run adapters/opencode/notchtap.test.ts` (from repo root) —
+  standalone OpenCode adapter tests; there are no frontend unit tests
+- Rust and adapter tests must run clean before work is called done; frontend
+  changes additionally require the relevant §6 manual checks
 - ci runs the same two commands plus `cargo fmt --check`,
   `cargo clippy -- -D warnings`, `npx tsc --noEmit`, `npx vite build`,
   audits, and a `swiftc` compile check — nothing ci-only; `just
