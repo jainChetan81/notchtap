@@ -146,7 +146,7 @@ export function StatusRailCard({
 		}
 
 		setPulseNow(nextPulse);
-	}, [currentSignal, setPulseNow]);
+	}, [currentId, currentSignal, setPulseNow]);
 
 	const [liveCelebration, setLiveCelebration] = useState<Celebration>(null);
 
