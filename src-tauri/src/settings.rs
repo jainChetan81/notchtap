@@ -1147,7 +1147,6 @@ mod tests {
         assert_eq!(payload.resting_state, crate::config::RestingState::Rail);
     }
 
-
     #[test]
     fn rss_poll_interval_boundaries() {
         let mut c = Config {
@@ -1439,6 +1438,4 @@ mod tests {
             "the overlay window must be refused even if the acl were misconfigured"
         );
     }
-
-
 }

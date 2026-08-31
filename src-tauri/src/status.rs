@@ -146,8 +146,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn serializes_camel_case_with_live_match() {
         let json = serde_json::to_value(status(Some(live_summary()))).unwrap();
@@ -158,7 +156,6 @@ mod tests {
         assert_eq!(json["football"]["live"]["minute"], "45'");
         assert_eq!(json["news"]["enabled"], true);
     }
-
 
     #[test]
     fn change_guard_emits_once_then_stays_silent_until_a_real_change() {

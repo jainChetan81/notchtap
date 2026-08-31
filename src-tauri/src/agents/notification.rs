@@ -323,8 +323,6 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-
-
     #[test]
     fn terminal_completed_is_suppressed_when_completion_notifications_is_off() {
         let policy = NotificationPolicy {
@@ -531,8 +529,6 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
-
-
     #[test]
     fn agent_signal_carries_wire_tokens_and_hashed_session_not_raw_id() {
         let raw_key = AgentSessionKey::new(AgentRuntime::Codex, "super-secret-native-id").unwrap();
@@ -614,8 +610,6 @@ mod tests {
         assert_eq!(event.payload.body, "Waiting for your input.");
     }
 
-
-
     #[test]
     fn agent_details_carry_verbatim_as_detail_items() {
         let details = vec![
@@ -647,6 +641,4 @@ mod tests {
         assert_eq!(event.meta.details[1].label, "Command");
         assert_eq!(event.meta.details[1].value, "git push");
     }
-
-
 }

@@ -50,7 +50,9 @@ pub enum AdapterInstall {
     ConfigMissing,
     /// `reason` is a bounded category (an `io::ErrorKind` debug name, or a fixed "malformed
     /// json"/"malformed toml" string) — NEVER a raw error string.
-    ConfigUnreadable { reason: String },
+    ConfigUnreadable {
+        reason: String,
+    },
     /// `wired` and `missing` are both in the canonical order of the corresponding `*_HOOK_EVENTS`
     /// const, never file order.
     Inspected {
@@ -58,13 +60,19 @@ pub enum AdapterInstall {
         missing: Vec<String>,
         commands: Vec<String>,
     },
-    PluginFile { present: bool },
+    PluginFile {
+        present: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandTarget {
-    Resolved { path: PathBuf },
-    Broken { path: PathBuf },
+    Resolved {
+        path: PathBuf,
+    },
+    Broken {
+        path: PathBuf,
+    },
     /// A bare name (no `/`), which the provider must resolve via PATH.
     BareName {
         name: String,
@@ -646,8 +654,6 @@ mod tests {
             "/etc/notchtap/settings.json"
         );
     }
-
-
 
     fn wired_claude_code_report() -> DoctorReport {
         DoctorReport {

@@ -279,7 +279,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn notification_generic_maps_to_informational() {
         let event = normalize(fixture("notification-generic").as_bytes()).unwrap();

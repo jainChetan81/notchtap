@@ -105,5 +105,4 @@ mod tests {
             & 0o777;
         assert_eq!(file_mode, 0o600);
     }
-
 }

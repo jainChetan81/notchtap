@@ -155,8 +155,6 @@ mod wire_tests {
         }
     }
 
-
-
     #[test]
     fn news_is_always_present_even_with_nothing_live() {
         assert_eq!(present_tabs(&base_state()), vec![Tab::News]);
@@ -185,7 +183,6 @@ mod wire_tests {
 mod tests {
     use super::*;
 
-
     #[test]
     fn selecting_the_same_tab_again_deselects_it() {
         let mut s = TabSelection::default();
@@ -212,7 +209,6 @@ mod tests {
         assert_eq!(s.selected(), None);
     }
 
-
     #[test]
     fn clear_if_gone_clears_only_when_the_selected_tab_is_no_longer_present() {
         let mut s = TabSelection::default();
@@ -229,7 +225,6 @@ mod tests {
         assert_eq!(s.selected(), Some(Tab::Football));
     }
 
-
     #[test]
     fn from_prefix_digit_rejects_anything_out_of_1_to_3() {
         assert_eq!(Tab::from_prefix_digit(0), None);
@@ -237,6 +232,4 @@ mod tests {
         assert_eq!(Tab::from_prefix_digit(5), None);
         assert_eq!(Tab::from_prefix_digit(6), None);
     }
-
-
 }

@@ -787,10 +787,6 @@ mod tests {
         assert_eq!(parsed.event.capabilities.len(), MAX_CAPABILITIES);
     }
 
-
-
-
-
     #[test]
     fn control_characters_are_stripped_and_whitespace_trimmed() {
         let raw_summary = "  hascontrol\u{7}chars  ";
@@ -817,7 +813,4 @@ mod tests {
         assert_eq!(parsed.event.project, None);
         assert_eq!(parsed.event.host, None);
     }
-
-
-
 }

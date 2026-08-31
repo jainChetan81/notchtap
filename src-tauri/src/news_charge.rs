@@ -53,7 +53,6 @@ impl NewsCharge {
 mod tests {
     use super::*;
 
-
     #[test]
     fn items_landing_raise_the_fill_fraction_but_do_not_charge_mid_cycle() {
         let mut c = NewsCharge::new(5);
@@ -151,7 +150,6 @@ mod tests {
         c.cycle_end();
         assert!(c.is_charged(), "the second item completes a fresh batch");
     }
-
 
     #[test]
     fn zero_batch_size_is_clamped_to_one_to_avoid_a_divide_by_zero() {

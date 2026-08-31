@@ -276,7 +276,6 @@ mod tests {
         )
     }
 
-
     #[test]
     fn toggle_pause_updates_label_and_promotes_on_resume() {
         let app = tauri::test::mock_app();

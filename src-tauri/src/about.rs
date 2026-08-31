@@ -142,9 +142,6 @@ mod tests {
         );
     }
 
-
-
-
     #[test]
     fn bundle_size_bytes_sums_nested_files() {
         let dir =

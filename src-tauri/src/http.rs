@@ -768,7 +768,6 @@ mod tests {
         );
     }
 
-
     #[tokio::test]
     async fn signal_field_defaults_to_generic_when_absent() {
         let mut queue = SingleSlotQueue::new(50);

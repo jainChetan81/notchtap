@@ -282,7 +282,6 @@ mod tests {
         assert_eq!(deep_link_for(AgentRuntime::ClaudeCode, "claude-code"), None);
     }
 
-
     #[test]
     fn decide_focus_ignores_lower_ranked_sessions_entirely() {
         let states = vec![

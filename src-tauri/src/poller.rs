@@ -1784,7 +1784,6 @@ mod tests {
         assert_eq!(espn.away_crest, None);
     }
 
-
     #[test]
     fn live_card_on_clean_match_omits_cards_cell() {
         let (snap, mut sb) = baseline(USA);
@@ -1899,7 +1898,6 @@ mod tests {
         assert_eq!(resp.page_count, 3);
         assert_eq!(resp.items.len(), 1);
     }
-
 
     #[test]
     fn classify_rich_type_drops_scoreboard_owned_types_outright() {

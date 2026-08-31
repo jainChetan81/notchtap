@@ -205,7 +205,6 @@ mod tests {
         assert!(matches!(result, HookSupport::Unavailable { .. }));
     }
 
-
     #[test]
     fn run_bounded_returns_stdout_on_success() {
         let out = run_bounded("/bin/echo", &["hello"], Duration::from_secs(5))

@@ -304,8 +304,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn read_recent_lines_more_lines_than_n_returns_only_last_n() {
         let dir = temp_dir();

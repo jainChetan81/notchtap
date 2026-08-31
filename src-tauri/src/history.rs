@@ -155,8 +155,6 @@ mod tests {
         std::env::temp_dir().join(format!("notchtap-historytest-{}", Uuid::new_v4()))
     }
 
-
-
     #[test]
     fn missing_file_reads_as_empty_not_error() {
         let dir = temp_dir();

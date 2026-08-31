@@ -252,14 +252,11 @@ mod tests {
     use super::*;
     use crate::error::EventError;
 
-
-
     #[test]
     fn unknown_type_string_is_rejected_at_deserialization() {
         let result: Result<EventType, _> = serde_json::from_str(r#""posture_alert""#);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn priority_ord_is_low_lt_medium_lt_high() {
@@ -292,7 +289,6 @@ mod tests {
         assert_eq!(serde_json::to_value(parsed).unwrap(), "agent");
         assert_ne!(serde_json::to_value(parsed).unwrap(), "cmux");
     }
-
 
     #[test]
     fn event_signal_round_trips_every_variant() {
@@ -475,7 +471,6 @@ mod tests {
         assert!(json["espn"]["awayCrest"].is_null());
         assert!(json.get("home_abbrev").is_none());
     }
-
 
     #[test]
     fn dedup_eq_treats_a_changed_espn_block_as_a_real_change() {

@@ -79,8 +79,6 @@ impl PrefixState {
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn on_prefix_from_disarmed_arms_and_returns_no_op() {
         let t0 = Instant::now();
@@ -125,8 +123,6 @@ mod tests {
         assert!(s.is_armed(t0 + Duration::from_millis(3500)));
     }
 
-
-
     #[test]
     fn on_key_out_of_range_digit_is_a_no_op() {
         let t0 = Instant::now();
@@ -135,12 +131,6 @@ mod tests {
         let action = s.on_key(t0 + Duration::from_millis(100), PrefixKey::Digit(9));
         assert_eq!(action, PrefixAction::NoOp);
     }
-
-
-
-
-
-
 
     #[test]
     fn on_key_disarm_and_other_are_both_no_ops() {

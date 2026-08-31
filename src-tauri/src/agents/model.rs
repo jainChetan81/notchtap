@@ -309,10 +309,6 @@ mod tests {
         assert_eq!(err, ModelError::EmptyNativeSessionId);
     }
 
-
-
-
-
     #[test]
     fn urgency_rank_ascends_from_waiting_for_permission_to_starting() {
         use AgentSessionState::*;
@@ -355,10 +351,6 @@ mod tests {
             }
         }
     }
-
-
-
-
 
     #[test]
     fn push_history_evicts_oldest_past_cap() {

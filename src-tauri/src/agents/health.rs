@@ -285,8 +285,6 @@ impl HealthTracker {
             .and_then(|r| r.last_accepted_event_ms)
     }
 
-
-
     /// The one impure input this module needs: a (cached) Kimi hook- support read.
     pub fn kimi_hook_support(&self, now: Instant) -> HookSupport {
         {
@@ -350,10 +348,6 @@ mod tests {
     fn enabled_cfg() -> AgentRuntimesConfig {
         AgentRuntimesConfig::default()
     }
-
-
-
-
 
     #[test]
     fn kimi_enabled_but_hook_unsupported_is_unavailable() {
@@ -464,10 +458,6 @@ mod tests {
     fn runtime_hint_is_none_for_unparseable_json() {
         assert_eq!(best_effort_runtime_hint(b"not json"), None);
     }
-
-
-
-
 
     #[test]
     fn per_runtime_bookkeeping_does_not_cross_contaminate() {

@@ -532,7 +532,6 @@ mod tests {
         assert_eq!(c.prefix_shortcut, "⌃⇧X");
     }
 
-
     #[test]
     fn completion_notifications_defaults_to_true_for_a_config_predating_the_key() {
         let legacy = Config::parse(
@@ -738,7 +737,6 @@ url = "https://example.com/without-meta"
         assert_eq!(c.agent_ttl_secs, 6);
     }
 
-
     #[test]
     fn legacy_cmux_priority_and_ttl_alias_to_agent_fields_when_new_keys_absent() {
         let c = Config::parse("cmux_priority = \"low\"\ncmux_ttl_secs = 20\n").unwrap();
@@ -789,8 +787,6 @@ url = "https://example.com/without-meta"
         let reserialized_again = toml::to_string_pretty(&reparsed).unwrap();
         assert_eq!(reserialized_again, reserialized);
     }
-
-
 
     #[test]
     fn rotation_order_is_overridable() {
@@ -911,7 +907,6 @@ url = "https://example.com/without-meta"
         assert_eq!(c.appearance.card_radius, 12.0);
         assert_eq!(c.appearance.card_opacity, 0.75);
     }
-
 
     #[test]
     fn silence_defaults_to_enabled_with_the_overnight_window() {

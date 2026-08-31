@@ -1,9 +1,9 @@
 mod about;
 pub mod agents;
+mod click;
 mod config;
 mod crests;
 mod engine;
-mod click;
 pub mod error;
 pub mod event;
 mod history;

@@ -58,7 +58,6 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
 
-
     #[tokio::test]
     async fn deliver_to_an_unreachable_port_fails_open() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

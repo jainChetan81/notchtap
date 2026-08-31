@@ -318,20 +318,13 @@ pub const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::model::{
-        AgentEventKind, AgentRuntime, AgentSessionKey, AgentSessionState,
-    };
+    use crate::agents::model::{AgentEventKind, AgentRuntime, AgentSessionKey, AgentSessionState};
     use crate::agents::registry::{AgentEvent, AgentRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn key(runtime: AgentRuntime, id: &str) -> AgentSessionKey {
         AgentSessionKey::new(runtime, id).unwrap()
     }
-
-
-
-
-
 
     fn event(session_key: AgentSessionKey, event_id: &str, kind: AgentEventKind) -> AgentEvent {
         AgentEvent {
@@ -409,8 +402,6 @@ mod tests {
             })
             .unwrap_or_default()
     }
-
-
 
     #[tokio::test]
     async fn first_publish_with_a_session_emits_and_starts_revision_at_one() {

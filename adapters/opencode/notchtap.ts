@@ -5,7 +5,6 @@
 // Tool results expose no failure flag, so failures are not inferred from output text.
 // OpenCode exposes neither subagent lifecycle nor host identity, so those capabilities stay absent.
 
-
 type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
 type UnparsedObject = { [key: string]: UnparsedValue };
 
@@ -76,7 +75,6 @@ export const OPENCODE_CAPABILITIES: readonly AgentCapability[] = Object.freeze([
   "failure",
   "tool_details",
 ]);
-
 
 const MAX_ID_BYTES = 256;
 const MAX_SUMMARY_SCALARS = 500;
@@ -154,7 +152,6 @@ function basename(path: string): string {
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
-
 
 export interface EventContext {
   eventId: string;
@@ -359,7 +356,6 @@ export function mapBusEvent(event: BusEvent, ctx: EventContext): AgentWireEvent 
   return mapper(event, ctx);
 }
 
-
 export interface ToolExecuteInput {
   tool?: unknown;
   sessionID?: unknown;
@@ -429,7 +425,6 @@ export function mapToolExecuteAfter(
   return wire;
 }
 
-
 export interface DeliverOptions {
   port?: number;
   timeoutMs?: number;
@@ -478,7 +473,6 @@ export async function deliverAgentEvent(
     clearTimeout(timer);
   }
 }
-
 
 function freshContext(sequence: { current: number }): EventContext {
   sequence.current += 1;
