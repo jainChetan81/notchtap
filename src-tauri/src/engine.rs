@@ -1,9 +1,4 @@
 //! The Engine: the one module through which every Slot mutation flows.
-//! Every queue mutation follows one protocol — lock → mutate →
-//! `slot_state_if_changed()` → unlock → `wake.notify_waiters()` →
-//! `emit_slot_state`. The queue, the wake, and the live-match handle are
-//! private, so a mutation that skips the protocol does not compile:
-//! nothing outside this module can reach the queue.
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -18,13 +13,8 @@ use crate::status::{
     emit_status_state, status_state_if_changed, LiveMatchSummary, StatusInputs, StatusState,
 };
 
-/// A single ambient status side-channel: an `Arc<Mutex<Option<T>>>` plus
-/// the compare-then-store-then-wake-only-on-change update shape and the
-/// read/clone/drop snapshot shape. Parameterized by the summary type so
-/// `live` (and any future ambient channel) share one lock/compare/store/
-/// wake implementation. Deliberately NOT `derive(Clone)`: that would add
-/// an unneeded `T: Clone` bound on the derive itself (the manual impl
-/// below only ever clones the `Arc`, never `T`).
+/// Deliberately NOT `derive(Clone)`: that would add an unneeded `T: Clone` bound on the derive
+/// itself (the manual impl below only ever clones the `Arc`, never `T`).
 struct AmbientSlot<T> {
     inner: Arc<StdMutex<Option<T>>>,
 }
@@ -46,16 +36,12 @@ impl<T> Clone for AmbientSlot<T> {
 }
 
 impl<T: Clone + PartialEq> AmbientSlot<T> {
-    /// Locks, compares to the new value, stores it, and wakes `wake` ONLY
-    /// if it changed. The handle is written independently of the queue
-    /// lock; nobody holds both at the same time (callers pass
-    /// `&self.wake`, never the queue).
+    /// The handle is written independently of the queue lock; nobody holds both at the same time
+    /// (callers pass `&self.wake`, never the queue).
     fn update(&self, value: Option<T>, wake: &tokio::sync::Notify) {
         let changed = {
-            // poison-tolerant (codebase convention, see settings.rs): a
-            // panic while a poller holds this lock must not wedge every
-            // other ambient-channel caller behind a poisoned Mutex —
-            // recover the inner guard instead of propagating the panic.
+            // poison-tolerant (codebase convention, see settings.rs): a panic while a poller holds
+            // this lock must not wedge every other ambient-channel caller behind a poisoned Mutex.
             let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             if *guard == value {
                 false
@@ -69,21 +55,13 @@ impl<T: Clone + PartialEq> AmbientSlot<T> {
         }
     }
 
-    /// Read/clone/drop the handle — same lock discipline every caller
-    /// already follows: read the ambient handles BEFORE locking the
-    /// queue, so nobody ever holds both locks at once.
+    /// Read/clone/drop the handle — same lock discipline every caller already follows: read the
+    /// ambient handles BEFORE locking the queue, so nobody ever holds both locks at once.
     fn snapshot(&self) -> Option<T> {
-        // poison-tolerant, same rationale as `update` above.
         self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
-/// Owns the queue, the heartbeat wake, the app handle, and the
-/// live-match handle plus source-enabled flags the rotation loop needs to
-/// also be the sole StatusState emitter — all private. Nothing outside
-/// this module can
-/// lock the queue or touch the wake, so the mutate→wake→emit protocol is
-/// structural, not conventional.
 pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     queue: Arc<Mutex<SingleSlotQueue>>,
     wake: Arc<tokio::sync::Notify>,
@@ -91,19 +69,10 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     live: AmbientSlot<LiveMatchSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
-    /// `None` when history is disabled (the default) — the `accept` hook
-    /// is then a no-op. `Some` when the user opted in and the store
-    /// opened successfully. Injected rather than constructed here so the
-    /// hook is
-    /// testable against a temp dir instead of the user's real config
-    /// directory.
     history: Option<Arc<HistoryStore>>,
-    /// the shared tab-notch wire bundle — see `tabs::TabWire`.
     tab_wire: Arc<crate::tabs::TabWire>,
 }
 
-// Clone by hand (Arc clones + AppHandle clone + bool copies), like
-// AppState's — derived Clone would needlessly require `R: Clone`.
 impl<R: tauri::Runtime> Clone for Engine<R> {
     fn clone(&self) -> Self {
         Self {
@@ -120,10 +89,6 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
 }
 
 impl<R: tauri::Runtime> Engine<R> {
-    /// Takes the queue BY VALUE and creates BOTH the wake and the
-    /// live-match handle internally — by construction, no code outside
-    /// this module can ever hold the queue Arc, the wake, or the
-    /// live-match handle: there is nothing to alias.
     // Over clippy's default 7-argument threshold. A named-field params
     // struct (what `StatusInputs` does for `StatusState::snapshot`) would
     // reshape all 9 call sites, so this stays a targeted allow — same
@@ -149,37 +114,10 @@ impl<R: tauri::Runtime> Engine<R> {
         }
     }
 
-    /// Read accessor for the shared history store: the settings window's
-    /// `get_history`/`clear_history` commands (`settings.rs`) call this
-    /// to reach the SAME `Arc<HistoryStore>` the accept path in `accept`
-    /// (above) appends through, rather than opening a second
-    /// `HistoryStore` over the same file. Two instances would mean two
-    /// independent instance-level locks guarding one file — no mutual
-    /// exclusion between an accept-path append and a settings-window
-    /// clear. `None` when history is disabled (the default), matching
-    /// `self.history`'s own meaning. Cheap: an `Option<Arc<_>>` clone.
     pub fn history_store(&self) -> Option<Arc<HistoryStore>> {
         self.history.clone()
     }
 
-    /// Propagating mutation — async callers (http, settings, pollers).
-    /// Reads Instant::now() ONCE (the system's only wall-clock read for
-    /// queue time), locks, runs `f`, captures slot_state_if_changed,
-    /// notify_waiters, emits, THEN unlocks — matching the rotation loop's
-    /// own precedent (`spawn_rotation`, below) of emitting while still
-    /// holding the queue lock. Emitting after unlock would leave a gap:
-    /// two concurrent `apply`/`accept` calls could compute their
-    /// slot_change under the lock, unlock, and then race to call
-    /// `emit_slot_state` in whichever order the scheduler resumed them,
-    /// so a preempted caller could deliver a stale S1 on the wire after a
-    /// newer S2 had already landed, parking the frontend on stale state
-    /// until the next content change. Emitting under the lock serializes
-    /// emission order with lock-acquisition order (the queue mutex is the
-    /// only ordering authority here). This is safe specifically because
-    /// `emit_slot_state`/`app.emit` is a synchronous, non-blocking post
-    /// (no `.await` anywhere in this scope) — the exact property that
-    /// already let the rotation loop emit under its own lock; do not add
-    /// an `.await` inside this block.
     pub async fn apply<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
         let now = Instant::now();
         let mut q = self.queue.lock().await;
@@ -196,14 +134,8 @@ impl<R: tauri::Runtime> Engine<R> {
         out
     }
 
-    /// Propagating mutation — main-thread callers (tray, hotkeys). Same
-    /// body with blocking_lock, same under-the-lock emit as `apply`
-    /// above (see its doc comment for why); keeps toggle_pause's
-    /// debug_assert!(Handle::try_current().is_err()) guard.
+    /// Propagating mutation — main-thread callers (tray, hotkeys).
     pub fn apply_blocking<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
-        // menu events and global-shortcut handlers arrive on the main
-        // thread, outside the tokio runtime, so a blocking lock is safe
-        // here
         debug_assert!(
             tokio::runtime::Handle::try_current().is_err(),
             "tray/hotkey handlers must arrive off the tokio runtime; blocking_lock would deadlock"
@@ -229,20 +161,12 @@ impl<R: tauri::Runtime> Engine<R> {
         f(&q)
     }
 
-    /// Non-propagating read — main-thread callers. No wake, no emit.
+    /// Non-propagating read — main-thread callers.
     pub fn read_blocking<T>(&self, f: impl FnOnce(&SingleSlotQueue) -> T) -> T {
         let q = self.queue.blocking_lock();
         f(&q)
     }
 
-    /// The one ingest path: enqueue with the mutate→wake→emit protocol.
-    /// QueueFull returns early, no wake. A malformed `/notify` request
-    /// never reaches this function at all (the title/body `MissingField`
-    /// checks in `notify_handler` return a 400 before an `Event` is even
-    /// constructed), and every accepted event is emitted and wakes the
-    /// rotation loop — routed through this one shared method rather than
-    /// duplicated at each caller, so a mutation without a wake is
-    /// structurally impossible to express here.
     pub async fn accept(
         &self,
         event: Event,
@@ -262,10 +186,7 @@ impl<R: tauri::Runtime> Engine<R> {
             }
             enqueue_result?;
             tracing::debug!(id = %recorded.id, origin = ?recorded.origin, priority = ?recorded.priority, "accept: enqueued");
-            // emit under the lock, same rationale as `apply`
-            // above (see its doc comment) — a preempted `accept`/`apply`
-            // must never be able to deliver a stale slot-state after a
-            // newer one has already landed on the wire.
+            // emit under the lock, same rationale as `apply` above (see its doc comment).
             let slot_change = q.slot_state_if_changed();
             self.wake.notify_waiters();
             if let Some(state) = slot_change {
@@ -276,14 +197,7 @@ impl<R: tauri::Runtime> Engine<R> {
                 emit_slot_state(&self.app, state);
             }
         }
-        // best-effort history append. ONE-SHOT ONLY —
-        // `Recurring` is the ambient live-scoreboard card, which
-        // topic-supersedes on every poll cycle; recording it would bury
-        // the discrete notifications this feature exists to recover under
-        // ~100 near-identical score updates per match. A write failure
-        // must never fail an accept: the notification already promoted.
-        // Log id/origin only — never title/body, matching this function's
-        // existing content-clean logging.
+        // A write failure must never fail an accept: the notification already promoted.
         if let Some(store) = &self.history {
             if matches!(recorded.rotation, RotationSpec::OneShot { .. }) {
                 if let Err(e) = store.append(&recorded) {
@@ -294,29 +208,14 @@ impl<R: tauri::Runtime> Engine<R> {
         Ok(())
     }
 
-    /// Compares to the new summary, stores it, and wakes the rotation
-    /// loop ONLY if it changed, via the shared `AmbientSlot::update`. Not
-    /// `apply`/`accept`: it never touches the queue.
+    /// Compares to the new summary, stores it, and wakes the rotation loop ONLY if it changed, via
+    /// the shared `AmbientSlot::update`. Not `apply`/`accept`: it never touches the queue.
     pub fn update_live_match(&self, summary: Option<LiveMatchSummary>) {
         self.live.update(summary, &self.wake);
     }
 
-    /// The rotation loop lives inside the Engine so `wake` never
-    /// escapes. It is the *consumer* of the
-    /// wake, not a producer, so it gets its own private loop (lock →
-    /// tick → emit-if-changed → arm → read deadline → unlock →
-    /// sleep/await; NO notify from this path — running it through
-    /// `apply` would wake the loop itself every iteration and spin).
-    ///
-    /// Deadline-based: sleeps until the visible item's rotation deadline
-    /// (or forever when idle) and is woken by any queue mutation. A small
-    /// grace addition avoids sub-ms re-loops at the edge. The wake waiter
-    /// is armed *while holding the queue lock* (`Notified::enable`), so a
-    /// wake landing between unlock and park can never be lost. The loop
-    /// is also the SOLE status-state emitter — every mutation already
-    /// reaches it, so each pass recomputes the StatusState under the same
-    /// queue lock as the slot-state tick and emits only when it differs
-    /// from the previous pass (`last_status`).
+    /// The rotation loop lives inside the Engine so `wake` never escapes. A small grace addition
+    /// avoids sub-ms re-loops at the edge.
     pub fn spawn_rotation(&self) {
         let app = self.app.clone();
         let queue = self.queue.clone();
@@ -328,16 +227,12 @@ impl<R: tauri::Runtime> Engine<R> {
         tauri::async_runtime::spawn(async move {
             let mut last_status: Option<StatusState> = None;
             loop {
-                // Arm the wake waiter *while holding the queue lock*:
-                // every mutation site locks the queue before mutating
-                // and calls `notify_waiters()` after unlocking, so a waiter
-                // registered under the lock can never miss a mutation this
-                // iteration's `next_deadline()` didn't already see.
+                // Arm the wake waiter *while holding the queue lock*: every mutation site locks
+                // the queue before mutating and calls `notify_waiters()` after unlocking.
                 let notified = wake.notified();
                 tokio::pin!(notified);
                 let deadline = {
-                    // read/clone/drop the
-                    // live-match handle BEFORE locking the queue — nobody
+                    // read/clone/drop the live-match handle BEFORE locking the queue — nobody
                     // holds both at the same time.
                     let live_summary = live.snapshot();
                     let mut q = queue.lock().await;
@@ -368,9 +263,6 @@ impl<R: tauri::Runtime> Engine<R> {
                             news_charge,
                         },
                     );
-                    // presence + liveness-clearing ride the same pass
-                    // that computes the StatusState the strip renders
-                    // from — one derivation, both sides.
                     let present = crate::tabs::present_tabs(&status);
                     {
                         let mut p = tab_wire
@@ -413,33 +305,13 @@ impl<R: tauri::Runtime> Engine<R> {
         });
     }
 
-    /// Non-emitting read of the current `SlotState` for the on_page_load
-    /// boot-shield site (`lib.rs`), so the caller can plant the
-    /// `window.__NOTCHTAP_SLOT_STATE__` eval-splice global BEFORE the
-    /// wire `slot-state` emit fires — a webview that mounts between an
-    /// unconditional emit and the global assignment would read
-    /// `undefined`. Routes through `current_slot_state_for_emission`, not
-    /// the plain `current_slot_state`, so it counts as a real emission for
-    /// the TTL-restart sampler even though the `app.emit` call happens
-    /// separately, at the caller's chosen moment. No wake: nothing
-    /// mutated.
+    /// Non-emitting read of the current `SlotState` for the on_page_load boot-shield site
+    /// (`lib.rs`).
     pub fn current_slot_state_blocking(&self) -> SlotState {
         let mut q = self.queue.blocking_lock();
         q.current_slot_state_for_emission(Instant::now())
     }
 
-    /// Webview-reload re-emit (the on_page_load slot-state site): reads
-    /// current_slot_state and emits it UNCONDITIONALLY (dedup
-    /// deliberately bypassed — a freshly reloaded webview has no state,
-    /// so it must be re-sent even if unchanged), returns it for the
-    /// eval-splice global seed. No wake: nothing mutated.
-    ///
-    /// Built from `current_slot_state_blocking` above: one atomic
-    /// compute+emit method for callers that don't need the two halves
-    /// independently ordered. `lib.rs`'s on_page_load site calls the two
-    /// halves directly instead, precisely because it DOES need that
-    /// ordering (see the other method's doc). Only this module's tests
-    /// call it, hence `#[cfg(test)]`.
     #[cfg(test)]
     pub fn emit_current_blocking(&self) -> SlotState {
         let state = self.current_slot_state_blocking();
@@ -447,17 +319,6 @@ impl<R: tauri::Runtime> Engine<R> {
         state
     }
 
-    /// Non-emitting read of the current `StatusState` — same inputs as
-    /// `emit_current_status_blocking`, no wire event. Reads must not
-    /// re-emit `status-state`: that would flood the webview and defeat
-    /// `hover-changed`'s transitions-only idle-cost discipline. `pub` for
-    /// its callers: `emit_current_status_blocking` below, and (for the
-    /// same boot-shield-ordering reason `current_slot_state_blocking`
-    /// exists above) `lib.rs`'s on_page_load site, which calls this
-    /// directly so it can plant the `window.__NOTCHTAP_STATUS_STATE__`
-    /// global before emitting rather than after. Lock discipline matches
-    /// every caller: the live handle locked and dropped before the queue
-    /// lock.
     pub fn status_snapshot_blocking(&self) -> StatusState {
         let live_summary = self.live.snapshot();
         let q = self.queue.blocking_lock();
@@ -483,17 +344,6 @@ impl<R: tauri::Runtime> Engine<R> {
         )
     }
 
-    /// The StatusState twin of `emit_current_blocking` — same atomic
-    /// compute+emit shape, over StatusState instead of SlotState, using
-    /// the Engine's own `live`/`espn_enabled`/`rss_enabled`. Also
-    /// bypasses the rotation loop's `last_status` dedup (that guard
-    /// belongs to the loop's task, not to this method) for the same
-    /// reload reason. No wake. Lock discipline: the live-match handle is
-    /// read/cloned/dropped BEFORE the queue lock (nobody holds both at
-    /// once), same as the rotation loop. `lib.rs`'s on_page_load site
-    /// calls `status_snapshot_blocking` directly instead of this method
-    /// (see that method's doc) — this one is kept for callers (and this
-    /// module's own test) that don't need the plant/emit ordering split.
     #[cfg(test)]
     pub fn emit_current_status_blocking(&self) -> StatusState {
         let state = self.status_snapshot_blocking();
@@ -534,10 +384,6 @@ mod tests {
 
     #[tokio::test]
     async fn apply_wakes_and_emits() {
-        // Registering the waiter *before* the call via `enable()` proves
-        // the wake fires — `notify_waiters()` only wakes tasks already
-        // parked, it never queues a permit for a future `.notified()`
-        // call.
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
 
@@ -585,8 +431,6 @@ mod tests {
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
-        // fill the Medium tier: first promotes into the visible slot,
-        // second takes the one waiting slot
         engine.accept(event(Priority::Medium), false).await.unwrap();
         engine.accept(event(Priority::Medium), false).await.unwrap();
 
@@ -609,16 +453,10 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_loop_parked_idle_wakes_on_accept() {
-        // With the queue empty the rotation loop parks with no fallback
-        // timer, so an accept's `notify_waiters()` is its ONLY chance to
-        // learn about the new item. Exercises the path end-to-end:
-        // idle-park → accept wakes → item rotates out on its deadline.
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
         engine.spawn_rotation();
 
-        // Give the loop time to finish its first iteration and reach the
-        // idle park before the accept arrives.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let mut short_lived = event(Priority::Medium);
@@ -647,12 +485,6 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_loop_rotates_out_via_deadline_sleep_not_polling() {
-        // The rotation loop sleeps until the visible item's rotation
-        // deadline (or forever when idle) instead of polling a fixed
-        // interval — this proves the sleep fires and rotates the item out
-        // once its window elapses, driven purely by the deadline (plus
-        // apply's wake after the enqueue, the same wake every mutation
-        // path performs).
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
         engine.spawn_rotation();
@@ -683,36 +515,6 @@ mod tests {
         );
     }
 
-    // The dedup tripwire. The rotation loop (the `loop` in
-    // `spawn_rotation`) is woken by `notify_waiters()` after EVERY
-    // mutation, then independently re-locks the queue and calls `q.tick` +
-    // `q.slot_state_if_changed()` a SECOND time, downstream of the
-    // mutation site's (`accept`'s) own emit — that is the protocol working
-    // as designed. `SlotState::Showing::remaining_ms` is computed from
-    // `Instant::now()` inside `current_slot_state`, so the two calls a few
-    // ms apart always differ on that field alone; without
-    // `SlotState::dedup_eq` (which deliberately excludes `remaining_ms`,
-    // see its doc comment in event.rs) one `accept()` emits twice. With
-    // the dedup split, this must be exactly 1: the recheck sees an
-    // unchanged `ttl_ms` and no other differing field, so it dedupes.
-    //
-    // If a change makes this assert !=1, it means either the dedup split
-    // broke, or a non-deduping emitter was introduced elsewhere — do not
-    // "fix" this test by loosening the assertion.
-    //
-    // Ordering note: `accept()` runs BEFORE `spawn_rotation()` here,
-    // deliberately — `tauri::async_runtime::spawn` schedules onto Tauri's
-    // own (real, separate) async runtime, not this test's `#[tokio::test]`
-    // one, so a rotation loop already running against an *empty* queue
-    // races the test's own setup for OS-scheduling reasons unrelated to
-    // this regression: its first iteration sees `last_emitted == None` and
-    // unconditionally emits a startup `Empty` state, and under real system
-    // load no fixed settle delay reliably drains that emission before the
-    // observation window starts. Doing the one `accept()` call FIRST means
-    // the queue already holds the visible item by the time
-    // `spawn_rotation()` starts, so the loop's first iteration is itself
-    // the "downstream recheck" this test exists to exercise — no empty
-    // queue, no startup emission, nothing to race.
     #[tokio::test]
     async fn one_accept_emits_exactly_one_slot_state_despite_live_remaining_ms() {
         let app = tauri::test::mock_app();
@@ -727,8 +529,6 @@ mod tests {
             });
         }
 
-        // long ttl so the item is still visible (and no rotation-out
-        // occurs) during the observation window below.
         let mut long_lived = event(Priority::Medium);
         long_lived.rotation = RotationSpec::OneShot { ttl_secs: 30 };
         engine.accept(long_lived, false).await.unwrap();
@@ -738,11 +538,8 @@ mod tests {
             "accept() itself must have emitted exactly once"
         );
 
-        // only now start the rotation loop — its first iteration is the
-        // downstream recheck under test.
         engine.spawn_rotation();
 
-        // give the rotation loop's recheck time to run.
         tokio::time::sleep(Duration::from_millis(300)).await;
 
         assert_eq!(
@@ -755,9 +552,6 @@ mod tests {
 
     #[test]
     fn emit_current_returns_and_emits() {
-        // The webview-reload re-emit: dedup deliberately bypassed, so two
-        // back-to-back calls both emit AND return the same state (a fresh
-        // webview has no state and must be re-sent even if unchanged).
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
 
@@ -771,8 +565,6 @@ mod tests {
         }
 
         engine.apply_blocking(|q, now| q.enqueue(event(Priority::Medium), now).unwrap());
-        // the promotion itself emitted once via apply_blocking; count only
-        // the re-emits from here on
         emit_count.store(0, Ordering::SeqCst);
 
         let first = engine.emit_current_blocking();
@@ -788,12 +580,6 @@ mod tests {
 
     #[test]
     fn current_slot_state_blocking_returns_without_emitting() {
-        // The boot-shield-ordering split half: `lib.rs`'s
-        // on_page_load site needs the state BEFORE the wire emit fires
-        // (to plant the eval-splice global first) — this proves the split
-        // method really is non-emitting, so that ordering is achievable
-        // at all. `emit_current_blocking` (tested above) still emits;
-        // this is its silent twin.
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
 
@@ -817,8 +603,6 @@ mod tests {
             "current_slot_state_blocking must not emit — the caller controls when/if it does"
         );
 
-        // and emit_current_blocking, built from it, emits exactly once
-        // per call.
         let emitted = engine.emit_current_blocking();
         assert_eq!(emitted, state);
         assert_eq!(emit_count.load(Ordering::SeqCst), 1);
@@ -826,8 +610,6 @@ mod tests {
 
     #[test]
     fn emit_current_status_returns_and_emits() {
-        // StatusState twin of emit_current_returns_and_emits: same
-        // bypass, over the Engine's own live/flags.
         let app = tauri::test::mock_app();
         let engine = Engine::new(
             SingleSlotQueue::new(50),
@@ -863,8 +645,6 @@ mod tests {
 
     #[tokio::test]
     async fn update_live_match_wakes_only_on_change() {
-        // Mirrors status.rs's status_state_if_changed test pattern: store
-        // on change wakes; re-store of the same value does not.
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
 
@@ -896,9 +676,6 @@ mod tests {
             .expect("a changed summary must wake again");
     }
 
-    // history hook tests. `with_limits` in a fresh temp dir per
-    // test — never the real config dir (see history.rs's own temp_dir()
-    // helper for why a shared dir is unsafe here too).
     fn history_temp_dir() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
             "notchtap-enginehistorytest-{}",
@@ -932,10 +709,6 @@ mod tests {
 
     #[tokio::test]
     async fn accept_does_not_record_recurring_event() {
-        // THE TRIPWIRE for the core design decision: `Recurring` events
-        // (the ambient live-scoreboard card) must never be written to
-        // history — if someone later "simplifies" the gate away, this
-        // test must fail.
         let app = tauri::test::mock_app();
         let dir = history_temp_dir();
         let store =
@@ -962,14 +735,6 @@ mod tests {
 
     #[tokio::test]
     async fn accept_with_history_disabled_writes_nothing() {
-        // Engine built with `None` (test_engine's default) — the store is
-        // never even constructed, so there is no directory `accept` could
-        // possibly write to. Assert the field directly (tests share
-        // module scope with private fields) AND that an unrelated temp
-        // dir stays empty, as a belt-and-suspenders regression pin: if a
-        // future change made the `None` path fall back to constructing a
-        // default store somewhere, this would catch the field flipping
-        // to `Some` even before any file shows up.
         let app = tauri::test::mock_app();
         let dir = history_temp_dir();
         let engine = test_engine(&app);
@@ -986,14 +751,6 @@ mod tests {
              let alone in this unrelated temp dir"
         );
     }
-
-    // --- history_store(): the accessor settings.rs's get_history/
-    // clear_history commands route through instead of opening a second
-    // `HistoryStore` — two instances over one file share no lock, so a
-    // settings-window clear could interleave unguarded with an
-    // accept-path append. `Arc::ptr_eq` is the assertion that matters:
-    // same allocation means same instance-level `Mutex`, i.e. one lock
-    // guarding the file, not two.
 
     #[tokio::test]
     async fn history_store_returns_a_clone_of_the_same_arc_the_accept_path_writes_through() {
@@ -1020,9 +777,6 @@ mod tests {
              Mutex and reintroduce the unguarded race this accessor exists to close"
         );
 
-        // And it is genuinely the live instance: an append made directly
-        // through the accessor's handle is visible to a read through the
-        // original `store` binding, and vice versa.
         accessed
             .append(&test_fixtures::event("via-accessor"))
             .unwrap();
@@ -1038,20 +792,11 @@ mod tests {
         assert!(engine.history_store().is_none());
     }
 
-    // settings-window Queue section — `clear_waiting`, called
-    // through `apply` (no bespoke Engine method needed; see `apply`'s own
-    // doc comment above), must reach the overlay as a fresh slot-state
-    // emit so the visible card's progress dots update. This is
-    // `apply`'s existing `slot_state_if_changed`-gated emit, exercised
-    // here specifically for a mutation that changes `queue_total`
-    // without touching `visible` at all — the case `apply_wakes_and_emits`
-    // above doesn't cover.
     #[tokio::test]
     async fn clear_queue_apply_emits_a_fresh_slot_state_for_the_progress_dots() {
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
 
-        // one promotes to visible, one is left WAITING.
         engine.accept(event(Priority::Medium), false).await.unwrap();
         engine.accept(event(Priority::Medium), false).await.unwrap();
 
@@ -1075,12 +820,6 @@ mod tests {
         );
     }
 
-    // The companion case: nothing visible, nothing left waiting after the
-    // clear — `current_slot_state()` was `Empty` before and stays `Empty`
-    // after, so there is genuinely nothing for the wire to say and `apply`
-    // correctly emits nothing. Paused so the enqueue below stays WAITING
-    // rather than promoting into `visible` (mirrors
-    // `pause_sends_enqueues_to_waiting_even_with_free_slot` in queue.rs).
     #[tokio::test]
     async fn clear_queue_apply_emits_nothing_when_nothing_was_ever_visible() {
         let app = tauri::test::mock_app();

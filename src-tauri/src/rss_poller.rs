@@ -15,9 +15,8 @@ use crate::poller::Backoff;
 
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
-// matches http.rs's SUBTITLE_MAX_CHARS (same fixed-window
-// display-safety rationale) — the topic label rides the same subtitle
-// slot a `/notify` caller's rich-relay subtitle uses.
+// matches http.rs's SUBTITLE_MAX_CHARS (same fixed-window display-safety rationale) — the topic
+// label rides the same subtitle slot a `/notify` caller's rich-relay subtitle uses.
 const TOPIC_SUBTITLE_MAX_CHARS: usize = 120;
 const MAX_FEED_BYTES: usize = 1024 * 1024;
 const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
@@ -26,8 +25,6 @@ const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("parliament", "politics"),
     ("tech", "tech"),
     ("gadget", "tech"),
-    // science gets its own category (cat-science, --cat: #f2a2c8)
-    // instead of falling under tech.
     ("science", "science"),
     ("physics", "science"),
     ("space", "science"),
@@ -44,9 +41,6 @@ const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("international", "world"),
 ];
 
-/// Bounded, process-local memory of stories observed across every configured
-/// feed. Insertion order is retained separately from membership so eviction
-/// is deterministic and does not depend on hash iteration order.
 #[derive(Default)]
 pub struct SeenStore {
     keys: HashSet<String>,
@@ -87,14 +81,7 @@ impl SeenStore {
     }
 }
 
-/// Expands a plain-language topic ("aston villa transfers") into a
-/// Google News query-feed URL. The `hl`/`gl`/`ceid`
-/// triple is required, not decorative: Google News's RSS search
-/// endpoint is a documented quirk here — omitting any of the three
-/// yields empty or inconsistent results. Shared verbatim by the
-/// continuous poller's topic list (`merge_feed_sources`, below) and the
-/// one-shot `search_once` — a query typed into "Search now" expands
-/// exactly the same way as a configured topic line, one path, no fork.
+/// Expands a plain-language topic ("aston villa transfers") into a Google News query-feed URL.
 pub(crate) fn expand_topic_url(topic: &str) -> String {
     let mut url =
         reqwest::Url::parse("https://news.google.com/rss/search").expect("static url must parse");
@@ -106,21 +93,15 @@ pub(crate) fn expand_topic_url(topic: &str) -> String {
     url.to_string()
 }
 
-/// One poll unit: either a configured feed (`topic: None`) or a
-/// topic-expanded query feed (`topic: Some(label)`). `diff_feed` uses
-/// the label to stamp `meta.subtitle` on every event it produces from
-/// this source — a plain feed carries no subtitle.
+/// One poll unit: either a configured feed (`topic: None`) or a topic-expanded query feed (`topic:
+/// Some(label)`).
 pub(crate) struct PollSource {
     pub(crate) config: RssFeedConfig,
     pub(crate) topic: Option<String>,
 }
 
-/// Merges configured feeds with topic-expanded query feeds into ONE
-/// poll list: feeds first, then topics in configured
-/// order — an operator reading their own config top-to-bottom sees the
-/// same order reflected in poll sequence. Each topic line is trimmed;
-/// an empty (or whitespace-only) line is skipped rather than expanding
-/// to a nonsense query.
+/// Merges configured feeds with topic-expanded query feeds into ONE poll list: feeds first, then
+/// topics in configured order.
 pub(crate) fn merge_feed_sources(feeds: &[RssFeedConfig], topics: &[String]) -> Vec<PollSource> {
     let mut sources: Vec<PollSource> = feeds
         .iter()
@@ -157,11 +138,6 @@ fn dedup_key(guid: Option<&str>, link: Option<&str>) -> Option<String> {
     link.map(canonical_link).filter(|value| !value.is_empty())
 }
 
-/// Produces the deliberately small canonical form required for RSS dedup.
-/// This is not a general URL normalizer: it handles ordinary absolute HTTP(S)
-/// links, lowercases only the scheme and authority, removes query/fragment,
-/// and removes at most one trailing slash. Percent-encoding, default ports,
-/// dot-segments, and relative URLs are intentionally left untouched.
 fn canonical_link(url: &str) -> String {
     let trimmed = url.trim();
     let cut_at = [trimmed.find('?'), trimmed.find('#')]
@@ -214,10 +190,6 @@ fn decode_entity(entity: &str) -> Option<char> {
         "gt" => Some('>'),
         "quot" => Some('"'),
         "apos" => Some('\''),
-        // Whitespace-like named entities decode to a plain ASCII space (not
-        // U+00A0/U+2002/etc) so the whitespace-collapse pass in `sanitize`
-        // merges runs of them like any other space — Google News RSS in
-        // particular emits `&nbsp;&nbsp;` between title and source.
         "nbsp" | "ensp" | "emsp" | "thinsp" => Some(' '),
         "ndash" => Some('–'),
         "mdash" => Some('—'),
@@ -257,8 +229,6 @@ fn decode_entity(entity: &str) -> Option<char> {
     }
 }
 
-// Longest entity text `decode_entity` recognizes is a numeric form like
-// `#x10FFFF` (8 chars); 10 leaves slack without reopening the O(n^2) scan.
 const MAX_ENTITY_LEN: usize = 10;
 
 fn decode_entities(text: &str) -> String {
@@ -268,11 +238,8 @@ fn decode_entities(text: &str) -> String {
 
     while index < chars.len() {
         if chars[index] == '&' {
-            // The window must hold up to MAX_ENTITY_LEN entity chars PLUS
-            // the terminating `;` itself, hence +2 (not +1): an entity of
-            // exactly MAX_ENTITY_LEN chars has its `;` at relative offset
-            // MAX_ENTITY_LEN, which needs a window of MAX_ENTITY_LEN + 1
-            // elements past the `&` to be visible to `.position()`.
+            // The window must hold up to MAX_ENTITY_LEN entity chars PLUS the terminating `;`
+            // itself.
             let window_end = (index + 2 + MAX_ENTITY_LEN).min(chars.len());
             if let Some(relative_end) = chars[index + 1..window_end]
                 .iter()
@@ -295,9 +262,7 @@ fn decode_entities(text: &str) -> String {
 }
 
 fn sanitize(text: &str, max_chars: usize) -> String {
-    // Output is truncated to max_chars below; stripping/decoding never
-    // lengthens text, so a bounded prefix is behavior-identical and keeps
-    // hostile multi-hundred-KB fields from costing full-length passes.
+    // Output is truncated to max_chars below; stripping/decoding never lengthens text.
     let bounded: String = text.chars().take(max_chars * 8).collect();
     let decoded = decode_entities(&strip_html_tags(&bounded));
     let mut collapsed = String::with_capacity(decoded.len());
@@ -324,29 +289,12 @@ fn sanitize(text: &str, max_chars: usize) -> String {
     }
 }
 
-/// True when a feed's URL is a Google News RSS endpoint — including the
-/// topic-expanded query feeds `expand_topic_url` builds, which always
-/// point at `news.google.com`. Google News is the ONE source whose
-/// `<description>` is a documented, fixed shape (`title + source name`,
-/// nothing else); an arbitrary configured feed offers no such guarantee,
-/// so this gates the title-prefix-plus-short-tail rule in
-/// `body_is_redundant` below.
 fn is_google_news_feed(url: &str) -> bool {
     reqwest::Url::parse(url)
         .map(|parsed| parsed.host_str() == Some("news.google.com"))
         .unwrap_or(false)
 }
 
-/// Detects a body that adds nothing over the title, so `diff_feed` can
-/// suppress it instead of rendering a duplicate of the headline back at
-/// the reader. Two rules are universally safe: (a) an empty body, and
-/// (b) a body fully contained in the title. A third rule — body equals
-/// title plus a short (<24 char) tail — is gated by `allow_title_prefix_tail`:
-/// it's only valid for Google News, whose `<description>` is always
-/// `title + source name` verbatim (see `is_google_news_feed`). Applied to
-/// an arbitrary configured feed, that rule would wrongly erase a genuine
-/// short summary like title "Earthquake hits city" / body "Earthquake
-/// hits city; 12 dead".
 fn body_is_redundant(title: &str, body: &str, allow_title_prefix_tail: bool) -> bool {
     fn normalize(text: &str) -> String {
         text.chars()
@@ -400,9 +348,6 @@ fn derive_source(configured_source: Option<&str>, feed: &feed_rs::model::Feed) -
     })
 }
 
-/// Pure set-difference and event-building heart of the RSS poller. All new
-/// keys enter the shared store before baseline/display filtering, so skipped
-/// or rate-limited stories cannot replay on a later tick.
 // 9 args trips clippy 1.97's too_many_arguments —
 // this is the pure, exhaustively-tested core and every argument is a
 // distinct test axis; bundling them would only obscure the test call
@@ -417,9 +362,6 @@ pub fn diff_feed(
     ttl_secs: u64,
     priority: Priority,
     now: Instant,
-    // `Some(label)` for a topic-expanded source — stamped onto
-    // every event's `meta.subtitle`. `None` for a plain configured feed,
-    // which carries no subtitle.
     topic: Option<&str>,
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
@@ -461,12 +403,6 @@ pub fn diff_feed(
                 .unwrap_or_default(),
             BODY_MAX_CHARS,
         );
-        // Google News RSS `<description>` is just the title (and source)
-        // repeated, not a real summary; suppress it rather than echo the
-        // headline back in the body slot. The frontend falls back to the
-        // headline in the expanded panel when body is empty. The
-        // title-prefix-plus-short-tail rule only fires for Google News
-        // feeds (`google_news`) — see `body_is_redundant`'s doc comment.
         if body_is_redundant(&title, &body, google_news) {
             body = String::new();
         }
@@ -487,8 +423,6 @@ pub fn diff_feed(
             priority,
             rotation: RotationSpec::OneShot { ttl_secs },
             topic: None,
-            // news has no football signal; Generic keeps the frontend's
-            // signature moments (goal/red card) exclusive to real signals
             signal: EventSignal::Generic,
             payload: EventPayload { title, body },
             meta: EventMeta {
@@ -496,10 +430,6 @@ pub fn diff_feed(
                 category,
                 published_at_ms: published,
                 link: link.map(str::to_string),
-                // rss items carry no details. a
-                // topic-derived item's subtitle carries the topic label
-                // that produced it; a plain configured feed still has
-                // none.
                 subtitle: topic.map(|label| sanitize(label, TOPIC_SUBTITLE_MAX_CHARS)),
                 details: Vec::new(),
                 // espn-only field; rss never populates it.
@@ -569,9 +499,7 @@ async fn fetch_feed(
         anyhow::bail!("unexpected http status {}", response.status());
     }
 
-    // read validators now, but only persist them after a successful parse:
-    // storing them on a failure path would make the next poll 304 and
-    // silently never retry an oversized/unparseable response.
+    // Persist validators only after the capped body parses, so failed payloads remain retryable.
     let etag = response
         .headers()
         .get(reqwest::header::ETAG)
@@ -591,13 +519,8 @@ async fn fetch_feed(
     Ok(Some(feed))
 }
 
-/// A feed's `config.url` is operator-supplied and may embed a
-/// token in its query string (a private feed URL, an API key param,
-/// etc.) — logging it verbatim would put a secret into a world-readable
-/// log file. Prefers the feed's own `source` label when the operator set
-/// one; otherwise falls back to just the URL's host (query string,
-/// userinfo, and path all stripped) so the log line still identifies
-/// WHICH feed failed without leaking whatever the query string carries.
+/// A feed's `config.url` is operator-supplied and may embed a token in its query string (a private
+/// feed URL, an API key param, etc.).
 fn feed_log_ref(config: &RssFeedConfig) -> String {
     if let Some(source) = config.source.as_deref().filter(|s| !s.trim().is_empty()) {
         return source.to_string();
@@ -653,9 +576,6 @@ pub fn spawn_rss_poller(
 
         loop {
             interval.tick().await;
-            // the PREVIOUS
-            // cycle ends at this tick boundary — evaluate the charge edge
-            // BEFORE this pass lands anything new.
             tab_wire
                 .news_charge
                 .lock()
@@ -678,9 +598,8 @@ pub fn spawn_rss_poller(
                         continue;
                     }
                     Err(error) => {
-                        // never log the full feed url (it may embed a
-                        // token) — `feed_log_ref` reduces it to
-                        // the operator's `source` label or the bare host.
+                        // never log the full feed url (it may embed a token) — `feed_log_ref`
+                        // reduces it to the operator's `source` label or the bare host.
                         tracing::warn!(feed = %feed_log_ref(&source.config), "rss poll failed: {error}");
                         state.backoff.on_failure(now);
                         continue;
@@ -689,9 +608,6 @@ pub fn spawn_rss_poller(
 
                 let events = {
                     let seen_state = app_handle.state::<StdMutex<SeenStore>>();
-                    // poison-tolerant — a panic while holding this
-                    // lock elsewhere must not permanently kill the rss
-                    // poller task, same convention as settings.rs/crests.rs.
                     let mut seen = seen_state.lock().unwrap_or_else(|e| e.into_inner());
                     diff_feed(
                         &mut seen,
@@ -710,8 +626,6 @@ pub fn spawn_rss_poller(
                 for event in events {
                     match engine.accept(event, false).await {
                         Ok(()) => {
-                            // one charge unit per item that
-                            // actually landed (accepted, not dropped).
                             tab_wire
                                 .news_charge
                                 .lock()
@@ -729,17 +643,6 @@ pub fn spawn_rss_poller(
 }
 
 /// One-shot fetch+diff for an ad-hoc search (`settings::search_news_now`).
-/// The caller is expected to have built `url` via the
-/// SAME `expand_topic_url` the continuous poller's topic list uses (one
-/// shared path, no fork — see `search_news_now`'s own body) and to pass
-/// the exact (trimmed) query back in as `topic_label`, stamped onto
-/// every returned event's `meta.subtitle` the same way a configured
-/// topic line's label is. Does a single fresh GET (a throwaway
-/// `FeedState` — no etag/last-modified persists across calls, so a
-/// repeated search always re-fetches rather than 304ing forever), and
-/// dedups through the SAME `seen` store the poller loop above shares
-/// via app-managed state — a story the background poller already
-/// showed won't be re-enqueued by a search, and vice versa.
 pub async fn search_once(
     client: &reqwest::Client,
     seen: &StdMutex<SeenStore>,
@@ -759,8 +662,6 @@ pub async fn search_once(
         category: None,
     };
     let now = Instant::now();
-    // poison-tolerant, same convention as settings.rs/crests.rs and
-    // the poller loop's own lock above.
     let mut guard = seen.lock().unwrap_or_else(|e| e.into_inner());
     Ok(diff_feed(
         &mut guard,
@@ -809,9 +710,6 @@ mod tests {
             category: None,
         }
     }
-
-    // --- `feed_log_ref` must never leak the full feed url (which may
-    // embed a token in its query string) into a log line ---
 
     #[test]
     fn feed_log_ref_prefers_the_operator_supplied_source_label() {
@@ -958,41 +856,25 @@ mod tests {
 
     #[test]
     fn ampersand_flood_without_semicolons_is_linear() {
-        // Hostile input: no ';' anywhere, so the pre-cap decoder would
-        // rescan the remainder of the string for every '&'. The bounded
-        // window + bounded sanitize prefix make this structurally linear
-        // rather than O(n^2) — this test asserts on output content, not
-        // wall time.
         let flood = "&".repeat(100_000);
         let result = sanitize(&flood, 240);
         assert!(result.starts_with("&&&"));
-        // truncated output is max_chars plus a single trailing ellipsis char
         assert!(result.chars().count() <= 241);
     }
 
     #[test]
     fn entities_still_decode_at_boundaries() {
-        // ordinary named entity, unaffected by the window bound
         assert_eq!(sanitize("&amp;", 10), "&");
 
-        // entity text exactly MAX_ENTITY_LEN (10) chars — "#x0001F600" —
-        // still fits the search window and must decode to the
-        // grinning-face emoji U+1F600.
         assert_eq!(sanitize("&#x0001F600;", 10), "\u{1F600}");
 
-        // one char longer (11, "#x00001F600") pushes the ';' outside the
-        // window: the literal text must pass through unchanged. This is
-        // the pair that actually fails if the window arithmetic regresses.
         assert_eq!(sanitize("&#x00001F600;", 20), "&#x00001F600;");
 
-        // existing-behavior regression guard, copied from
-        // sanitize_decodes_numeric_entities_and_collapses_whitespace.
         assert_eq!(sanitize("A&#39;B &#x1F4F0;", 100), "A'B 📰");
     }
 
     #[test]
     fn body_is_redundant_when_equal_after_normalization() {
-        // rules (a)/(b) are universal — the flag must not matter here.
         assert!(body_is_redundant(
             "Real Madrid win the league",
             "Real Madrid, win the league!",
@@ -1007,7 +889,6 @@ mod tests {
 
     #[test]
     fn body_is_redundant_when_body_is_a_subset_of_title() {
-        // rule (b) is universal — the flag must not matter here.
         assert!(body_is_redundant(
             "Real Madrid win the league - full report",
             "Real Madrid win the league",
@@ -1031,8 +912,6 @@ mod tests {
 
     #[test]
     fn body_is_not_redundant_when_title_followed_by_short_tail_and_flag_unset() {
-        // rule (c) — title-prefix-plus-short-tail — is Google-News-only.
-        // For a generic feed a short genuine tail must survive.
         assert!(!body_is_redundant(
             "Real Madrid win the league",
             "Real Madrid win the league  Yahoo Sports",
@@ -1074,7 +953,6 @@ mod tests {
 
     #[test]
     fn category_derivation_uses_entry_tag_hit() {
-        // science retargeted off tech onto its own category.
         assert_eq!(
             derive_category(&["Science".to_string()], Some("world")),
             Some("science".to_string())
@@ -1132,8 +1010,6 @@ mod tests {
         feed.title = None;
         assert_eq!(derive_source(None, &feed), None);
     }
-
-    // --- topic expansion + merge ---
 
     #[test]
     fn expand_topic_url_shape_encodes_the_query_and_carries_the_locale_triple() {
@@ -1317,9 +1193,6 @@ mod tests {
 
     #[test]
     fn diff_feed_keeps_short_genuine_summary_on_a_non_google_news_feed() {
-        // Rule (c) (title-prefix-plus-short-tail) must NOT fire for an
-        // arbitrary configured feed — only Google News's `<description>`
-        // is guaranteed to be title+source with no real content.
         let feed = parse_feed(
             r#"<item><guid>quake</guid><title>Earthquake hits city</title><link>https://example.com/quake</link><description>Earthquake hits city; 12 dead</description></item>"#,
         );
@@ -1541,8 +1414,6 @@ mod tests {
         let mut second = parse_feed(
             r#"<item><guid>second-feed-id</guid><title>Same story</title><link>https://news.example.com/Story#top</link></item>"#,
         );
-        // feed-rs synthesizes ids when a source omits guid. Clear the parsed
-        // ids to exercise the contract's canonical-link fallback directly.
         first.entries[0].id.clear();
         second.entries[0].id.clear();
 
@@ -1576,9 +1447,6 @@ mod tests {
         )
         .is_empty());
     }
-
-    // --- wiremock: fetch_feed's decision surface (304 / validator
-    // ordering / size cap). no live rss fetch, ever. ---
 
     mod fetch_feed_tests {
         use super::*;
@@ -1636,8 +1504,6 @@ mod tests {
             let result = fetch_feed(&client(), &url, &mut state).await;
 
             assert!(result.is_err());
-            // the bug-guard: a failed parse must NOT persist validators, or
-            // the next poll would 304 forever and silently never retry.
             assert_eq!(state.etag, None);
             assert_eq!(state.last_modified, None);
         }
@@ -1690,10 +1556,6 @@ mod tests {
         #[tokio::test]
         async fn conditional_headers_sent_when_state_has_validators() {
             let server = MockServer::start().await;
-            // `header()` splits comma-separated header values by design (for
-            // multi-value headers like cache-control), which mismatches an
-            // HTTP-date's internal comma. `header_regex` compares the raw
-            // value instead.
             Mock::given(method("GET"))
                 .and(path("/feed"))
                 .and(header("If-None-Match", "\"etag-value\""))
@@ -1713,15 +1575,9 @@ mod tests {
             let url = format!("{}/feed", server.uri());
             let result = fetch_feed(&client(), &url, &mut state).await.unwrap();
 
-            // no `.and(header(..))` matcher registered without validators, so
-            // a match here proves the request actually carried both headers.
             assert!(result.is_none());
         }
     }
-
-    // --- search_once's fetch-once/dedup/subtitle
-    // contract, same wiremock-not-live-fetch discipline as
-    // fetch_feed_tests above. ---
 
     mod search_once_tests {
         use super::*;
@@ -1801,9 +1657,6 @@ mod tests {
             .unwrap();
             assert_eq!(first.len(), 1);
 
-            // Same story, second search (poller-shared SeenStore semantics):
-            // already-seen keys never re-emit, mirroring the poller loop's
-            // own tick-over-tick behavior.
             let second = search_once(
                 &client(),
                 &seen,

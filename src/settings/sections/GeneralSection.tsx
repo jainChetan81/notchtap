@@ -14,15 +14,6 @@ import { Segmented } from "../controls/Segmented";
 import type { Config, SourceKind } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES, SOURCE_LABELS } from "../types";
 
-// Validates a `"HH:MM-HH:MM"` (24h) silence window string with the EXACT
-// rules `src-tauri/src/silence.rs`'s `Window::parse` enforces — split on
-// the first `-`, split each half on the first `:`, both halves
-// digits-only in range (hours 0-23, minutes 0-59), start != end (a
-// zero-length window has no unambiguous meaning in this format).
-// Midnight-crossing (start > end) is deliberately NOT rejected here —
-// `Window::in_window` handles it, same as rust. Returns `true`/`false`
-// only; this control needs just whether the text is save-able —
-// `parseHhMm` yields minutes solely for that comparison.
 function parseHhMm(part: string): number | null {
   const colonIdx = part.indexOf(":");
   if (colonIdx === -1) {
@@ -51,15 +42,6 @@ export function isValidSilenceWindow(raw: string): boolean {
   return start !== null && end !== null && start !== end;
 }
 
-// Follows `NumberControl`'s idiom exactly (controls.tsx) — a local
-// raw-string mirror of the committed value, re-synced via `useEffect` only
-// when the EXTERNAL value changes (Reset, a fresh `get_config`), so
-// mid-edit keystrokes are never fought. An invalid in-progress value is
-// never silently discarded: `raw` reflects exactly what's typed,
-// `patchConfig` fires only once the text parses per `isValidSilenceWindow`
-// above, and an inline error replaces the caption while invalid — the
-// server-side `ErrorPanel` (SettingsApp.tsx) stays the final backstop if
-// this validator and the rust one ever drift.
 function SilenceWindowControl({
   value,
   onChange,
@@ -120,10 +102,6 @@ function RotationOrderList({
 }) {
   function move(index: number, delta: number) {
     const target = index + delta;
-    // Guard before swap: an already-at-the-boundary button is a harmless
-    // no-op rather than an out-of-bounds swap. Buttons stay focusable at
-    // every row (aria-disabled below, never native `disabled` — native
-    // would drop focus to <body>, stranding a keyboard user).
     if (target < 0 || target >= order.length) {
       return;
     }
@@ -145,19 +123,10 @@ function RotationOrderList({
           <span className="rotation-order-rank font-mono text-fs-secondary font-bold text-muted-foreground">
             {index + 1}
           </span>
-          {/* Bespoke class, not a plain utility set — deliberate test
-              tripwire: rotationOrderRowNames() in SettingsApp.test.tsx
-              locates each row's label via
-              `row.querySelector(".rotation-order-name")`. */}
           <span className="rotation-order-name min-w-0 text-fs-body font-[590] text-foreground">
             {SOURCE_LABELS[source]}
           </span>
           <div className="rotation-order-controls inline-flex flex-none gap-1">
-            {/* `aria-disabled`, not native `disabled`, at the boundary
-                rows — native would drop the button from the tab order
-                the instant it re-renders, stranding keyboard focus on
-                `body`. Staying focusable (with `move` above a no-op past
-                the boundary) keeps focus on the same button in place. */}
             <Button
               type="button"
               variant="outline"
@@ -242,9 +211,6 @@ export function GeneralSection({
 
       <SettingsGroup
         title="Rotation and priority"
-        // Priority Preemption: a strictly-higher arrival cuts the visible
-        // card's turn short and re-queues at the head of its own tier
-        // with remaining time intact; equal priority never preempts.
         description="Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts."
       >
         <NumberControl
@@ -288,11 +254,6 @@ export function GeneralSection({
         />
       </SettingsGroup>
 
-      {/* The persisted daily schedule only — tray Timed Mutes/Skip are
-          session-only live controls, not edited here (see group
-          description below). A High Event still promotes compact
-          (Breakthrough) while Silenced regardless of this schedule;
-          that's queue behavior, not a setting. */}
       <SettingsGroup
         title="Silenced"
         description="Medium/Low events buffer during this daily window; a High event still promotes (Breakthrough). Tray mutes and Skip are live controls for right now — this schedule is only the persisted default."

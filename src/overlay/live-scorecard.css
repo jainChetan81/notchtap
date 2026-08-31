@@ -1,13 +1,4 @@
-/* ==== football live-match scorecard: the operator-locked sticky-
-   presence card's compact render, built on structured espn meta. Class
-   names are lifted verbatim from prototype/football-card.html so cross-
-   referencing stays greppable. Styles `FootballHeroCard`
-   (NotificationBody.tsx); `.compact` (masthead-content.css) wraps this
-   content. ==== */
 
-/* score block spaced apart with its own margin-top, per
-   prototype/football-card.html — without it the chips row butts against
-   `.title.headline` at 0px. */
 .card-root .score-block {
   margin-top: 10px;
 }
@@ -18,8 +9,6 @@
   gap: 8px;
 }
 
-/* `.chip` (base rule, near the news meta-row section above) supplies the
-   shared shape/type; `.chip-league` carries the neutral tint only. */
 .card-root .chip-league {
   flex: none;
   color: rgba(255, 255, 255, 0.6);
@@ -27,27 +16,18 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* state chip: Live (green) / Break (amber) / Final (dim). No "Soon"
-   (pre-match) variant — no wire signal exists for it (see
-   StatusRailCard.tsx's live-match branch doc). */
 .card-root .chip-live {
   flex: none;
   gap: 5px;
-  /* tokenized onto --overlay-green — unifies with the status dot's
-     football color and the tint-goal green. */
   color: var(--overlay-green);
   background: rgba(127, 224, 141, 0.12);
   border: 1px solid rgba(127, 224, 141, 0.35);
-  /* match-state changes morph over the reveal window, colour-only — no
-     layout property is transitioned on the chip itself. */
   transition:
     color var(--reveal-ms, 260ms) var(--ease-notchtap),
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
     border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* steady glow, not a blink — the static `box-shadow` reads as the
-   liveness signal; no looping keyframe. */
 .card-root .chip-live .live-dot {
   width: 5px;
   height: 5px;
@@ -55,9 +35,6 @@
   border-radius: 50%;
   background: var(--overlay-green);
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  /* dot mounted in every variant; `.final` fades + collapses it in step
-     with the chip's colour morph — `width`/`margin-right` ride along so
-     the chip keeps no phantom gap where the dot was. */
   transition:
     opacity var(--reveal-ms, 260ms) var(--ease-notchtap),
     background var(--reveal-ms, 260ms) var(--ease-notchtap),
@@ -66,7 +43,6 @@
 }
 
 .card-root .chip-live.break {
-  /* tokenized onto --overlay-amber — same "Break state" meaning. */
   color: var(--overlay-amber);
   background: rgba(240, 196, 106, 0.12);
   border-color: rgba(240, 196, 106, 0.35);
@@ -84,9 +60,6 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-/* full-time's dot leaves by fading + collapsing, not unmounting.
-   `margin-right: -5px` cancels `.chip-live`'s own 5px flex gap as width
-   reaches 0, so the label ends up where a dot-less chip would put it. */
 .card-root .chip-live.final .live-dot {
   opacity: 0;
   width: 0;
@@ -94,11 +67,6 @@
   box-shadow: none;
 }
 
-/* carries the `chip` class (IdleHoverPeek.tsx) — this rule only
-   overrides what's genuinely different: the larger/bolder numeric-clock
-   font (`.chip`'s own font is for short uppercase labels) and the
-   neutral tint, with letter-spacing/text-transform reset since a clock
-   reading isn't a label. */
 .card-root .clock-pill {
   margin-left: auto;
   flex: none;
@@ -126,10 +94,6 @@
   width: 64px;
 }
 
-/* the crest circle: an <img> (StatusRailCard.tsx's `Crest`, converted via
-   `convertFileSrc`) when a real crest is cached, else the text-abbrev
-   fallback rendered as the span's own text content — same box either way,
-   so the layout never shifts between the two states. */
 .card-root .crest {
   width: 30px;
   height: 30px;
@@ -152,10 +116,6 @@
 }
 
 .card-root .score {
-  /* inline-flex so the two odometer clips and the dash sit on one
-     centred row — baseline alignment across an `overflow: hidden` box
-     isn't reliable the way plain inline text is. Visually identical at
-     rest. */
   display: inline-flex;
   align-items: center;
   font: 800 24px/1 var(--font-mono);
@@ -163,12 +123,6 @@
   letter-spacing: 0.02em;
 }
 
-/* the odometer clip — one per side. Height is exactly the score's own
-   line box (`font: .../1`, so 1em = 24px), which is what makes a
-   `y: ±100%` translate on the inner span move it exactly one
-   digit-height: the incoming digit rises from directly below the clip,
-   the outgoing one leaves through the top. `overflow: hidden` is the
-   whole illusion. */
 .card-root .score-digit {
   display: block;
   position: relative;
@@ -179,9 +133,6 @@
 .card-root .score-digit-roll {
   display: block;
   line-height: 1;
-  /* `will-change` is deliberately absent: this moves only on a goal, so
-     permanently promoting two layers for a once-a-match 360ms roll would
-     be the wrong trade. */
 }
 
 .card-root .score .dash {
@@ -189,15 +140,11 @@
   margin: 0 2px;
 }
 
-/* no `.event-line` here — `FootballHeroCard`'s `.title.headline`
-   (NotificationBody.tsx) deliberately doesn't carry an icon slot; see
-   that component's own doc comment for why. */
 
 .card-root .cards-line {
   margin-top: 6px;
   text-align: center;
   font: 600 9px/1 var(--font-mono);
-  /* letter-spacing collapsed onto the shared 0.08/0.12/0.16em scale. */
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.38);
 }

@@ -6,15 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>notchtap — Status Rail mirror</title>
 <style>
-/* ============================================================
-   PART 1 — the real design system, verbatim selectors/values.
-   Source: vendor/shared-ui/design/tokens.css, src/styles.css,
-   src/overlay-card.css, src/overlay/*.css. Comments trimmed to the
-   load-bearing "why" only — full history lives in those files' own
-   plan-annotated comments; read them there, not here.
-   ============================================================ */
+/* Mirrors the shipped overlay tokens, shell, and presentation CSS. */
 
-/* ---- vendor/shared-ui/design/tokens.css (bespoke layer only) ---- */
+/* Mirrors vendor/shared-ui/design/tokens.css. */
 :root {
   --overlay-blue: #0a84ff;
   --overlay-teal: #55d6bd;
@@ -27,7 +21,7 @@
   --ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ---- src/styles.css (:root defaults + card-root scope host) ---- */
+/* Mirrors src/styles.css defaults. */
 :root {
   --card-scale: 1;
   --card-radius: 8px;
@@ -36,14 +30,10 @@
   --notchtap-cutout-width: 200px;
   --notchtap-cutout-height: 32px;
 }
-/* real App.tsx gives `.card-root` `display: contents` (a layout-neutral scope
-   host for the one real StatusRailCard mounted in the whole overlay window).
-   This showcase mounts many cards side by side inside sized preview frames, so
-   `.card-root` here is a plain block instead — the selectors under it are
-   otherwise byte-identical to the shipped scope. */
+/* The showcase uses block roots for preview sizing; App.tsx uses display: contents. */
 .card-root { display: block; }
 
-/* ============ src/overlay/card-chrome.css ============ */
+/* Mirrors src/overlay/card-chrome.css. */
 .card-root .card-assembly {
   position: relative;
   box-sizing: border-box;
@@ -55,26 +45,18 @@
   isolation: isolate;
   transform-origin: top center;
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* Arrival bounce stays scoped to promotion. Hover and exit use their own
-     width curves. */
+  /* Arrival bounce is scoped to promotion; hover and exit use separate curves. */
   transition: width var(--expand-ms, 320ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
-/* idle rest-rail width and expanded width are two named modifiers; a
-   showing-but-collapsed card carries NEITHER class, so it falls through to
-   the base rule's 400px formula above — this is the "geometry priority"
-   contract StatusRailCard.tsx computes (`geometryPriority`). */
+/* Showing-but-collapsed cards use the base width with neither named modifier. */
 .card-root .card-assembly.idle {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
 }
-/* Expanded width and manifest disclosure share one duration and curve. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
   transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
 }
-/* bare/minimal notch mode (resting_state: "notch", idle, not hovered): the
-   shell mounts but paints zero app-drawn pixels — cutout-width-only, flanks
-   transparent — so it reads as the raw hardware notch. */
-/* Bare and peek widths share the reveal timing used by the flank content. */
+/* Bare mode mounts the shell but paints no app pixels over the hardware notch. */
 .card-root .card-assembly.bare {
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
   transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
@@ -105,8 +87,7 @@
   align-items: center;
   background: #000;
   color: var(--overlay-fg);
-  /* Border radius transitions on entrance. Higher-specificity exit rules
-     apply the content-exit timing below. */
+  /* Higher-specificity exit rules override the entrance radius timing. */
   transition:
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
     padding var(--reveal-ms, 260ms) var(--ease-notchtap),
@@ -116,11 +97,7 @@
 .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
 .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
 
-/* ROUNDING LAW: the cutout's base corners stay perfectly square everywhere.
-   Outer rounding lives only at the true outer ends of the whole assembly —
-   on the flanks when there's no below-block (idle, they ARE the bottom
-   edge), or on the below-block when there is one (showing/exiting owns the
-   bottom rounding then). Never round both at once (double-curve gap bug). */
+/* Only the element owning the assembly's bottom edge receives outer rounding. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left,
 .card-root .card-assembly.exiting .flank-left {
   border-bottom-left-radius: var(--card-radius, 8px);
@@ -148,10 +125,7 @@
     padding var(--swap-exit-ms, 175ms) var(--ease-notchtap);
 }
 
-/* notch-shaped idle profile: a modest convex round at the bottom-outer
-   corner (HUD only — real hardware draws its own curves), plus a genuinely
-   concave top "gill" fillet (real DOM elements below — border-radius can
-   only bow outward, never carve a concave dent). */
+/* HUD gills use real elements because border-radius cannot carve inward. */
 :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(.bare):not(:has(.below-block)) .flank-left,
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-left {
   border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
@@ -160,8 +134,7 @@
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
   border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
-/* HUD mode fades the gill with opacity. Display remains the presentation-mode
-   gate, so notch hardware never renders it. */
+/* Presentation mode prevents gills from rendering on notch hardware. */
 .card-root .notch-gill {
   display: none;
   position: absolute;
@@ -189,9 +162,7 @@
   border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
 
-/* the idle face — notchtap-branded personality, fades into the cutout cell
-   after a few seconds of true idle. HUD-only (real notch mode sits behind
-   the physical camera housing). */
+/* The idle face is HUD-only; notch mode sits behind the camera housing. */
 .card-root .idle-face {
   grid-column: 2; grid-row: 1;
   display: none;
@@ -225,8 +196,7 @@
   border-bottom-left-radius: var(--card-radius, 8px);
   border-bottom-right-radius: var(--card-radius, 8px);
 }
-/* the agent-origin hairline + wash — content chrome (below-block), never
-   the shell: origin and priority are orthogonal, never share a channel. */
+/* Agent origin styles the below-block; priority styles the shell. */
 .card-root .below-block.agent-origin { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
 .card-root .below-block.agent-origin::before {
   content: ""; position: absolute; inset: 0;
@@ -236,15 +206,12 @@
 .card-root .below-block.agent-origin .compact,
 .card-root .below-block.agent-origin .manifest { position: relative; z-index: 1; }
 
-/* priority accent — a single named color per tier, feeding the compact
-   row's edge, the stamp pill, and the ttl-bar's fill/done segments.
-   Deliberately NOT signal-driven (goal/red_card share "high" with any
-   other high-priority source). */
+/* Priority tiers feed the compact edge, stamp, and TTL segments. */
 .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170, 179, 189, 0.2); }
 .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85, 214, 189, 0.24); }
 .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255, 107, 87, 0.28); }
 
-/* ============ src/overlay/choreography.css ============ */
+/* Mirrors src/overlay/choreography.css. */
 
 .card-root .card-assembly::after {
   content: ""; position: absolute; inset: -60px; z-index: 0; border-radius: 50%;
@@ -295,7 +262,7 @@
 }
 .card-root .card-content { position: relative; z-index: 1; }
 
-/* ============ src/overlay/masthead-content.css ============ */
+/* Mirrors src/overlay/masthead-content.css. */
 .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
 .card-root .expanded .compact { min-height: 82px; }
 .card-root .compact::before {
@@ -318,8 +285,7 @@
   font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
 }
 
-/* ============ src/overlay/ttl-bar.css ============ */
-/* Explicit row placement keeps every segment and the fill in one 4px row. */
+/* Mirrors src/overlay/ttl-bar.css. */
 .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
 .card-root .ttl-seg { background: rgba(255,255,255,0.08); transition: background var(--reveal-ms, 260ms) var(--ease-notchtap); }
 .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
@@ -330,7 +296,7 @@
 }
 .card-root .ttl-fill.paused { opacity: 0.72; background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%); }
 
-/* ============ src/overlay/manifest.css ============ */
+/* Mirrors src/overlay/manifest.css. */
 .card-root .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--expand-ms, 320ms) var(--ease-notchtap), opacity var(--expand-ms, 320ms) var(--ease-notchtap); }
 .card-root .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
 .card-root .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
@@ -340,7 +306,7 @@
 .card-root .detail-value.message { color: rgba(255,255,255,0.85); font-size: 12px; line-height: 1.5; }
 .card-root .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
 
-/* ============ src/overlay/status-dots.css ============ */
+/* Mirrors src/overlay/status-dots.css. */
 .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
 .card-root .status-dot {
   box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none;
@@ -363,7 +329,7 @@
 @keyframes pause-glyph-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .card-root .pause-glyph span { width: 2px; height: 9px; border-radius: 1px; background: rgba(255,255,255,0.5); }
 
-/* ============ src/overlay/news-category.css ============ */
+/* Mirrors src/overlay/news-category.css. */
 .card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
 .card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
@@ -395,7 +361,7 @@
 .card-root .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
 .card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
-/* ============ src/overlay/source-identity.css ============ */
+/* Mirrors src/overlay/source-identity.css. */
 .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
 .card-root .src-codex { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); }
 .card-root .src-kimi { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); }
@@ -404,7 +370,7 @@
 .card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
 .card-root .src-manual   { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
 
-/* ============ src/overlay/live-scorecard.css ============ */
+/* Mirrors src/overlay/live-scorecard.css. */
 .card-root .notif-block { padding: 12px 16px 13px; }
 .card-root .sc-head { display: flex; align-items: center; gap: 8px; }
 .card-root .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
@@ -449,7 +415,7 @@
 .card-root .card-assembly.cele-rc { animation: red-strobe 1800ms var(--ease-notchtap); }
 @keyframes red-strobe { 0%, 45% { box-shadow: 0 0 30px rgba(255,107,87,0.55); } 20%, 70% { box-shadow: 0 0 4px rgba(255,107,87,0.1); } 100% { box-shadow: none; } }
 
-/* ============ src/overlay/idle-peek.css (subset StatusRailCard mounts) ============ */
+/* Mirrors the idle-peek subset mounted by StatusRailCard. */
 .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 100px; box-sizing: border-box; }
 .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
 .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
@@ -461,9 +427,7 @@
 }
 
 
-/* ============================================================
-   PART 2 — showcase-only chrome (NOT part of the design system)
-   ============================================================ */
+/* Showcase-only chrome. */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -647,7 +611,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 'use strict';
 document.documentElement.dataset.notchtapMode = 'hud';
 
-/* ---------- lib/presentation.ts mirrors ---------- */
+/* Mirrors lib/presentation.ts. */
 const SIGNAL_STAMPS = { goal: 'Live', kickoff: 'Live', halftime: 'Break', yellow_card: 'Card', fulltime: 'Final', red_card: 'Off', foul: 'Foul', offside: 'Offside', var_check: 'VAR', substitution: 'Sub' };
 const GENERIC_PRIORITY_STAMPS = { low: 'Live', medium: 'Done', high: 'Now' };
 function stampFor(priority, signal, eventType) {
@@ -665,7 +629,7 @@ function sourceClass(origin, runtime) {
 }
 const GENERIC_MASTHEAD_KICKER = { manual: 'cli', football: 'football', news: 'news', agent: 'agent' };
 
-/* ---------- lib/markdown.tsx mirror (inline code/bold/italic + line breaks) ---------- */
+/* Mirrors inline markdown rendering. */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function mdInline(s) {
   if (!s) return '';
@@ -677,7 +641,7 @@ function mdInline(s) {
   ).join('<br/>');
 }
 
-/* Track.tsx / TtlBar.tsx segment math, verbatim */
+/* Mirrors Track and TtlBar segment math. */
 const MAX_SEGMENTS = 10;
 function segmentCount(total) { return Math.min(Math.max(total, 1), MAX_SEGMENTS); }
 function currentSegment(total, done) {
@@ -692,10 +656,8 @@ function ttlBarHtml(total, done, fillFraction, paused) {
   return `<div class="ttl-bar" style="--queue-n:${n}">${segs}<div class="${paused ? 'ttl-fill paused' : 'ttl-fill'}" style="grid-column:${current + 1};transform:scaleX(${fillFraction})"></div></div>`;
 }
 
-/* ---------- Stamp.tsx ---------- */
 function stampHtml(priority, signal, eventType) { return `<div class="stamp">${esc(stampFor(priority, signal, eventType))}</div>`; }
 
-/* ---------- Manifest.tsx ---------- */
 function manifestHtml(cfg) {
   const isNews = cfg.eventType === 'news_item';
   const summary = isNews ? (cfg.body && cfg.body.trim() !== '' ? cfg.body : cfg.title) : null;
@@ -711,7 +673,6 @@ function manifestHtml(cfg) {
   </div>`;
 }
 
-/* ---------- NotificationBody.tsx ---------- */
 const MAX_VISIBLE_DETAIL_PAIRS = 4;
 function notificationBodyHtml(cfg) {
   const news = cfg.eventType === 'news_item';
@@ -745,7 +706,6 @@ function notificationBodyHtml(cfg) {
   return compact + manifest + ttl;
 }
 
-/* ---------- LiveMatchScorecard.tsx ---------- */
 function liveMatchHtml(cfg) {
   const e = cfg.espn;
   const pillVariant = cfg.pillVariant || 'live';
@@ -768,7 +728,6 @@ function liveMatchHtml(cfg) {
   </div>`;
 }
 
-/* ---------- StatusDots.tsx ---------- */
 function shapeClass(configured) { return configured === undefined ? 'shape-unavailable' : configured ? 'shape-enabled' : 'shape-disabled'; }
 function statusDotsHtml(status) {
   const paused = status ? !!status.paused : false;
@@ -780,7 +739,6 @@ function statusDotsHtml(status) {
   return `<span class="status-dots">${dot('football', status && status.football)}${dot('news', status && status.news)}${pause}</span>`;
 }
 
-/* ---------- IdleFace.tsx ---------- */
 function idleFaceHtml() {
   return `<div class="idle-face" aria-hidden="true">
     <div class="idle-face-eyes"><span class="idle-face-eye"></span><span class="idle-face-eye"></span></div>
@@ -788,11 +746,9 @@ function idleFaceHtml() {
   </div>`;
 }
 
-/* ---------- FlankClock.tsx ---------- */
 function clockDisplay() { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date()); }
 function dayProgressPct() { const now = new Date(); return (((now.getHours() * 60 + now.getMinutes()) / 1440) * 100).toFixed(1); }
 
-/* ---------- IdleHoverPeek.tsx (subset: football reveal + timeline) ---------- */
 function idlePeekHtml(cfg) {
   let backdrop = '';
   let content = '';
@@ -811,7 +767,6 @@ function idlePeekHtml(cfg) {
   </div>`;
 }
 
-/* ---------- StatusRailCard.tsx — the outer shell ---------- */
 function shellHtml(cfg) {
   const cls = ['card-assembly'];
   cls.push(cfg.showing ? (cfg.expanded ? cfg.priority : cfg.priority) : 'idle');
@@ -884,7 +839,6 @@ function replay(assemblyEl, cls, endAnim, withRipple) {
   }
 }
 
-/* ================= 0 · shell states ================= */
 const shellGrid = document.getElementById('shell-states');
 frame(shellGrid, shellHtml({ status: { football: true, news: true } }),
   'idle rail · all sources on', 'clock + 2 status dots, no idle face yet');
@@ -898,7 +852,6 @@ frame(shellGrid, shellHtml({ showing: true, priority: 'high', expanded: false, s
     belowBlockClass: 'below-block', bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Agent needs input', body: 'Workspace command is waiting', queueTotal: 3, queueDone: 1 }) }),
   'showing · rail furniture stays', 'clock + dots persist through a live card (railRevealed)');
 
-/* ================= 1 · priority tiers ================= */
 const tiers = document.getElementById('tiers');
 [
   ['low', 'Build finished', '`cargo build` completed in **42s**'],
@@ -910,7 +863,6 @@ const tiers = document.getElementById('tiers');
     priority, 'accent edge · stamp · ttl-bar fill');
 });
 
-/* ================= 2 · content types ================= */
 const contentTypes = document.getElementById('content-types');
 frame(contentTypes, shellHtml({ showing: true, priority: 'medium', status: {}, belowBlockClass: 'below-block',
   bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Build finished', body: 'notchtap run completed in 42s', queueTotal: 1, queueDone: 0 }) }),
@@ -929,7 +881,6 @@ frame(contentTypes, shellHtml({ showing: true, priority: 'low', status: {}, isLi
     pillVariant: 'live', body: "58' · Saka (assist Ødegaard)", eventIcon: 'ev-ico goal', eventTint: 'tint-goal' }) }),
   'live-match scorecard', 'LiveMatchScorecard replaces .compact entirely — no TtlBar');
 
-/* ================= 3 · expand demo ================= */
 const expandGrid = document.getElementById('expand-demo');
 {
   const cfgF = (expanded) => ({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Agent needs input',
@@ -950,7 +901,6 @@ const expandGrid = document.getElementById('expand-demo');
   } });
 }
 
-/* ================= 4 · ttl states ================= */
 const ttlGrid = document.getElementById('ttl-states');
 [
   [1, 0, 0.62, false, '1 segment', 'min(1) — degenerate, unsegmented bar'],
@@ -964,7 +914,6 @@ const ttlGrid = document.getElementById('ttl-states');
     label, meta);
 });
 
-/* ================= 5 · celebrations ================= */
 const celebrations = document.getElementById('celebrations');
 frame(celebrations, (() => {
   const node = shellHtml({ showing: true, priority: 'high', status: {}, belowBlockClass: 'below-block',
@@ -1008,7 +957,6 @@ frame(celebrations, shellHtml({ showing: true, priority: 'low', status: {}, isLi
   c.appendChild(btn);
 } });
 
-/* ================= 6 · news categories ================= */
 const newsCats = document.getElementById('news-cats');
 [
   ['politics', 'NDTV', 'Parliament passes the landmark digital rights bill', '42m ago'],
@@ -1024,7 +972,6 @@ const newsCats = document.getElementById('news-cats');
     'cat-' + category, 'shade-drift 12s, non-collinear waypoints');
 });
 
-/* ================= 7 · source identity ================= */
 const sourceIdentity = document.getElementById('source-identity');
 [
   ['claude-code', 'Claude Code', 'Permission requested: Bash'],
@@ -1046,14 +993,12 @@ frame(sourceIdentity, shellHtml({ showing: true, priority: 'low', status: {},
   bodyHtml: notificationBodyHtml({ priority: 'low', eventType: 'generic', origin: 'manual', title: 'CLI push', body: '`./notchtap --title t --body b`', queueTotal: 1, queueDone: 0 }) }),
   'src-manual', '"CLI blue" — the /notify CLI push path');
 
-/* ================= 8 · idle hover-peek ================= */
 const peekGrid = document.getElementById('idle-peek-states');
 frame(peekGrid, shellHtml({ hovered: true, peek: { live: { label: 'ARS 2–0 CHE', minute: 'Halftime' } } }),
   'live-match reveal', 'lighter render than the sticky scorecard — label/minute only');
 frame(peekGrid, shellHtml({ hovered: true, peek: {} }),
   'timeline only', 'no live match to show — bare day-progress dot');
 
-/* ================= 9 · bare vs rail ================= */
 const bareGrid = document.getElementById('bare-states');
 frame(bareGrid, shellHtml({ bare: true, status: {} }),
   'bare · resting_state: notch', 'cutout-width-only, transparent flanks — zero app pixels');
@@ -1065,7 +1010,6 @@ frame(bareGrid, shellHtml({ showing: true, priority: 'medium', status: {}, below
   bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Showing while bare-configured', body: 'A showing card is never bare — bare only ever applies to true idle.', queueTotal: 1, queueDone: 0 }) }),
   'showing (either resting_state)', 'bare vs rail only differ at idle — showing geometry is identical');
 
-/* ---------- appearance bar ---------- */
 document.querySelectorAll('#appearance-bar .seg').forEach((seg) => {
   const cssVar = seg.dataset.var;
   const isMode = seg.dataset.mode;

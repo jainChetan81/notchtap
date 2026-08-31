@@ -6,9 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>agent board — mirrors the shipped Agent Board</title>
 <style>
-  /* ============== real overlay tokens (vendor/shared-ui/design/tokens.css,
-     src/animationTiming.ts, src/styles.css :root) — identical block to
-     notch-states.html, kept byte-for-byte in sync. ============== */
+  /* Mirrors the overlay tokens; keep this block in sync with notch-states.html. */
   :root {
     --overlay-blue: #0a84ff;
     --overlay-teal: #55d6bd;
@@ -33,7 +31,7 @@
     --card-radius: 8px;
     --card-opacity: 1;
 
-    /* ---- this page's OWN viewer chrome, not part of the mirrored app ---- */
+
     --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --page-accent: #7fe08d;
   }
   * { box-sizing: border-box; }
@@ -59,9 +57,7 @@
   .geo-table th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
   .geo-table td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
 
-  /* ============== real shell geometry (card-chrome.css, verbatim formulas —
-     unaffected by the board-motion-polish branch; the Board mounts inside
-     the SAME shell every other card uses) ========= */
+  /* Mirrors the shared shell geometry in card-chrome.css. */
   .card-root .card-assembly {
     position: relative; box-sizing: border-box; display: grid;
     grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
@@ -71,11 +67,7 @@
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
     transition: width var(--expand-ms) var(--ease-notchtap-pop);
   }
-  /* AgentBoard.tsx hardcodes the outer wrapper as `.card-assembly.expanded
-     .agent-board-shell` UNCONDITIONALLY — the shell is ALWAYS the 500px
-     expanded formula, whether the board is resting (hero+rows) or
-     hover-expanded (full list). Only the INNER content swaps. Still true
-     on this branch — untouched by board-motion-polish. */
+  /* AgentBoard always uses the expanded shell width; only its inner content swaps. */
   .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
   .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
   .card-root .flank-left, .card-root .flank-right {
@@ -105,17 +97,12 @@
   .card-root .status-dot.news.active { color: var(--overlay-coral); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
-  /* ============== priority accent (card-chrome.css, verbatim) — consumed
-     by the hero's `.compact::before` edge and `.stamp`, exactly like every
-     other card type. Lives on `.card-assembly`, orthogonal to the runtime
-     wash below (which lives on `.below-block`). ============== */
+  /* Priority colors stay on the shell; runtime identity stays on the below-block. */
   .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
   .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
   .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 
-  /* ============== the agent-origin runtime wash + hairline
-     (card-chrome.css, verbatim) — a corner radial keyed to `--cat-deep`,
-     no motion, applied to `.below-block.agent-board.agent-origin`. ====== */
+  /* Mirrors the agent-origin wash and hairline from card-chrome.css. */
   .card-root .below-block.agent-origin { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
   .card-root .below-block.agent-origin::before {
     content: ""; position: absolute; inset: 0;
@@ -150,32 +137,18 @@
   .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
   .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
 
-  /* Agent Board styles. */
+
   .card-root .agent-board { display: flex; flex-direction: column; gap: 8px; padding: 0 0 12px; }
-  /* CONTENT-HUG: the 12px bottom padding is only owed to a mounted rows/
-     list block, so a hero-only (single-session) board ends flush at the
-     hero's own bottom inset, exactly like every other card. */
+  /* Bottom padding exists only when a rows or expanded-list block is mounted. */
   .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) { padding-bottom: 0; }
-  /* the single-cell grid stack the resting rows and expanded list share —
-     their swap is a sync crossfade IN PLACE, sized to max(outgoing,
-     incoming), not `mode="wait"`'s collapse-then-grow. */
+  /* Resting rows and the expanded list crossfade in the same grid cell. */
   .card-root .agent-board-swap { display: grid; align-items: start; }
   .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) .agent-board-swap { display: none; }
   .card-root .agent-board-primary { display: flex; flex-direction: column; gap: 4px; }
-  /* CONTENT-HUG hero fixes: the shell's permanent `.expanded` class would
-     otherwise drag in `.expanded .compact`'s +8px min-height (a hover-
-     expand rhythm the resting Board never asked for) — pinned back to the
-     unified skeleton's own 74px; and the fact pills lay out in a wrapping
-     ROW, right-aligned, instead of the generic branch's stacked column,
-     since two 20px pills in a column left a wide dead band the row avoids. */
+  /* Override the shell's expanded compact height; hero facts wrap in a row. */
   .card-root .agent-board-primary .compact { min-height: 74px; }
   .card-root .agent-board-primary .detail-facts { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; margin-bottom: 0; }
-  /* ONE CLOCK FOR THE TIER FLIP: when the primary session's state changes,
-     the shell's priority accent AND the below-block's `--agent-accent`
-     rebind together — every consumer here morphs on the SAME `--reveal-ms`
-     clock the dot already used, instead of one snapping while the dot
-     fades. Scoped to the board only; a notification card's accent never
-     flips mid-life, so this would be dead weight there. */
+  /* Primary-session tier and state colors must transition on the same clock. */
   .card-root .agent-board-primary .compact::before { transition: background-color var(--reveal-ms) var(--ease-notchtap), box-shadow var(--reveal-ms) var(--ease-notchtap); }
   .card-root .agent-board-primary .stamp { transition: color var(--reveal-ms) var(--ease-notchtap), border-color var(--reveal-ms) var(--ease-notchtap); }
   .card-root .agent-board-primary .fact-pill, .card-root .agent-board-primary .fact-pill .fp-tag { transition: background-color var(--reveal-ms) var(--ease-notchtap), border-color var(--reveal-ms) var(--ease-notchtap), color var(--reveal-ms) var(--ease-notchtap); }
@@ -208,24 +181,20 @@
   .card-root .agent-expanded-detail { display: inline-flex; gap: 3px; color: color-mix(in srgb, var(--overlay-fg) 55%, transparent); }
   .card-root .agent-expanded-detail-label { font-weight: 600; color: color-mix(in srgb, var(--overlay-fg) 72%, transparent); }
   .card-root .agent-expanded-history { margin-top: 0; max-height: 0; overflow: hidden; opacity: 0; transition: max-height var(--expand-ms) var(--ease-notchtap), opacity var(--expand-ms) var(--ease-notchtap); border-top: 1px solid transparent; padding-top: 0; }
-  /* real trigger is per-ROW mouse-enter/leave (ExpandedAgentRow's own
-     onMouseEnter/onMouseLeave) — genuine pointer events land here in the
-     shipped app too while the board is hover-expanded (rust hands
-     click-through off for exactly this rect), so plain CSS :hover is the
-     same signal, not a stand-in. */
+  /* Expanded rows receive pointer events after Rust disables click-through for this rect. */
   .card-root .agent-expanded-row:hover .agent-expanded-history { max-height: 90px; opacity: 1; margin-top: 2px; border-top-color: color-mix(in srgb, var(--overlay-fg) 12%, transparent); padding-top: 4px; }
   .card-root .agent-expanded-history-list { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
   .card-root .agent-expanded-history-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: color-mix(in srgb, var(--overlay-fg) 50%, transparent); }
   .card-root .agent-expanded-history-state { font-weight: 600; color: color-mix(in srgb, var(--overlay-fg) 65%, transparent); }
   .card-root .agent-expanded-history-elapsed { font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
-  /* ============== source-identity.css, the four runtimes ============== */
-  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); } /* Anthropic "crail" terracotta */
-  .card-root .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); } /* OpenAI green */
-  .card-root .src-kimi        { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); } /* deliberately mono */
+  /* Mirrors source-identity.css runtime colors. */
+  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
+  .card-root .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); }
+  .card-root .src-kimi        { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); }
   .card-root .src-opencode    { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
 
-  /* ============== this page's own control/demo chrome (not app UI) ============== */
+
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
   .controls label { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
   select, button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
@@ -241,48 +210,22 @@
   .state-grid .rig { transform: scale(0.94); transform-origin: top center; }
   footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
 
-  /* row add/remove demo — a plain CSS approximation of ROW_TRANSITION
-     (Motion spring, bounce:0 duration:0.35, critically damped). No
-     physics solver here, so this is an ease-out curve at the same
-     nominal duration, not the real spring. */
+  /* CSS approximates ROW_TRANSITION with the same nominal duration. */
   @keyframes row-in { from { opacity: 0; height: 0; } to { opacity: 1; height: 16px; } }
   @keyframes row-out { from { opacity: 1; height: 16px; margin-bottom: 0; } to { opacity: 0; height: 0; } }
   .agent-row.row-enter { animation: row-in 350ms cubic-bezier(.16,1,.3,1); }
   .agent-row.row-leave { animation: row-out 350ms cubic-bezier(.16,1,.3,1) forwards; overflow: hidden; }
 
-  /* hero identity swap — HERO_SWAP_TRANSITION (duration 0.16, NOTCHTAP_EASE).
-     Plays ONLY when a DIFFERENT session becomes primary; a same-session
-     state change morphs in place instead (the --reveal-ms accent morph
-     above), never replays this. */
+  /* Hero swap runs only when a different session becomes primary. */
   .agent-board-primary.swap-out { transition: opacity var(--hover-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); opacity: 0; transform: translateY(-6px); }
 
-  /* The outer Board<->status-rail surface
-     swap (App.tsx's SURFACE_STACK_STYLE/SURFACE_CELL_STYLE + BOARD_SURFACE_
-     MOTION/RAIL_SURFACE_MOTION). Opacity-only on both legs — the shell
-     itself (the synthetic notch cutout) NEVER transforms. Arrival uses
-     the longer, house-eased BOARD_SUMMON_MS (260ms);
-     dismissal is the quieter, shared SURFACE_SWAP_MS (180ms) — a deliberate
-     asymmetry: an arrival earns emphasis, a dismissal should be quieter
-     than the thing it dismisses. ============== */
+  /* The Board/status-rail surface swap changes opacity only; the shell never transforms. */
   .surface-stack-demo { display: grid; }
   .surface-cell { grid-area: 1 / 1; opacity: 0; pointer-events: none; }
   .surface-cell.is-active { opacity: 1; pointer-events: auto; transition: opacity var(--board-summon-ms) var(--ease-notchtap); }
   .surface-cell.is-leaving { opacity: 0; transition: opacity var(--surface-swap-ms) var(--ease-notchtap); }
 
-  /* ============== section 7 demo: the resting<->expanded morph inside the
-     Board (`.agent-board-swap`, AgentBoard.tsx/agent-board.css). The real
-     component keeps BOTH branches' `height` on one Motion spring
-     (DISCLOSURE_SPRING) started the same frame, so the wrapper's height
-     traces max(outgoing, incoming) as one continuous curve — never a
-     collapse-to-zero followed by a grow. Approximated here with the CSS
-     `grid-template-rows: 0fr -> 1fr` height trick (an `overflow:hidden`
-     inner track keyed to a fr-unit, not `height: auto`, which plain CSS
-     transitions can't interpolate) on EACH branch independently, inside
-     the same single grid cell (`grid-area: 1/1`) the real markup already
-     uses. Because both branches animate on the same clock, the outer
-     row's size is genuinely `max()` of the two the whole way through —
-     the same emergent property the real spring-based version has — not a
-     hand-tuned imitation of the curve's shape. ============== */
+  /* Synchronized grid tracks approximate the shared DISCLOSURE_SPRING height. */
   .card-root .agent-board-swap .swap-branch {
     grid-area: 1 / 1;
     display: grid;
@@ -813,9 +756,7 @@
   var RUNTIME_CLASS = { "claude-code": "src-claude-code", codex: "src-codex", kimi: "src-kimi", opencode: "src-opencode" };
   var STAMP_BY_PRIORITY = { low: "Live", medium: "Done", high: "Now" };
 
-  // AGENT_STATE_PRESENTATION + AGENT_HERO_TITLE + AGENT_STATE_PRIORITY +
-  // the heroFactTags()/synthesized-elapsed-fact rules, folded into one
-  // table (lib/presentation.ts + AgentBoard.tsx, verbatim behavior).
+  // Mirrors presentation state, title, priority, and fact rules.
   var STATE = {
     waiting_for_permission: { label: "Needs approval", className: "agent-waiting", pulse: true, priority: "high", title: "Agent needs input", body: 'Approval needed to run <code>rm -rf build/</code>', facts: [{ label: "Tool", value: "rm", tag: "destructive" }], factsTone: "danger" },
     waiting_for_input:      { label: "Needs input",    className: "agent-waiting", pulse: true, priority: "high", title: "Agent needs input", body: "Waiting on a reply to continue", facts: [], factsTone: "accent" },
@@ -827,9 +768,7 @@
   };
   var STATE_ORDER = ["waiting_for_permission", "waiting_for_input", "working", "starting", "completed", "failed", "stale"];
 
-  // renderFactPills (NotificationBody.tsx), verbatim behavior: a fact's
-  // own `tag` (when present) always wins its pill's tone over the call-
-  // level tone every untagged pill in the same call takes.
+  // A fact's tag overrides the call-level pill tone.
   function factsHtml(facts, tone) {
     if (!facts || facts.length === 0) return "";
     return '<div class="detail-facts">' + facts.map(function (f) {
@@ -839,9 +778,7 @@
     }).join("") + "</div>";
   }
 
-  // AgentHeroCard (NotificationBody.tsx), verbatim markup shape: `.compact`
-  // > `.copy` > masthead-row (agent-dot + tick + "agent" kicker, Stamp) >
-  // title.headline > notif-subtitle-row > notif-body > fact pills.
+
   function heroHtml(rt, st, project) {
     var s = STATE[st];
     var subtitle = project ? RUNTIME_LABEL[rt] + " · " + project : RUNTIME_LABEL[rt];
@@ -870,7 +807,7 @@
     shellEl.classList.add(STATE[st].priority);
   }
 
-  // ---- section 2: all seven states, one small rig each ----
+
   var stateGrid = document.getElementById("stateGrid");
   STATE_ORDER.forEach(function (key) {
     var s = STATE[key];
@@ -887,7 +824,7 @@
     stateGrid.appendChild(wrap);
   });
 
-  // ---- section 1: presence gate demo ----
+
   var gateShell = document.getElementById("gateShell");
   var gateBelow = document.getElementById("gateBelow");
   var gateHero = document.getElementById("gateHero");
@@ -912,7 +849,7 @@
     applyGate(true);
   });
 
-  // ---- section 4: interactive hero + rows ----
+
   var heroShell = document.getElementById("heroShell");
   var heroBelow = document.getElementById("heroBelowBlock");
   var heroPrimary = document.getElementById("heroPrimary");
@@ -945,7 +882,7 @@
     setTimeout(function () { heroPrimary.classList.remove("swap-out"); }, 160);
   });
 
-  // row add/remove — ROW_TRANSITION approximation, unchanged shape
+
   var ROW_VARIANTS = [
     ["agent-working", "src-codex", "Codex", "mac-notification-nudge", "Working"],
     ["agent-completed", "src-kimi", "Kimi", null, "Completed"],
@@ -973,7 +910,7 @@
     setTimeout(function () { last.remove(); }, 350);
   });
 
-  // ---- section 5: summon / dismiss the whole surface ----
+
   var idleCell = document.getElementById("idleCell");
   var boardCell = document.getElementById("boardCell");
   var summonHero = document.getElementById("summonHero");
@@ -994,7 +931,7 @@
     summonStatusLine.innerHTML = "dismissed to idle — 180ms opacity (SURFACE_SWAP_MS, the shared quiet exit)";
   });
 
-  // ---- section 6: resting <-> expanded morph ----
+
   var morphHero = document.getElementById("morphHero");
   var morphRestingBranch = document.getElementById("morphRestingBranch");
   var morphExpandedBranch = document.getElementById("morphExpandedBranch");
@@ -1011,7 +948,7 @@
       : "resting — hero + 2 compact rows";
   });
 
-  // ---- section 7: static hover-expanded detail ----
+
   var detailHero = document.getElementById("detailHero");
   detailHero.innerHTML = heroHtml("claude-code", "waiting_for_permission", "notchtap");
 })();

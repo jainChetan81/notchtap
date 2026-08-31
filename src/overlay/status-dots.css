@@ -1,7 +1,3 @@
-/* ==== Idle right flank's status dots (<StatusDots>): fixed
-   Football/News order and colouring. `active` = enabled (glow + a
-   1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow,
-   no text content. ==== */
 .card-root .status-dots {
   display: flex;
   align-items: center;
@@ -9,11 +5,6 @@
   flex: none;
 }
 
-/* State-flip soften, not a loop — opacity/box-shadow/border-radius/
-   background-color/border-color/border-width settle to a new RESTING
-   value; nothing runs while nothing is changing. The enabled<->disabled
-   shape flip changes `border-radius` AND `background` AND `border`, so
-   all legs share the same `--hover-ms`/`--ease-notchtap` transition. */
 .card-root .status-dot {
   box-sizing: border-box;
   width: 9px;
@@ -29,18 +20,11 @@
     border-width var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
-/* IconStrip glyph SVGs (18x18 viewBox, no explicit size) render at the
-   default replaced-element size if unsized, breaking the 9x9px dot box.
-   lockstep: icon-strip.css:81-83 sizes the same glyphs. `100%` respects
-   the dot's own width/height. */
 .card-root .status-dot svg {
   width: 100%;
   height: 100%;
 }
 
-/* Same --overlay-green/--overlay-coral tokens as every football/news
-   card element (live-scorecard.css, idle-peek.css, news-category.css) —
-   the dot and the card it summons always match. */
 .card-root .status-dot.football {
   background: var(--overlay-green);
 }
@@ -48,7 +32,6 @@
   background: var(--overlay-coral);
 }
 
-/* Steady glow, not a blink — resting glow strengthened to compensate. */
 .card-root .status-dot.active {
   box-shadow: 0 0 8px 1px currentColor;
 }
@@ -65,12 +48,6 @@
   animation: none;
 }
 
-/* Non-color configured-state shape — independent of active/dim
-   luminance (pause changes brightness only, never these):
-   `shape-disabled` = hollow square with per-source outline;
-   `shape-unavailable` = hollow circle with neutral outline. `shape-enabled`
-   is the plain filled circle — no override needed. Same 9x9 footprint:
-   `box-sizing: border-box` keeps the border from growing the box. */
 .card-root .status-dot.shape-disabled,
 .card-root .status-dot.shape-unavailable {
   background: transparent;
@@ -91,13 +68,6 @@
   border: 1.5px solid rgba(255, 255, 255, 0.35);
 }
 
-/* Paused indicator: while `status.paused` is true every dot renders
-   forced-dim (StatusDots.tsx) plus this static two-bar glyph nested
-   INSIDE `.status-dots` — the existing `gap: 8px` spaces it from the
-   last dot. Receive-only, never a button. `role="img"` +
-   `aria-label="Notifications paused"`. Mounts via a React conditional —
-   a CSS transition has nothing to animate FROM on fresh mount, so it
-   uses a one-shot self-ending fade-in: flip, not loop. */
 .card-root .pause-glyph {
   display: inline-flex;
   align-items: center;

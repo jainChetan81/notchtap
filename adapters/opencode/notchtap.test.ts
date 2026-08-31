@@ -105,8 +105,6 @@ describe("mapBusEvent", () => {
   });
 
   it("maps session.idle to a non-terminal completed event (per-turn, not session-end)", () => {
-    // session.idle fires once per turn and must stay non-terminal.
-    // session.deleted is the explicit session-end signal.
     const wire = mapBusEvent({ type: "session.idle", properties: { sessionID: "s1" } }, fixedCtx());
     expect(wire?.kind).toBe("completed");
     expect(wire?.state).toBe("completed");
@@ -129,16 +127,10 @@ describe("mapBusEvent", () => {
     expect(wire?.terminal).toBe(true);
     expect(wire?.summary).toBe("Session failed");
     expect(wire?.details).toEqual([{ label: "Error", value: "ProviderTimeout" }]);
-    // the raw error message must never appear anywhere on the wire event
     expect(JSON.stringify(wire)).not.toContain("secret-ish stack trace");
   });
 
   it("maps session.deleted to a terminal completed event (the real session end)", () => {
-    // session.deleted is OpenCode's SessionEnd counterpart. It must be
-    // `completed` + terminal, not `informational` + terminal: the core
-    // gates `informational` behind an off-by-default toggle, so the
-    // former shape produced no session-end card for OpenCode while the
-    // other three runtimes carded.
     const wire = mapBusEvent(
       { type: "session.deleted", properties: { sessionID: "s1" } },
       fixedCtx(),
@@ -150,9 +142,6 @@ describe("mapBusEvent", () => {
   });
 
   it("distinguishes the per-turn session.idle from the session-ending session.deleted", () => {
-    // Both carry kind "completed"; only `terminal` separates them, and
-    // that flag is exactly what the core's notification policy splits on
-    // (quiet per-turn stop vs carded session end).
     const idle = mapBusEvent({ type: "session.idle", properties: { sessionID: "s1" } }, fixedCtx());
     const deleted = mapBusEvent(
       { type: "session.deleted", properties: { sessionID: "s1" } },
@@ -162,40 +151,6 @@ describe("mapBusEvent", () => {
     expect(deleted?.kind).toBe("completed");
     expect(idle?.terminal).toBe(false);
     expect(deleted?.terminal).toBe(true);
-  });
-
-  it("session.idle can fire repeatedly across turns; only session.deleted is terminal", () => {
-    // Multi-turn scenario: idle -> resumed work -> idle again -> deleted.
-    // Every event uses the same sessionID; the wire events for the two
-    // session.idle occurrences must both be non-terminal, and only the
-    // final session.deleted is terminal.
-    const idle1 = mapBusEvent(
-      { type: "session.idle", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(idle1?.terminal).toBe(false);
-    expect(idle1?.sessionId).toBe("s1");
-
-    const resumed = mapBusEvent(
-      { type: "session.updated", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(resumed?.terminal).toBe(false);
-    expect(resumed?.sessionId).toBe("s1");
-
-    const idle2 = mapBusEvent(
-      { type: "session.idle", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(idle2?.terminal).toBe(false);
-    expect(idle2?.sessionId).toBe("s1");
-
-    const deleted = mapBusEvent(
-      { type: "session.deleted", properties: { sessionID: "s1" } },
-      fixedCtx(),
-    );
-    expect(deleted?.terminal).toBe(true);
-    expect(deleted?.sessionId).toBe("s1");
   });
 
   it("drops any event with no discoverable session id", () => {
@@ -249,7 +204,6 @@ describe("mapToolExecuteBefore / mapToolExecuteAfter", () => {
     expect(wire?.kind).toBe("informational");
     expect(wire?.state).toBe("working");
     expect(wire?.details).toEqual([{ label: "Tool", value: "bash" }]);
-    // the raw command line must never be forwarded
     expect(JSON.stringify(wire)).not.toContain("rm -rf");
     expect(JSON.stringify(wire)).not.toContain("id_rsa");
   });

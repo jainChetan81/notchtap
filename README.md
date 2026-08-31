@@ -64,7 +64,7 @@ one key within 2 seconds:
 - **core**: Rust (Tauri) — HTTP listener, event bus, notification queue
 - **UI**: React + TypeScript — rendering and animation
 - **native shim**: tiny Swift CLI (`notchtap-detect`) for notch geometry
-- **testing**: `cargo test` (Rust) + `vitest` (frontend)
+- **testing**: `cargo test` (Rust) + `vitest` (OpenCode adapter); frontend verification is manual
 
 see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the rationale on
 every decision (why Tauri over Electron, why no App Store, etc.).
@@ -75,7 +75,7 @@ every decision (why Tauri over Electron, why no App Store, etc.).
 npm install             # install dependencies
 npm run tauri dev       # dev mode
 cargo test              # from src-tauri/
-npx vitest run          # from repo root
+npx vitest run adapters/opencode/notchtap.test.ts
 notchtap --title "hello" --body "world"   # flags only, no positional form
 ```
 

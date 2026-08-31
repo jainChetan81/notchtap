@@ -1,14 +1,9 @@
-//! Shared HTTP posture for the outbound pollers: one client builder and
-//! one capped body reader, so the espn and rss fetch paths cannot drift
-//! apart on timeout, user agent, redirect policy or body cap.
+//! Shared timeout, redirect, host-filtering, and body-size posture for outbound pollers.
 
 use std::net::IpAddr;
 use std::time::Duration;
 
-/// The pieces of client config every poll client shares (user agent,
-/// timeout) — `crests.rs` reuses this to build its own client with a
-/// stricter, espncdn-only redirect policy rather than duplicating this
-/// config, so the two client builders can't silently drift apart.
+/// Shared user-agent and timeout configuration for poll clients.
 pub(crate) fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .user_agent("notchtap/0.1 (+https://github.com/jainChetan81/notchtap)")
@@ -19,16 +14,8 @@ pub(crate) fn build_poll_client() -> reqwest::Result<reqwest::Client> {
     client_builder().redirect(redirect_policy()).build()
 }
 
-/// Caps redirects at 3 hops and rejects any hop whose URL resolves to a
-/// blocked host (see [`host_is_blocked`]). Without this, a feed source
-/// (espn/rss) that starts out pointing at a legitimate public host could
-/// 302 the poller onto an internal service (SSRF) or a DNS name that
-/// resolves to loopback/private space (rebinding) purely by controlling
-/// the redirect target of an otherwise-trusted URL.
 fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
-        // mirrors `Policy::limited`'s own boundary (`previous().len() >
-        // max`).
         if attempt.previous().len() > 3 {
             return attempt.error("too many redirects");
         }
@@ -39,13 +26,8 @@ fn redirect_policy() -> reqwest::redirect::Policy {
     })
 }
 
-/// True if `url` must never be fetched: its scheme isn't http/https, its
-/// host is `localhost` or ends in `.local`, or its host is a literal
-/// loopback/link-local/private-network address (`127.0.0.0/8`, `::1`,
-/// `169.254.0.0/16`, `10/8`, `172.16/12`, `192.168/16`). Shared by
-/// [`redirect_policy`] above and `crests.rs`'s own crest-fetch redirect
-/// policy — the one place this predicate is defined, so the two callers
-/// can't drift on what counts as "internal".
+/// True if `url` must never be fetched: its scheme isn't http/https, its host is `localhost` or
+/// ends in `.local`.
 pub(crate) fn host_is_blocked(url: &reqwest::Url) -> bool {
     if !matches!(url.scheme(), "http" | "https") {
         return true;
@@ -57,20 +39,16 @@ pub(crate) fn host_is_blocked(url: &reqwest::Url) -> bool {
     if host_lower == "localhost" || host_lower.ends_with(".local") {
         return true;
     }
-    // `host_str()` returns a literal IPv6 host in its bracketed form
-    // (`[::1]`), which `IpAddr::from_str` rejects — strip the brackets
-    // before parsing so IPv6 loopback/etc. is actually caught.
+    // `host_str()` returns a literal IPv6 host in its bracketed form (`[::1]`), which
+    // `IpAddr::from_str` rejects — strip the brackets before parsing so IPv6 loopback/etc.
     let host_ip = host_lower
         .strip_prefix('[')
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(&host_lower);
     match host_ip.parse::<IpAddr>() {
         Ok(IpAddr::V4(v4)) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
-        // An IPv4-mapped v6 address (`::ffff:a.b.c.d`) reaches the same
-        // hosts as its v4 form, so unmap and re-run the v4 ranges;
-        // otherwise cover native-v6 loopback, link-local (fe80::/10) and
-        // unique-local (fc00::/7). `is_loopback()` alone would let
-        // `::ffff:127.0.0.1`, `fe80::1` and `fc00::1` straight through.
+        // An IPv4-mapped v6 address (`::ffff:a.b.c.d`) reaches the same hosts as its v4 form, so
+        // unmap and re-run the v4 ranges; otherwise cover native-v6 loopback.
         Ok(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
             Some(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
             None => {
@@ -78,20 +56,14 @@ pub(crate) fn host_is_blocked(url: &reqwest::Url) -> bool {
                 v6.is_loopback() || (first & 0xffc0) == 0xfe80 || (first & 0xfe00) == 0xfc00
             }
         },
-        // not a literal IP — a normal DNS hostname (e.g. `espncdn.com`),
-        // not blocked by this predicate (DNS-resolution-time rebinding
-        // is out of scope for a same-process string check; the
-        // loopback-only bind in `http.rs::bind_listener` plus the
-        // Host-header check in `http.rs::notify_handler` are this app's
-        // defenses against that class).
+        // `espncdn.com`), not blocked by this predicate (DNS-resolution-time rebinding is out of
+        // scope for a same-process string check.
         Err(_) => false,
     }
 }
 
-/// Read a response body, failing fast once `cap` bytes are exceeded —
-/// checked against Content-Length up front AND enforced while
-/// streaming, because a chunked response with no Content-Length would
-/// otherwise buffer unbounded before any post-hoc check runs.
+/// Read a response body, failing fast once `cap` bytes are exceeded — checked against
+/// Content-Length up front AND enforced while streaming.
 pub(crate) async fn read_body_capped(
     mut response: reqwest::Response,
     cap: usize,
@@ -119,8 +91,6 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const TEST_CAP: usize = 1024;
-
-    // --- host_is_blocked (SSRF/DNS-rebinding redirect defense) ---
 
     fn url(s: &str) -> reqwest::Url {
         reqwest::Url::parse(s).unwrap()
@@ -154,8 +124,6 @@ mod tests {
         assert!(!host_is_blocked(&url("https://espncdn.com/x")));
         assert!(!host_is_blocked(&url("https://a.espncdn.com/x")));
         assert!(!host_is_blocked(&url("http://example.com/x")));
-        // a public IP literal is allowed too — only loopback/link-local/
-        // private ranges are blocked, not IP literals in general.
         assert!(!host_is_blocked(&url("http://8.8.8.8/x")));
     }
 
@@ -205,19 +173,6 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_bail_stops_before_buffering_whole_body() {
-        // Ideally this fixture would omit/understate Content-Length so
-        // only the streaming loop (not the up-front content-length
-        // check) catches the oversized body. wiremock 0.6's
-        // set_body_bytes/set_body_string/set_body_raw all set an
-        // accurate Content-Length header, so there is no built-in way
-        // to produce a response wiremock serves without one. As a
-        // result this case exercises the same content-length fast
-        // path as `oversized_content_length_rejected_before_read` —
-        // the streaming loop is still present and still enforced (see
-        // that test plus `error_message_names_mib_for_mib_cap`), it
-        // just isn't the path that fires first here. Not weakening the
-        // helper: the streaming loop's bound is unconditional in
-        // `read_body_capped` regardless of what any fixture measures.
         let server = MockServer::start().await;
         let payload = vec![b'b'; TEST_CAP + 500];
         Mock::given(method("GET"))

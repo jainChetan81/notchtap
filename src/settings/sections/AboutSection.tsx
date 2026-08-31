@@ -11,9 +11,6 @@ import type { AboutInfo } from "../types";
 
 const TECH_STACK = ["Rust core", "Tauri v2", "React + TypeScript", "Motion", "Vite"];
 
-// Inline mono snippet, shared by every "How to use it" row — a smaller,
-// less boxy sibling of DiagnosticsSection's <pre> log viewer (this is a
-// few words inline in a sentence, not a multi-line block).
 function Snippet({ children }: { children: string }) {
   return (
     <code className="rounded-[4px] border border-border/70 bg-input/30 px-[5px] py-[1px] font-mono text-fs-caption text-foreground">
@@ -22,12 +19,6 @@ function Snippet({ children }: { children: string }) {
   );
 }
 
-// About section: a rare-view tab earns a little delight (Emil Kowalski
-// school — restraint everywhere else, animate what's rarely seen).
-// Enters once on mount with a stagger; the 2s live-stat refresh
-// below never remounts this array (same `info`-driven grid, values
-// swapped in place), so nothing replays or moves on a poll tick — only
-// the numbers change.
 function StatTile({ label, value, index }: { label: string; value: string; index: number }) {
   return (
     <motion.div
@@ -46,11 +37,6 @@ function StatTile({ label, value, index }: { label: string; value: string; index
   );
 }
 
-// Fetch-on-open + a 2s live poll while the section stays mounted (unlike
-// Diagnostics/Queue's manual-Refresh-only shape) — memory/disk are the
-// one part of this section meant to visibly move. The interval is torn
-// down on unmount, so switching away from About stops the polling
-// entirely rather than leaking a background timer.
 export function AboutSection() {
   const [info, setInfo] = useState<AboutInfo | null>(null);
   const { status, run } = useActionStatus("about");

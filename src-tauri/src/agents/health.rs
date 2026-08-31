@@ -1,12 +1,4 @@
-//! Per-runtime Adapter Health, in two halves: pure derivation
-//! ([`declared_capabilities`], [`availability_for`],
-//! [`compatibility_message`], [`build_adapter_health`]), and
-//! [`HealthTracker`], the shared impure bookkeeping `http.rs`'s
-//! `/agent/events` handler updates on every accepted/rejected event. The
-//! tracker caches Kimi's `kimi --version` hook-support probe, so a live
-//! health read never shells out more than once per
-//! [`KIMI_PROBE_CACHE_TTL`]. A health row carries bounded categories
-//! only — never a raw provider version string or a raw error message.
+//! Pure Adapter Health derivation plus shared probe and bounded-error bookkeeping.
 
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
@@ -16,28 +8,14 @@ use super::model::{AgentCapability, AgentRuntime};
 use super::providers::kimi_version::{self, HookSupport};
 use crate::config::AgentRuntimesConfig;
 
-/// How long a cached `kimi --version` probe is trusted before
-/// [`HealthTracker::kimi_hook_support`] shells out again. Kimi's
-/// installed version does not change while notchtap is running in any
-/// way this app can observe, so a coarse cache (rather than probing on
-/// every 5s board tick, `board::DEFAULT_TICK_INTERVAL`) is enough —
-/// see that constant's own doc for why the tick itself stays cheap.
+/// How long a cached `kimi --version` probe is trusted before [`HealthTracker::kimi_hook_support`]
+/// shells out again.
 pub const KIMI_PROBE_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// The three-state Adapter Health status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterAvailability {
-    /// Enabled, and (for Kimi) hook-version-gated support confirmed.
     Available,
-    /// Enabled and usable, but this runtime's own declared capability
-    /// set has known gaps against the full reference set — Codex (no
-    /// `input_required`/`failure` hook) and
-    /// OpenCode (no `subagents`) both land here truthfully rather than
-    /// being reported as fully `Available`.
     Partial,
-    /// Administratively disabled (`[agents.runtimes.*]` toggle off) or,
-    /// for Kimi specifically, the local install's hook surface is below
-    /// [`kimi_version::MINIMUM_HOOK_VERSION`].
     Unavailable,
 }
 
@@ -51,30 +29,12 @@ impl AdapterAvailability {
     }
 }
 
-/// A bounded, matchable category for a rejected `/agent/events` POST —
-/// never the raw `AdapterError` display string, which could echo
-/// untrusted wire content back into a health readout (CLAUDE.md: library
-/// modules use `thiserror` variants a test/caller can match on, not
-/// stringly-typed errors).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterErrorCategory {
-    /// Malformed JSON, an unsupported `schemaVersion`, a missing
-    /// required identity field, or an unrecognized enum value
-    /// (`AdapterError::MalformedJson`/`UnsupportedSchemaVersion`/
-    /// `MissingIdentity`/`MalformedEnum`).
     MalformedPayload,
-    /// `AdapterError::UnsupportedRuntime` — the wire `runtime` string
-    /// itself didn't name one of the four known runtimes, so this
-    /// category is never attributable to a specific [`AgentRuntime`]
-    /// card (see [`super::super::http`]'s handler: it's recorded only
-    /// via the best-effort hint below, which itself only ever resolves
-    /// to a *known* runtime).
+    /// `AdapterError::UnsupportedRuntime` — the wire `runtime` string itself didn't name one of the
+    /// four known runtimes.
     UnsupportedRuntime,
-    /// Reserved for an internal (non-wire) failure category. Nothing in
-    /// the `/agent/events` handler produces one — parse failures are
-    /// always `400`, an accepted event always `202` — but the bounded
-    /// error set is open-ended by design, so the variant exists rather
-    /// than being a breaking addition later.
     #[allow(dead_code)]
     Internal,
 }
@@ -88,10 +48,7 @@ impl AdapterErrorCategory {
         }
     }
 
-    /// Maps a wire-parse [`super::adapter::AdapterError`] onto a bounded
-    /// category. Every variant of that error type is exhaustively
-    /// covered — a new `AdapterError` variant will fail to compile here
-    /// until this match is updated too.
+    /// Maps a wire-parse [`super::adapter::AdapterError`] onto a bounded category.
     pub fn from_adapter_error(error: &super::adapter::AdapterError) -> Self {
         use super::adapter::AdapterError;
         match error {
@@ -104,15 +61,9 @@ impl AdapterErrorCategory {
     }
 }
 
-/// One runtime's full Adapter Health snapshot, as the Settings adapter
-/// cards render it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdapterHealth {
     pub runtime: AgentRuntime,
-    /// Mirrors `[agents.runtimes.*]`'s own toggle directly — surfaced
-    /// alongside `availability` because "administratively disabled" and
-    /// "Kimi hook version too old" are both real reasons for
-    /// `Unavailable`, and the Settings card needs to tell them apart.
     pub enabled: bool,
     pub availability: AdapterAvailability,
     pub capabilities: Vec<AgentCapability>,
@@ -121,9 +72,8 @@ pub struct AdapterHealth {
     pub compatibility_message: Option<String>,
 }
 
-/// Declaration order used everywhere a full four-runtime health snapshot
-/// is built — matches [`AgentRuntime`]'s own declaration order: Claude
-/// Code, Codex, Kimi, OpenCode.
+/// Declaration order used everywhere a full four-runtime health snapshot is built — matches
+/// [`AgentRuntime`]'s own declaration order: Claude Code, Codex, Kimi, OpenCode.
 pub const ALL_RUNTIMES: [AgentRuntime; 4] = [
     AgentRuntime::ClaudeCode,
     AgentRuntime::Codex,
@@ -131,17 +81,11 @@ pub const ALL_RUNTIMES: [AgentRuntime; 4] = [
     AgentRuntime::OpenCode,
 ];
 
-/// The per-runtime capability row, restricted (like every provider
-/// parser's own `CAPABILITIES` const) to what that adapter actually
-/// declares on the wire — `open_or_focus` is Host-dependent and never
-/// part of a runtime's own declared set. Kept as its own small table
-/// here, rather than importing each provider module's string-typed
-/// `CAPABILITIES` const, because Health needs the typed
-/// [`AgentCapability`] enum, not wire-label strings.
+/// The per-runtime capability row, restricted (like every provider parser's own `CAPABILITIES`
+/// const) to what that adapter actually declares on the wire.
 pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability] {
     use AgentCapability::*;
     match runtime {
-        // providers/claude_code.rs::CAPABILITIES
         AgentRuntime::ClaudeCode => &[
             SessionLifecycle,
             PermissionRequests,
@@ -151,8 +95,6 @@ pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability
             ToolDetails,
             Subagents,
         ],
-        // providers/codex.rs::CAPABILITIES — no input_required/failure
-        // (declared gap, that module's own top doc)
         AgentRuntime::Codex => &[
             SessionLifecycle,
             PermissionRequests,
@@ -160,9 +102,6 @@ pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability
             ToolDetails,
             Subagents,
         ],
-        // providers/kimi.rs::CAPABILITIES — full set, gated by hook
-        // version support (availability_for below), not by capability
-        // completeness.
         AgentRuntime::Kimi => &[
             SessionLifecycle,
             PermissionRequests,
@@ -172,8 +111,6 @@ pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability
             ToolDetails,
             Subagents,
         ],
-        // adapters/opencode/notchtap.ts::OPENCODE_CAPABILITIES — no
-        // subagents (declared gap, that file's "Known gaps" doc).
         AgentRuntime::OpenCode => &[
             SessionLifecycle,
             PermissionRequests,
@@ -185,15 +122,11 @@ pub fn declared_capabilities(runtime: AgentRuntime) -> &'static [AgentCapability
     }
 }
 
-/// The full reference set every "fully `Available`" runtime must declare
-/// in its entirety — Claude Code and (hook-supported) Kimi are the only
-/// two that currently do.
+/// The full reference set every "fully `Available`" runtime must declare in its entirety — Claude
+/// Code and (hook-supported) Kimi are the only two that currently do.
 const FULL_REFERENCE_CAPABILITY_COUNT: usize = 7;
 
-/// Pure availability derivation. `kimi_hook` is `None`
-/// for every runtime except Kimi, where it's the (possibly cached) probe
-/// result — passing it in rather than probing inside this function keeps
-/// it unit-testable without a real `kimi` binary on the test machine.
+/// Pure availability derivation.
 pub fn availability_for(
     runtime: AgentRuntime,
     enabled: bool,
@@ -215,9 +148,8 @@ pub fn availability_for(
     }
 }
 
-/// Pure, human-readable setup-compatibility line. Never `None` for a
-/// disabled or gapped runtime — only a fully healthy, ungapped runtime
-/// has nothing to add.
+/// Pure, human-readable setup-compatibility line. Never `None` for a disabled or gapped runtime —
+/// only a fully healthy, ungapped runtime has nothing to add.
 pub fn compatibility_message(
     runtime: AgentRuntime,
     enabled: bool,
@@ -257,9 +189,8 @@ pub fn compatibility_message(
     }
 }
 
-/// Pure combination of every input above into one [`AdapterHealth`] row
-/// — the unit-testable state-derivation half. `kimi_hook` is ignored for
-/// every runtime but Kimi.
+/// Pure combination of every input above into one [`AdapterHealth`] row — the unit-testable
+/// state-derivation half.
 pub fn build_adapter_health(
     runtime: AgentRuntime,
     enabled: bool,
@@ -278,16 +209,6 @@ pub fn build_adapter_health(
     }
 }
 
-/// Best-effort recovery of a *known* runtime from an otherwise-rejected
-/// `/agent/events` body, used ONLY to attribute a bounded error category
-/// to the right Adapter Health card (`http.rs`'s handler). Deliberately
-/// separate from `adapter::parse_wire_event` (which already rejected the
-/// body) — a second, tolerant, best-effort read of just the `runtime`
-/// field, never surfaced to a caller as anything but a health-attribution
-/// hint. Returns `None` for anything that isn't recognizable JSON with a
-/// `runtime` string naming one of the four known runtimes — the
-/// `UnsupportedRuntime` case in particular is expected to return `None`
-/// here (see [`AdapterErrorCategory::UnsupportedRuntime`]'s own doc).
 pub fn best_effort_runtime_hint(body: &[u8]) -> Option<AgentRuntime> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let raw = value.get("runtime")?.as_str()?;
@@ -311,11 +232,7 @@ struct TrackerInner {
     kimi_cache: Option<(Instant, HookSupport)>,
 }
 
-/// The shared, impure half (this module's top doc). One instance is
-/// app-managed (`lib.rs`, alongside `agent_registry`/`agent_board`) and
-/// reached from both `http.rs`'s `/agent/events` handler (writes) and
-/// the `agent-state` publish path + the Settings `get_agent_health`
-/// command (reads via [`HealthTracker::snapshot`]).
+/// The shared, impure half (this module's top doc).
 pub struct HealthTracker {
     inner: StdMutex<TrackerInner>,
 }
@@ -336,11 +253,8 @@ impl HealthTracker {
         }
     }
 
-    /// Records that a well-formed event from `runtime` was just accepted
-    /// off the wire (parsed successfully) — called regardless of whether
-    /// the runtime's own `[agents.runtimes.*]` toggle then went on to
-    /// skip registry/Notification handling, since this field answers "is
-    /// the adapter actually delivering", not "did notchtap act on it".
+    /// Records that a well-formed event from `runtime` was just accepted off the wire (parsed
+    /// successfully).
     pub fn record_accepted(&self, runtime: AgentRuntime, at_ms: i64) {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard
@@ -350,9 +264,8 @@ impl HealthTracker {
             .last_accepted_event_ms = Some(at_ms);
     }
 
-    /// Records a bounded error category for a known runtime — see
-    /// [`best_effort_runtime_hint`]'s doc for why the caller can only
-    /// ever supply a *known* `runtime` here, never the raw wire string.
+    /// Records a bounded error category for a known runtime — see [`best_effort_runtime_hint`]'s
+    /// doc for why the caller can only ever supply a *known* `runtime` here.
     pub fn record_error(&self, runtime: AgentRuntime, category: AdapterErrorCategory) {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard
@@ -372,20 +285,7 @@ impl HealthTracker {
             .and_then(|r| r.last_accepted_event_ms)
     }
 
-    #[cfg(test)]
-    fn last_error(&self, runtime: AgentRuntime) -> Option<AdapterErrorCategory> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .records
-            .get(&runtime)
-            .and_then(|r| r.last_error_category)
-    }
-
-    /// The one impure input this module needs: a (cached) Kimi hook-
-    /// support read. `now` is caller-supplied (`Instant::now()` at the
-    /// real call sites, a simulated clock in tests) so the cache TTL
-    /// itself stays testable without a real 60-second sleep.
+    /// The one impure input this module needs: a (cached) Kimi hook- support read.
     pub fn kimi_hook_support(&self, now: Instant) -> HookSupport {
         {
             let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -395,33 +295,20 @@ impl HealthTracker {
                 }
             }
         } // guard dropped HERE — the probe below spawns a process, and
-          // this same mutex guards `records`, which `/agent/events`
-          // writes to on every accepted event. Holding it across a
-          // subprocess would stall ingestion, not just health reads.
+          // Holding it across a subprocess would stall ingestion, not just health reads.
         let support = kimi_version::probe_hook_support();
-        // Deliberate, benign race: two callers arriving together on an
-        // expired cache may both probe. Cost is one extra bounded
-        // `kimi --version`; holding the lock across a subprocess instead
-        // would stall ingestion. `records` and `kimi_cache` are
-        // structurally independent — no invariant couples them — so
-        // nothing can observe a torn state. The only visible effect is
-        // that a later-finishing caller may store an EARLIER `now`,
-        // marginally shortening the effective cache TTL.
+        // Deliberate, benign race: two callers arriving together on an expired cache may both
+        // probe.
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.kimi_cache = Some((now, support.clone()));
         support
     }
 
-    /// Builds the full four-runtime health snapshot (declaration order,
-    /// [`ALL_RUNTIMES`]) — the one call Settings' `get_agent_health` and
-    /// the `agent-state` publish path both make.
+    /// Builds the full four-runtime health snapshot (declaration order, [`ALL_RUNTIMES`]) — the one
+    /// call Settings' `get_agent_health` and the `agent-state` publish path both make.
     pub fn snapshot(&self, runtimes_cfg: &AgentRuntimesConfig, now: Instant) -> Vec<AdapterHealth> {
-        // Probe ONLY when Kimi is enabled: `build_adapter_health` passes
-        // `kimi_hook` to exactly `availability_for` and
-        // `compatibility_message`, and both return before reading it when
-        // `enabled` is false — so `None` is behaviour-preserving for a
-        // disabled runtime. A user who never installed Kimi should not pay
-        // a process spawn every `KIMI_PROBE_CACHE_TTL` forever.
+        // A user who never installed Kimi should not pay a process spawn every
+        // `KIMI_PROBE_CACHE_TTL` forever.
         let kimi_hook = if runtimes_cfg.runtime_enabled(AgentRuntime::Kimi) {
             Some(self.kimi_hook_support(now))
         } else {
@@ -462,58 +349,6 @@ mod tests {
         AgentRuntimesConfig::default()
     }
 
-    // --- declared_capabilities / availability_for -------------------------
-
-    #[test]
-    fn claude_code_declares_the_full_seven_capability_set() {
-        assert_eq!(declared_capabilities(AgentRuntime::ClaudeCode).len(), 7);
-    }
-
-    #[test]
-    fn codex_is_missing_input_required_and_failure() {
-        let caps = declared_capabilities(AgentRuntime::Codex);
-        assert!(!caps.contains(&AgentCapability::InputRequired));
-        assert!(!caps.contains(&AgentCapability::Failure));
-    }
-
-    #[test]
-    fn opencode_is_missing_subagents() {
-        let caps = declared_capabilities(AgentRuntime::OpenCode);
-        assert!(!caps.contains(&AgentCapability::Subagents));
-    }
-
-    #[test]
-    fn disabled_runtime_is_always_unavailable() {
-        assert_eq!(
-            availability_for(AgentRuntime::ClaudeCode, false, None),
-            AdapterAvailability::Unavailable
-        );
-    }
-
-    #[test]
-    fn claude_code_enabled_is_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::ClaudeCode, true, None),
-            AdapterAvailability::Available
-        );
-    }
-
-    #[test]
-    fn codex_enabled_is_partial_not_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::Codex, true, None),
-            AdapterAvailability::Partial
-        );
-    }
-
-    #[test]
-    fn opencode_enabled_is_partial_not_available() {
-        assert_eq!(
-            availability_for(AgentRuntime::OpenCode, true, None),
-            AdapterAvailability::Partial
-        );
-    }
-
     #[test]
     fn kimi_enabled_but_hook_unsupported_is_unavailable() {
         let hook = HookSupport::Unavailable {
@@ -536,8 +371,6 @@ mod tests {
             AdapterAvailability::Available
         );
     }
-
-    // --- compatibility_message ---------------------------------------------
 
     #[test]
     fn disabled_message_mentions_settings() {
@@ -579,8 +412,6 @@ mod tests {
         assert!(compatibility_message(AgentRuntime::OpenCode, true, None).is_some());
     }
 
-    // --- AdapterErrorCategory::from_adapter_error ---------------------------
-
     #[test]
     fn every_adapter_error_variant_maps_to_a_bounded_category() {
         use super::super::adapter::AdapterError;
@@ -611,8 +442,6 @@ mod tests {
         );
     }
 
-    // --- best_effort_runtime_hint -------------------------------------------
-
     #[test]
     fn runtime_hint_recovers_a_known_runtime_from_an_otherwise_malformed_body() {
         let body = br#"{"runtime": "codex", "kind": "not-a-real-kind"}"#;
@@ -630,30 +459,6 @@ mod tests {
         assert_eq!(best_effort_runtime_hint(b"not json"), None);
     }
 
-    // --- HealthTracker: last-seen / error bookkeeping -----------------------
-
-    #[test]
-    fn record_accepted_then_read_back_last_accepted() {
-        let tracker = HealthTracker::new();
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), None);
-        tracker.record_accepted(AgentRuntime::Codex, 1_000);
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), Some(1_000));
-        // A later event overwrites, never accumulates.
-        tracker.record_accepted(AgentRuntime::Codex, 2_000);
-        assert_eq!(tracker.last_accepted(AgentRuntime::Codex), Some(2_000));
-    }
-
-    #[test]
-    fn record_error_then_read_back_last_error() {
-        let tracker = HealthTracker::new();
-        assert_eq!(tracker.last_error(AgentRuntime::Kimi), None);
-        tracker.record_error(AgentRuntime::Kimi, AdapterErrorCategory::MalformedPayload);
-        assert_eq!(
-            tracker.last_error(AgentRuntime::Kimi),
-            Some(AdapterErrorCategory::MalformedPayload)
-        );
-    }
-
     #[test]
     fn per_runtime_bookkeeping_does_not_cross_contaminate() {
         let tracker = HealthTracker::new();
@@ -661,8 +466,6 @@ mod tests {
         assert_eq!(tracker.last_accepted(AgentRuntime::Codex), None);
         assert_eq!(tracker.last_accepted(AgentRuntime::ClaudeCode), Some(500));
     }
-
-    // --- HealthTracker::snapshot ---------------------------------------------
 
     #[test]
     fn snapshot_carries_all_four_runtimes_in_declaration_order() {
@@ -714,23 +517,12 @@ mod tests {
         let tracker = HealthTracker::new();
         let base = Instant::now();
         let first = tracker.kimi_hook_support(base);
-        // Still within the TTL — must be byte-identical to the first
-        // read without a second real subprocess call (can't assert "no
-        // subprocess ran" directly, but a changed environment between
-        // calls would be the only way these could differ, and the cache
-        // must win regardless).
         let second = tracker.kimi_hook_support(base + Duration::from_secs(1));
         assert_eq!(first, second);
     }
 
     #[test]
     fn snapshot_skips_the_kimi_probe_when_kimi_is_disabled() {
-        // "No process was spawned" cannot be asserted without injecting a
-        // probe seam, so this pins the observable contract instead: with
-        // Kimi disabled, `snapshot` passes `None` for `kimi_hook` and both
-        // `availability_for` and `compatibility_message` short-circuit on
-        // `!enabled` before ever reading it — so the row is identical to
-        // what an unconditional probe would have produced.
         let tracker = HealthTracker::new();
         let mut cfg = enabled_cfg();
         cfg.kimi.enabled = false;

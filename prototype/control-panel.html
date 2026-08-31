@@ -10,12 +10,10 @@
     /* page chrome (this document's own wrapper, not part of the window mock) */
     --page-bg: #14171c; --page-ink: #e8ecf1; --page-dim: #8b95a3; --page-rule: rgba(255,255,255,0.09);
 
-    /* ==== real design tokens, copied from vendor/shared-ui/design/tokens.css ====
-       (hex values are that file's own round-trip comments, not independently
-       re-derived here) */
-    --background: #050607;      /* window */
+    /* Mirrors vendor/shared-ui/design/tokens.css. */
+    --background: #050607;
     --sidebar: #090a0c;
-    --card: #0d0f12;            /* surface */
+    --card: #0d0f12;
     --foreground: #f1f2f4;
     --muted-foreground: #a2a6ad;
     --border: #202329;          /* also --input, --secondary, --accent, --muted: same oklch value */
@@ -43,7 +41,6 @@
   .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--page-dim); margin: 0 0 8px; }
   footer.page-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--page-rule); font-size: 11.5px; color: var(--page-dim); line-height: 1.6; }
 
-  /* ==== the window mock itself ==== */
   .window { display: grid; grid-template-columns: 140px minmax(0,1fr); min-height: 520px; background: var(--background); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 24px 48px rgba(0,0,0,0.5); }
 
   .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 0; }
@@ -64,7 +61,6 @@
   .section-stack { display: grid; gap: 14px; }
   .section-stack + .section-stack { margin-top: 14px; }
 
-  /* Card (SettingsGroup) */
   .settings-group { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .group-heading { padding: 12px 13px 11px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
   .group-title { font-size: var(--fs-body); font-weight: 640; color: var(--foreground); }
@@ -81,54 +77,46 @@
   .number-field.has-unit .number-input { padding-right: 34px; }
   .unit { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.05em; color: var(--muted-foreground); pointer-events: none; }
 
-  /* Switch (src/components/ui/switch.tsx) */
   .switch { position: relative; width: 36px; height: 22px; flex: none; border-radius: 999px; background: var(--border); transition: background-color 150ms ease-out; }
   .switch.is-checked { background: var(--primary); }
   .switch-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted-foreground); transition: left 150ms ease-out, background-color 150ms ease-out; }
   .switch.is-checked .switch-thumb { left: 16px; background: var(--background); }
 
-  /* Segmented (src/settings/controls/Segmented.tsx) */
   .segmented { display: grid; height: 31px; width: 144px; flex: none; border-radius: 7px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 3px; gap: 2px; }
   .segmented.cols-2 { grid-template-columns: repeat(2,1fr); }
   .segmented.cols-3 { grid-template-columns: repeat(3,1fr); }
   .segmented-btn { border-radius: 4px; border: 1px solid transparent; background: transparent; font: 620 var(--fs-secondary)/1 var(--font-mono); letter-spacing: 0.03em; color: var(--muted-foreground); padding: 0; }
   .segmented-btn.is-selected { background: var(--border); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 
-  /* Textarea / text control */
   .textarea-control { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 11px 0 12px; }
   .textarea-control:first-child { border-top: none; }
   .settings-textarea { margin-top: 8px; min-height: 73px; width: 100%; border-radius: 8px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 8px 10px; font: 560 var(--fs-secondary)/1.55 var(--font-mono); color: var(--foreground); resize: vertical; }
   .settings-input { margin-top: 8px; height: 31px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 0 10px; font: 560 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
   .field-caption { margin-top: 5px; font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); }
 
-  /* Buttons (src/components/ui/button.tsx) */
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid transparent; font: 590 11px/1 var(--font-sans); white-space: nowrap; cursor: default; }
   .btn.default { background: color-mix(in oklch, var(--primary), var(--background) 25%); color: var(--foreground); }
   .btn.outline { background: var(--background); border-color: var(--border); color: var(--foreground); }
   .btn.sm { height: 28px; padding: 0 10px; font-size: var(--fs-secondary); }
   .btn[disabled] { opacity: 0.5; }
 
-  /* MetaChip (src/components/ui/meta-chip.tsx) */
   .meta-chip { display: inline-flex; align-items: center; min-width: 0; border-radius: 999px; border: 1px solid var(--border); padding: 2px 7px; font: 650 var(--fs-caption)/1.5 var(--font-mono); color: var(--muted-foreground); }
   .meta-chip.uppercase { letter-spacing: 0.06em; text-transform: uppercase; }
   .meta-chip.active { border-color: color-mix(in oklch, var(--primary), transparent 60%); background: color-mix(in oklch, var(--border), transparent 60%); color: var(--foreground); }
   .meta-chip-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 
-  /* Rotation order list (GeneralSection) */
   .rotation-order-row { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 10px; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 10px 0; }
   .rotation-order-row:first-child { border-top: none; }
   .rotation-order-rank { font: 700 var(--fs-secondary)/1 var(--font-mono); color: var(--muted-foreground); }
   .rotation-order-name { font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
   .icon-btn { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); display: inline-flex; align-items: center; justify-content: center; }
 
-  /* shortcuts table */
   .shortcut-table { width: 100%; border-collapse: collapse; }
   .shortcut-table th, .shortcut-table td { text-align: left; padding: 8px 4px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
   .shortcut-table thead th { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); padding-bottom: 7px; border-bottom: none; }
   .kbd { display: inline-flex; min-height: 24px; align-items: center; justify-content: center; border-radius: 5px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 70%); padding: 0 5px; font: 600 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
   .shortcut-action { font-size: var(--fs-secondary); color: var(--foreground); font-weight: 400; }
 
-  /* agent adapter cards */
   .agent-card { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 12px 0; }
   .agent-card:first-child { border-top: none; }
   .agent-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
@@ -139,14 +127,12 @@
   .agent-meta-label { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
   .agent-health { margin: -2px 0 8px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-caption); color: var(--muted-foreground); }
 
-  /* log viewer (Diagnostics) */
   .log-view { margin: 0; max-height: 260px; overflow: auto; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; font: 400 10.5px/1.55 var(--font-mono); color: var(--muted-foreground); white-space: pre-wrap; }
   .log-view .lvl-err { color: #d6a1a5; }
   .log-view .lvl-info { color: #8fb8e8; }
 
   .settings-footer { display: flex; align-items: center; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--background); min-height: 57px; }
 
-  /* history / queue rows */
   .list-row { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 10px 0; }
   .list-row:first-child { border-top: none; }
   .list-row.queue-row { grid-template-columns: minmax(0,1fr) auto; align-items: center; }
@@ -156,7 +142,6 @@
   .list-body { font-size: var(--fs-body); color: var(--muted-foreground); }
   .list-chips { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 5px; }
 
-  /* about stat grid */
   .stat-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; padding: 8px 0; }
   .stat-tile { border-radius: 6px; border: 1px solid color-mix(in oklch, var(--border), transparent 40%); background: rgba(5,6,7,0.4); padding: 10px 12px; }
   .stat-label { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); }
@@ -198,7 +183,6 @@
     preview label's 12px).
   </p>
 
-  <!-- ============================================================ -->
   <section class="rig">
     <h2>01 — General</h2>
     <p class="rig-sub">
@@ -332,7 +316,6 @@
     </div>
   </section>
 
-  <!-- ============================================================ -->
   <section class="rig">
     <h2>04 — Agents</h2>
     <p class="rig-sub">
@@ -504,7 +487,6 @@
     </div>
   </section>
 
-  <!-- ============================================================ -->
   <section class="rig">
     <h2>Sections not drawn out in full</h2>
     <p class="rig-sub">

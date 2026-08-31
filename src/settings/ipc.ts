@@ -12,9 +12,7 @@ import type {
 type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
 type UnparsedObject = { [key: string]: UnparsedValue };
 
-// Typed mirror of the rust command allowlist (src-tauri/build.rs +
-// capabilities/settings.json): the settings window is the only invoker; the
-// overlay is receive-only. This map grants nothing — it only types the allowlist.
+// Keep aligned with src-tauri/build.rs and capabilities/settings.json; overlay code never imports this.
 export interface SettingsCommands {
   clear_history: { args: undefined; result: null };
   clear_queue: { args: undefined; result: number };

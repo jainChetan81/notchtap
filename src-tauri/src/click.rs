@@ -29,19 +29,6 @@ pub fn click_target(x: f64, y: f64, present: &[Tab], rects: &[Rect]) -> Option<T
         .map(|(_, tab)| *tab)
 }
 
-/// Everything the monitor closure needs, bundled so the install site
-/// reads as data, not a positional soup.
-///
-/// The split between what lives here and what the handler re-reads per
-/// event is deliberate: geometry inputs that CANNOT change without a
-/// relaunch are captured once (`window_number`, `mode`, `cutout_width`,
-/// `cutout_height`), while anything the running app can change under us
-/// is read fresh inside the handler. `card_scale` is the second kind —
-/// the Appearance settings hot-apply it via `set_appearance`, and the
-/// hover hit-test already re-reads it per event
-/// (`lib.rs::hover_point_is_over_card`), so a captured copy would leave
-/// the click rects on the boot scale while the hover rects and the
-/// webview both moved. `board_frame` is the same story for height.
 #[cfg(target_os = "macos")]
 pub struct ClickMonitorParams<R: tauri::Runtime> {
     pub app: tauri::AppHandle<R>,

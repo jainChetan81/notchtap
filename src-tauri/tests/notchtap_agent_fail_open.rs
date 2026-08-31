@@ -1,13 +1,3 @@
-//! Black-box tests of the `notchtap-agent` binary's fail-open contract.
-//! This is the one thing the unit
-//! tests inside `agents::providers` can't prove on their own, since
-//! they exercise `deliver`/`normalize` as library functions, never the
-//! compiled binary's stdin/stdout/exit-code behavior end to end.
-//!
-//! Cargo provides `CARGO_BIN_EXE_notchtap-agent` (the compiled binary's
-//! path) automatically for any integration test in this same package —
-//! no manual `cargo build` orchestration needed.
-
 use std::io::Write;
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
@@ -21,8 +11,6 @@ const VALID_SESSION_START: &str = r#"{
 
 #[test]
 fn hook_claude_code_exits_0_with_empty_stdout_when_the_port_is_unreachable() {
-    // An ephemeral port with nothing listening on it, same technique as
-    // `agents::providers::delivery`'s own unit test.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
@@ -94,11 +82,6 @@ fn hook_claude_code_exits_0_with_empty_stdout_on_malformed_stdin() {
 
 #[test]
 fn hook_codex_and_kimi_exit_0_with_empty_stdout_on_malformed_stdin() {
-    // A payload with no recognizable
-    // `session_id`/`hook_event_name` fails `normalize` for both, and the
-    // fail-open contract (spec §4.1: never block the provider, never
-    // write to stdout) must hold on that parse-failure path exactly as
-    // it does for Claude Code above.
     let bin = env!("CARGO_BIN_EXE_notchtap-agent");
     for runtime in ["codex", "kimi"] {
         let mut child = Command::new(bin)

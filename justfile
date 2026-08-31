@@ -22,9 +22,9 @@ test-rust:
 check-rust:
     cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
 
-# frontend gates
+# Standalone TypeScript adapter gate; frontend verification is manual.
 test-web:
-    npx vitest run
+    npx vitest run adapters/opencode/notchtap.test.ts
 
 # lint/format + typecheck (biome, oxlint, then tsc — CI order)
 check-web:

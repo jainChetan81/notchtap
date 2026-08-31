@@ -10,17 +10,17 @@ Canon guide, every agent + maintainer working this repo. Keep it lean: history l
 
 ## writing rules (comments + docs)
 
-Comments and docs describe the CURRENT product only, present tense. Never write plan numbers, dates, review citations, or "what this used to be" — history lives in git. Keep only: invariants code can't express ("never X, it breaks Y"), cross-file couplings named explicitly, security boundaries, short API doc comments. Tool directives (biome-ignore, @ts-expect-error, SAFETY:, #[allow] justifications) stay verbatim.
+Comments and docs describe the CURRENT product only, present tense. Never write plan numbers, dates, review citations, or "what this used to be" — history lives in git. Keep only: invariants code can't express ("never X, it breaks Y"), cross-file couplings named explicitly, security boundaries, short API doc comments. Default to no comment when names, types, tests, or `git blame` make the intent traceable. Keep comments to 1–2 lines; if a comment needs a paragraph, improve the code or move durable rationale into the appropriate architecture document. Tool directives (biome-ignore, @ts-expect-error, SAFETY:, #[allow] justifications) stay verbatim.
 
 ## commands
 
-Standard invocations in `package.json` + `justfile` (`npm run tauri dev`, `npx tsc --noEmit`, `npx vite build`, `cargo build`/`cargo test` from `src-tauri/`, `npx vitest run`). Non-obvious:
+Standard invocations in `package.json` + `justfile` (`npm run tauri dev`, `npx tsc --noEmit`, `npx vite build`, `cargo build`/`cargo test` from `src-tauri/`, `npx vitest run adapters/opencode/notchtap.test.ts` for the OpenCode adapter). Non-obvious:
 
 - Enforcing lint gate (CI + `just check-web`) is `npx biome ci .`; `npx biome check .` is local dev only — not interchangeable.
 - `./notchtap --title "t" --body "b"` pushes a notification to `/notify` (default `127.0.0.1:9789`, override `--port` or `$NOTCHTAP_PORT`); `notchtap run -- <cmd>` wraps a long command and pushes a completion card.
 - `just test-all` mirrors `.github/workflows/ci.yml` exactly; fresh clone runs `just setup` first (`brew install just` if missing).
 
-No repo-wide coverage gate — the bar is "every listed example surface has a passing test". Test counts live only in `docs/TESTING_STRATEGY.md` §0. Physical-hardware behaviour (notch geometry, hud placement, animation look) stays a manual checklist by design (§5/§6).
+No frontend automated tests: keep React/CSS verification manual and avoid mock-heavy component suites. Rust decision surfaces and the standalone OpenCode adapter retain focused tests; counts live only in `docs/TESTING_STRATEGY.md` §0. Physical-hardware behaviour stays on the manual checklist (§5/§6).
 
 ## architecture
 

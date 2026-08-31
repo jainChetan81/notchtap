@@ -1,29 +1,4 @@
-/* Tailwind v4 entry for the settings window, WITHOUT preflight.
-   settings.html hosts overlay-card.css's shared card art (the Appearance
-   preview subtree) — Tailwind's normal `@import "tailwindcss";` pulls in
-   a global preflight reset that would flatten it.
 
-   Import order is load-bearing:
-     1. tailwindcss/theme.css (layer(theme))  — default theme tokens,
-        no preflight.
-     2. @chetanjain/shared-ui/design/tokens.css — sole owner of
-        semantic color/radius/sidebar tokens.
-     3. tw-animate-css                          — animation utilities.
-     4. shadcn/tailwind.css                     — shadcn's utility layer
-        additions (radix-nova requires this import for generated
-        component classes).
-     5. tailwindcss/utilities.css (layer(utilities)) — last so utilities
-        win over theme defaults at equal specificity.
-
-   Lockstep: main.tsx must import this file BEFORE ../overlay-card.css;
-   any change to one MUST change the other. */
-
-/* Pins the relative priority of the `base`/`theme`/`utilities` cascade
-   layers BEFORE any of their content is added below — CSS Cascade Layers
-   order layers by first DECLARATION, later-declared = higher priority,
-   and this bare (block-less) form only fixes that order. Unlayered
-   rules always beat ANY layered rule regardless of specificity, so this
-   must stay ahead of every import and layered rule in this file. */
 @layer base, theme, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
@@ -33,20 +8,9 @@
 @import "shadcn/tailwind.css";
 @import "tailwindcss/utilities.css" layer(utilities);
 
-/* `shadcn init` requires this for `dark:` utility variants (unused
-   today, harmless) to resolve against the class="dark" already on
-   <html>. */
 @custom-variant dark (&:is(.dark *));
 
-/* The geist font-face import from `shadcn init` is intentionally
-   absent: shared-ui's tokens.css owns --font-sans/--font-mono/
-   --font-heading, defaulting to the macOS system stack; swapping fonts
-   is an explicit separate decision. */
 
-/* The radius scale is the one genuine local addition to the shared
-   theme — var(--radius) itself comes from shared-ui's tokens.css, the
-   sole owner of semantic tokens. Don't re-declare shared token names
-   here: duplicate declarations risk competing semantic token values. */
 @theme inline {
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -57,49 +21,15 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* The generator's `*`/`body`/`html` base reset was intentionally not
-   reproduced: a document-wide reset is an unscoped global rule and would
-   flatten overlay-card.css's shared card art in this same document. The
-   settings-scoped base reset in `@layer base` below supplies the
-   equivalent window-scoped rules; if a narrowly
-   `.settings-window`-scoped equivalent is ever needed, add it scoped,
-   not as a document-wide reset. */
 
-/* Settings-scoped type floor — 9px/10px/11px/19px, defined once here so
-   both utilities and every still-CSS-driven rule resolve `var(--fs-*)`
-   unchanged regardless of which file owns the definition (cascade
-   doesn't care about source-file, only reachability). `@theme inline`
-   bridges each one to a real `text-fs-*` utility while keeping the
-   value a live runtime var() reference. Do NOT change these values. */
 :root {
   --fs-caption: 9px;
   --fs-secondary: 10px;
   --fs-body: 11px;
   --fs-title: 19px;
-  /* 16 bespoke settings props (--window/--sidebar/--accent/
-     --error/...) are intentionally absent — shared-ui's semantic
-     tokens supersede them. --accent MUST NOT be re-declared here:
-     shared-ui's tokens.css already owns `--accent` (its gray
-     hover-surface token) for bg-accent/hover:bg-accent utilities used
-     throughout this window; re-declaring would silently override it
-     document-wide and turn every shadcn hover surface blue. */
 
-/* --text-secondary/--surface/--divider are intentionally absent —
-     shared-ui's tokens.css derives `--muted-foreground`/`--card`/
-     `--border` from this exact bespoke dark palette (text-2nd #a2a6ad,
-     surface #0d0f12, divider #202329), so .preview-label/.preview-stage
-     below read those tokens directly — one fewer local alias, same
-     rendered preview. */
 
-  /* Settings-scoped shadow token — same computed value as the three
-     selected-pill `shadow-[0_1px_2px_rgba(0,0,0,0.4)]` arbitrary sites
-     it replaces (PriorityToggle x2, the generic segmented control's
-     is-selected state), mirroring the `--ring` focus-shadow
-     tokenization at the same call sites. */
   --shadow-selected: 0 1px 2px rgba(0, 0, 0, 0.4);
-  /* Single-sourced press shadow — the `inset` twin of --shadow-selected
-     consumed by button.tsx/switch.tsx/Segmented.tsx, same discipline
-     that token already follows. */
   --shadow-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
@@ -110,20 +40,6 @@
   --text-fs-title: var(--fs-title);
 }
 
-/* Settings document/frame base — a named settings-scoped base rule
-   using shared-ui tokens (`var(--background)`/`var(--foreground)`/
-   `var(--font-sans)`). `color-scheme`/`font-synthesis`/
-   `text-rendering`/font-smoothing have no Tailwind utility equivalent;
-   only `box-sizing: border-box` gets the narrower
-   `.settings-window`-scoped selector — every element it touches is a
-   `.settings-window` descendant, so this is the identical computed
-   effect, just scoped down instead of literally global. */
-/* Rules below that can compete with a Tailwind utility class on the
-   SAME element (button/input/textarea font+color, and defensively the
-   rest of this settings-scoped reset) live inside `@layer base`, per
-   the pinned order above. Custom-property-only `:root` blocks (this
-   file's `--fs-*`/`--radius-*` declarations) intentionally stay OUTSIDE
-   any layer — nothing else declares those same names competitively. */
 @layer base {
   :root {
     color-scheme: dark;
@@ -170,19 +86,6 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* `.section-scroll`'s scrollbar theming has no Tailwind utility
-     equivalent (scrollbar-color/width, ::-webkit-scrollbar
-     pseudo-elements) — a named base rule, referenced by the unchanged
-     `.section-scroll` className, alongside Tailwind utilities for the
-     properties that DO have one (min-h-0, overflow-y-auto,
-     overscroll-contain — applied at the JSX call site).
-     `var(--border)` replaces the hardcoded thumb hex — no raw palette
-     literal.
-
-     `.sidebar-nav` shares this rule (footer-clip fix): the nav column
-     scrolls when the sidebar's min-content exceeds the window, same
-     scrollbar treatment as the section pane so the two scroll surfaces
-     read as one system. */
   .section-scroll,
   .sidebar-nav {
     scrollbar-color: var(--border) transparent;
@@ -203,18 +106,7 @@
   }
 }
 
-/* Remaining live base rules, grouped in their own `@layer base` block.
-   Same convention as every other named settings-scoped rule above:
-   bare element/class selectors go in `@layer base`; only custom-
-   property-only `:root` blocks stay unlayered. */
 
-/* Shared mono-font selector list: `.soon-badge`/`.sidebar-meta`/
-   `.section-index`/`.relaunch-note`/`.error-title` either match no
-   remaining element or duplicate a `font-mono` utility already applied
-   at their call site (harmless); `.field-caption`/`.unit`/
-   `.status-chip`/`.shortcut-status` are the still-live readers with no
-   `font-mono` utility of their own. Duplicates are kept — zero-risk,
-   and dropping one might silently regress. */
 @layer base {
   .soon-badge,
   .sidebar-meta,
@@ -225,38 +117,18 @@
   .relaunch-note,
   .shortcut-status,
   .error-title {
-    /* shared-ui's `--font-mono` token (vendor/shared-ui/
-       design/tokens.css) is this exact literal stack. */
     font-family: var(--font-mono);
   }
 
-  /* Per-section body wrapper — a bare layout rule with no competing
-     utility at any call site. */
   .section-stack {
     display: grid;
     gap: 14px;
   }
 
-  /* ==== Appearance gallery frame chrome ====
-     `.appearance-preview` is the outer gallery container — frame chrome
-     only, never a CSS scope: overlay-card.css's shared rules are scoped
-     under `.card-root` instead, placed per-sample on `.preview-stage`
-     below. Still the context-owned custom-property OWNER for this
-     window, exactly like `:root` is in the overlay (styles.css) — the
-     shared card-shape formulas in overlay-card.css read
-     `var(--card-scale)` etc. and inherit whatever value is declared
-     closest, so declaring the live/default values here (Appearance
-     Section's `previewStyle` overrides them from the actual
-     scale/radius/opacity controls) drives the preview without
-     overlay-card.css needing any settings-specific branch. */
   .appearance-preview {
     --card-scale: 1;
     --card-radius: 8px;
     --card-opacity: 1;
-    /* The preview has no cutout-var plumbing — a fixed HUD-form
-       synthetic width so the shape formulas have a real value to size
-       against, mirroring App.tsx's HUD synthetic constant. Height stays
-       on overlay-card.css's own `32px` CSS fallback. */
     --notchtap-cutout-width: 200px;
     display: flex;
     flex-direction: column;
@@ -270,20 +142,10 @@
   }
 
   .preview-label {
-    /* Intentional preview-only exception — 12px isn't on the --fs-*
-       scale (9/10/11/19px); snapping to the nearest rung would shift
-       this label's size, so it stays a literal value. */
     font-size: 12px;
     color: var(--muted-foreground);
   }
 
-  /* One element hosts both the per-sample frame box AND the shared
-     stylesheet's scope host (`className="preview-stage card-root"`,
-     SettingsApp.tsx) — `.card-root` composes onto this real layout box
-     rather than needing a further nested element, unlike the overlay's
-     own `.card-root` (a `display: contents` wrapper — see styles.css).
-     No override block follows: overlay-card.css now owns every shared
-     rule, and everything else here is genuinely preview-only. */
   .preview-stage {
     display: flex;
     justify-content: center;

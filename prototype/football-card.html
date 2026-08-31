@@ -8,9 +8,7 @@
 <style>
   :root {
     --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
-    /* ==== shared-ui design tokens (vendor/shared-ui/design/tokens.css) —
-       hex values as documented in that file's own comments, since this
-       static page has no build step to resolve the oklch() originals. ==== */
+    /* Mirrors the shared design tokens using their documented hex values. */
     --overlay-green: #7fe08d;
     --overlay-amber: #f0c46a;
     --overlay-coral: #ff6b57;
@@ -20,7 +18,6 @@
     --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
     --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
     --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    /* ==== styles.css :root defaults (the shipped app's own fallbacks) ==== */
     --card-scale: 1;
     --card-radius: 8px;
     --notchtap-cutout-width: 200px;
@@ -38,12 +35,7 @@
   .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 64ch; line-height: 1.5; }
   .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
 
-  /* ==== demo staging only — never part of the shipped class vocabulary.
-     the dev machine is a notch-less Mac mini, so the realistic default
-     mode is HUD (data-notchtap-mode="hud" on <html>, set above): the app
-     floats its own top-center window over the desktop and draws its own
-     `.synthetic-cutout` rather than sitting inside real notch hardware —
-     there is no menu-bar chrome to mock here, just a desktop backdrop. ==== */
+  /* Showcase staging uses HUD mode, matching this notchless development machine. */
   .desktop-stage {
     position: relative;
     background:
@@ -69,18 +61,9 @@
   footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.7; }
   footer ul { margin: 8px 0 0; padding-left: 18px; }
 
-  /* ================================================================
-     BELOW: the real shipped class vocabulary, `.card-root`-scoped, as
-     close to a verbatim copy of src/overlay/{card-chrome,choreography,
-     live-scorecard,idle-peek}.css as a demo page (no CSS custom
-     properties injected by applyAnimationTiming.ts, no `motion`
-     runtime) can reasonably reproduce. Simplifications are called out
-     inline where they diverge from the source file's own rule. Real
-     source line/rule comments are trimmed for length; the selectors,
-     values, and structure are not.
-     ================================================================ */
+  /* Mirrors the shipped card, choreography, scorecard, and idle-peek CSS. */
 
-  /* ---- card-chrome.css: the notch-cutout grid shell ---- */
+  /* Mirrors the card-chrome.css shell. */
   .card-root .card-assembly {
     position: relative;
     box-sizing: border-box;
@@ -92,14 +75,10 @@
     transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
   }
-  /* idle width formula (card-chrome.css `.card-assembly.idle`) */
   .card-root .card-assembly.idle {
     --cw: calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale)));
   }
-  /* default (non-idle, non-expanded) width — football's own case: the
-     live-match branch deliberately never sets `.expanded` (no manual
-     full-expand affordance for football), so a showing football card
-     always falls back to this base formula, not the idle or expanded one. */
+  /* Football never sets `.expanded`, so showing cards use the base width. */
   .card-root .card-assembly.showing {
     --cw: min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%);
   }
@@ -113,9 +92,7 @@
   .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
   .card-root .time-only { font: 800 15px/1 var(--font-mono); color: var(--overlay-fg); }
 
-  /* ROUNDING LAW (card-chrome.css): the cutout's base corners stay square.
-     outer rounding lives on the flanks when there is no below-block
-     (idle), or on the below-block when there is one (showing). */
+  /* Only the element owning the assembly's bottom edge receives outer rounding. */
   .card-root .card-assembly:not(:has(.below-block)) .flank-left { border-bottom-left-radius: var(--card-radius); }
   .card-root .card-assembly:not(:has(.below-block)) .flank-right { border-bottom-right-radius: var(--card-radius); }
 
@@ -126,9 +103,7 @@
     border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
   }
 
-  /* the top concave "gill" corners (HUD-only, idle-only) — real DOM
-     siblings painted with a corner-anchored radial-gradient, not a
-     border-radius (border-radius can't fake a concave dent). */
+  /* HUD gills use radial gradients because border-radius cannot carve inward. */
   .card-root .notch-gill { display: none; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; }
   :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill { display: block; }
   .card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
@@ -147,8 +122,7 @@
   }
   .card-root .card-content { position: relative; z-index: 1; }
 
-  /* ---- status-dots.css: flank-right rail furniture (stays mounted
-     through a showing football card — "sticky presence", not idle-only) ---- */
+  /* Status dots stay mounted in the right flank while a football card is showing. */
   .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
   .card-root .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .card-root .status-dot.football { background: var(--overlay-green); }
@@ -158,16 +132,13 @@
   .card-root .status-dot.news.active { color: var(--overlay-coral); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
-  /* ---- news-category.css: the shared `.chip` base rule every pill on
-     this card converged onto (league/live/clock alike). ---- */
+  /* League, live, and clock pills share the news-category chip base. */
   .card-root .chip {
     display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
     font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
   }
 
-  /* ---- live-scorecard.css: the full event-driven scorecard
-     (LiveMatchScorecard.tsx — mounted while StatusRailCard's slot is
-     "showing" a football event) ---- */
+  /* Mirrors the showing-state LiveMatchScorecard. */
   .card-root .notif-block { padding: 12px 16px 13px; }
   .card-root .sc-head { display: flex; align-items: center; gap: 8px; }
   .card-root .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
@@ -177,9 +148,7 @@
   .card-root .chip-live.break .live-dot { background: var(--overlay-amber); box-shadow: 0 0 6px rgba(240,196,106,0.9); }
   .card-root .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
   .card-root .chip-live.final .live-dot { opacity: 0; width: 0; margin-right: -5px; box-shadow: none; }
-  /* NOT SHIPPED, same as before: there is no "Soon" (pre-match) wire
-     signal — kickoff transitions straight to Live, so a pre-match state
-     is intentionally absent from this mock too, matching the real card. */
+  /* No pre-match wire signal exists; kickoff transitions directly to Live. */
   .card-root .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 var(--font-mono); letter-spacing: normal; text-transform: none; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
 
   .card-root .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
@@ -193,14 +162,7 @@
   .card-root .event-line { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; font-size: 11px; color: rgba(255,255,255,0.7); }
   .card-root .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.38); }
 
-  /* ---- idle-peek.css: the resting hover-reveal peek
-     (IdleHoverPeek.tsx's ScorecardRevealContent — mounted on hover while
-     the slot is idle, i.e. no event is forcing the card open). Deliberately
-     LIGHTER than the full scorecard above: label + minute only, no
-     crests, no score digits, no per-side cards line — the ambient
-     `status.football.live` the rust core polls carries only
-     `{ label, minute }`, not the full ESPN-structured meta the "showing"
-     branch gets. ---- */
+  /* Idle peek mirrors the ambient payload: label and minute only. */
   .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
   .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
   .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
@@ -214,10 +176,6 @@
     transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75);
   }
 
-  /* ---- idle-peek.css: the event icon set — CSS shapes, no emoji.
-     goal = filled green ball · penalty = green ring · own goal = hollow
-     grey ball · yellow/red = slips · foul = whistle triangle · offside =
-     flag · VAR = monitor · substitution = up/down triangles. ---- */
   .card-root .ev-ico { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .card-root .ev-ico.goal { background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.7); }
   .card-root .ev-ico.pen { background: transparent; border: 2px solid var(--overlay-green); width: 7px; height: 7px; }
@@ -237,11 +195,7 @@
   .card-root .event-line.tint-yc { color: var(--overlay-amber); font-weight: 600; }
   .card-root .event-line.tint-rc { color: var(--overlay-coral); font-weight: 600; }
 
-  /* ---- idle-peek.css: the live-match celebrations — goal/penalty =
-     green glow + ring, yellow = amber ring, red = two-pulse coral
-     strobe. Applied to `.card-assembly` itself (whole-card), same as the
-     shipped rule. Durations/eases copied verbatim (1800ms,
-     var(--ease-notchtap)). ---- */
+  /* Celebrations mirror idle-peek.css and animate the whole assembly. */
   .card-root .card-assembly.cele-goal { animation: goal-glow 1800ms var(--ease-notchtap); }
   .card-root .card-assembly.cele-goal::after {
     content: ""; position: absolute; inset: -6px; z-index: 0; background: transparent; border-radius: 18px;
@@ -260,7 +214,6 @@
     100% { box-shadow: none; }
   }
 
-  /* Hover expands the card without scaling the shell. */
 
 </style>
 </head>
@@ -729,15 +682,7 @@
         </div>
       </div>
     </div>
-    <!-- the two below-block variants live in a <template> — StatusRailCard
-         itself only ever mounts ONE below-block at a time (idle-peek OR
-         the showing scorecard, never both), and the real ROUNDING LAW
-         (card-chrome.css) keys off actual DOM presence via `:has(.below-
-         block)`. Keeping both permanently in the DOM and toggling
-         `display: none` would leave `:has()` matching even while nothing
-         is visibly open — a demo-only bug the real card can't have,
-         since it never mounts a below-block it isn't using. `<template>`
-         content is inert (not in the live DOM) until cloned. -->
+    <!-- Templates keep inactive below-blocks out of the DOM so :has() matches the shipped card. -->
     <template id="demo-peek-tpl">
       <div class="below-block idle-peek" id="demo-peek">
         <div class="peek-content">
@@ -837,11 +782,6 @@
   let scorecard = null;
   let settleTimer = null;
 
-  // Mounts exactly one below-block at a time (or none), by real DOM
-  // insertion/removal — matches StatusRailCard.tsx, which never mounts
-  // both an idle-peek and the showing scorecard simultaneously, and lets
-  // the CSS `:not(:has(.below-block))` rounding law above key off actual
-  // DOM presence, same as the real card.
   function showPeek() {
     if (scorecard) return;
     if (!peek) {

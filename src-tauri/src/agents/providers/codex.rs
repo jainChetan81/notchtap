@@ -1,43 +1,11 @@
-//! Pure Codex hook-payload parser. [`normalize`] takes the raw JSON
-//! bytes Codex writes to a hook command's stdin and returns a
-//! [`super::wire::NormalizedEvent`]. Handles the documented events with
-//! Agent Board lifecycle meaning; `PreCompact`/`PostCompact`/
-//! `UserPromptSubmit` are intentionally unmapped (no permission/
-//! completion/failure/tool meaning).
-//!
-//! ## No Codex failure signal
-//!
-//! The documented Codex hook surface has no `PostToolUseFailure`/
-//! `StopFailure` event and no structural success/error field on
-//! `PostToolUse` or `Stop`, so this parser does **not** declare
-//! `failure` and never emits `kind: "failed"`. Inferring failure from
-//! `tool_response`/`last_assistant_message` text would mean parsing
-//! wording to infer state, which no parser in this module may ever do.
-//! A future documented structural failure signal would be added here.
-//!
-//! ## `input_required`: never (declared gap)
-//!
-//! Codex has no `Notification` hook or idle/waiting-for-input event
-//! (the legacy user-global `notify` slot is deliberately not
-//! integrated). No branch below ever produces `kind: "input_required"`
-//! / `state: "waiting_for_input"`; the tests prove this structurally.
-//!
-//! ## Sanitization
-//!
-//! `super::wire`'s `safe_tool_name` and `safe_path_detail` carry the
-//! shared discipline for tool names and paths. On top of that this
-//! parser never reads `tool_response` at all, and every `summary` is a
-//! fixed template — free text is never forwarded.
-
 use thiserror::Error;
 
 use super::wire::{
     basename, safe_path_detail, safe_tool_name, Mapped, NormalizedEvent, RawHookPayload,
 };
 
-/// Codex's declared capability set, restricted to what the documented
-/// hook surface actually supports — see the module doc for why
-/// `failure` and `input_required` are both absent.
+/// Codex's declared capability set, restricted to what the documented hook surface actually
+/// supports — see the module doc for why `failure` and `input_required` are both absent.
 pub const CAPABILITIES: [&str; 5] = [
     "session_lifecycle",
     "permission_requests",
@@ -46,7 +14,6 @@ pub const CAPABILITIES: [&str; 5] = [
     "subagents",
 ];
 
-/// Typed parse errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CodexParseError {
     #[error("malformed json: {0}")]
@@ -128,9 +95,6 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
                 subagent: None,
             }
         }
-        // `Stop` fires once per turn, not once per session — non-terminal,
-        // so the registry resolves it into `WaitingForInput`. Mirrors
-        // `claude_code.rs`'s `"Stop"` arm.
         "Stop" => Mapped {
             kind: "completed",
             state: "completed",
@@ -184,8 +148,7 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
     Ok(mapped)
 }
 
-/// Parses one Codex hook stdin payload into a [`NormalizedEvent`]. Pure —
-/// see this module's top doc.
+/// Parses one Codex hook stdin payload into a [`NormalizedEvent`].
 pub fn normalize(stdin: &[u8]) -> Result<NormalizedEvent, CodexParseError> {
     let payload: RawHookPayload =
         serde_json::from_slice(stdin).map_err(|e| CodexParseError::MalformedJson(e.to_string()))?;
@@ -246,8 +209,6 @@ mod tests {
             other => panic!("unknown fixture {other}"),
         }
     }
-
-    // --- fixture-per-hook-event tests -----------------------------------
 
     #[test]
     fn session_start_maps_to_informational_starting() {
@@ -325,7 +286,6 @@ mod tests {
 
     #[test]
     fn stop_maps_to_completed_non_terminal() {
-        // Per-turn Stop must not be terminal.
         let event = normalize(fixture("stop").as_bytes()).unwrap();
         assert_eq!(event.kind, "completed");
         assert!(
@@ -355,9 +315,6 @@ mod tests {
         assert_eq!(state.as_deref(), Some("completed"));
     }
 
-    // --- sanitization: a fixture with a fake secret/full command line
-    // never emits it ----------------------------------------------------
-
     #[test]
     fn secret_and_full_command_line_never_appear_in_normalized_output() {
         let event = normalize(fixture("post-tool-use-with-secret").as_bytes()).unwrap();
@@ -383,15 +340,11 @@ mod tests {
                 "sanitized output must never contain {needle:?}, got {haystack:?}"
             );
         }
-        // The only detail this event should carry is the safe tool name —
-        // no `tool_response`/`tool_input.command` content leaks through.
         assert_eq!(
             event.details,
             vec![("Tool".to_string(), "shell".to_string())]
         );
     }
-
-    // --- malformed input -------------------------------------------------
 
     #[test]
     fn garbage_json_is_rejected() {
@@ -428,15 +381,6 @@ mod tests {
         );
     }
 
-    // --- declared gap: Codex never emits InputRequired --------------------
-    //
-    // Structural proof, not just "we didn't write a branch for it": every
-    // supported native event's mapped `kind`/`state` is asserted to never
-    // be `input_required`/`waiting_for_input`, AND the one event name a
-    // Claude-Code-shaped payload would use for idle/input notifications
-    // (`"Notification"`, undocumented for Codex) is asserted to be
-    // rejected as unsupported rather than silently accepted.
-
     #[test]
     fn no_supported_codex_event_ever_maps_to_input_required() {
         let names = [
@@ -464,18 +408,12 @@ mod tests {
 
     #[test]
     fn undocumented_notification_event_name_is_rejected_not_mapped_to_input() {
-        // Codex has no documented `Notification` hook (unlike Claude Code
-        // and Kimi) — this parser must not grow a speculative mapping for
-        // it. A payload using that event name is rejected as unsupported.
         let body = r#"{"session_id": "s1", "hook_event_name": "Notification", "notification_type": "idle_prompt"}"#;
         assert_eq!(
             normalize(body.as_bytes()).unwrap_err(),
             CodexParseError::UnsupportedHookEvent("Notification".to_string())
         );
     }
-
-    // --- round-trip: every normalized+wire-built payload is accepted by
-    // `agents::adapter::parse_wire_event` ---------------------------------
 
     #[test]
     fn every_fixture_round_trips_through_the_wire_adapter() {
@@ -500,8 +438,6 @@ mod tests {
         }
     }
 
-    // --- declared capabilities vs. fixture suite must agree ------------
-
     #[test]
     fn declared_capabilities_match_the_verified_codex_row() {
         let expected: std::collections::BTreeSet<&str> = [
@@ -515,7 +451,6 @@ mod tests {
         .collect();
         let declared: std::collections::BTreeSet<&str> = CAPABILITIES.into_iter().collect();
         assert_eq!(declared, expected);
-        // The two capabilities the docs don't support stay absent.
         assert!(!declared.contains("input_required"));
         assert!(!declared.contains("failure"));
     }

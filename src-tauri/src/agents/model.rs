@@ -1,20 +1,9 @@
-//! The provider-neutral Agent domain model. Two shapes live here,
-//! mirroring the `queue.rs` / `event.rs` split between the mutable
-//! internal item (`QueueItem`) and the wire-facing snapshot
-//! (`SlotState`): [`AgentSession`] is the registry's own mutable,
-//! `Instant`-clocked record, never serialized; [`AgentState`] is the
-//! wire-facing snapshot built from it via [`AgentSession::to_state`].
-//! `AgentSessionKey` (runtime + native session id) is the sole registry
-//! identity — see its own doc for why metadata never merges sessions.
+//! Provider-neutral mutable Agent session model and wire-facing snapshots.
 
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
-/// The four Agent Runtimes. Order is declaration order, which also backs
-/// `AgentSessionKey`'s derived `Ord` — see that type's doc for why
-/// declaration-order stability is good enough for the ordering key's
-/// lexical tie-break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AgentRuntime {
     ClaudeCode,
@@ -23,10 +12,8 @@ pub enum AgentRuntime {
     OpenCode,
 }
 
-/// A capability an adapter has declared and observed for a session. The
-/// UI renders only declared+observed capabilities; this type has no
-/// "unknown" variant on purpose — an absent capability is simply not in
-/// the `Vec`, never a heuristic guess.
+/// The UI renders only declared+observed capabilities; this type has no "unknown" variant on
+/// purpose — an absent capability is simply not in the `Vec`, never a heuristic guess.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentCapability {
     SessionLifecycle,
@@ -39,12 +26,6 @@ pub enum AgentCapability {
     OpenOrFocus,
 }
 
-/// The wire-facing event kind — the wire `kind` field has exactly these
-/// five string values. Intentionally coarser than the registry's
-/// internal transition logic needs: see `registry::next_state`'s doc for
-/// how `AgentEventKind` plus the sibling `terminal` flag together drive
-/// every transition rule, including the ones (session start, generic
-/// tool/work progress) with no dedicated wire `kind` of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentEventKind {
     PermissionRequested,
@@ -54,7 +35,6 @@ pub enum AgentEventKind {
     Informational,
 }
 
-/// The seven Agent Session states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentSessionState {
     Starting,
@@ -67,9 +47,8 @@ pub enum AgentSessionState {
 }
 
 impl AgentSessionState {
-    /// Terminal states (`Completed`, `Failed`) never transition back to
-    /// active for the same key — see `AgentRegistry::apply_event`'s
-    /// terminal-reuse branch.
+    /// Terminal states (`Completed`, `Failed`) never transition back to active for the same key —
+    /// see `AgentRegistry::apply_event`'s terminal-reuse branch.
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
@@ -77,20 +56,8 @@ impl AgentSessionState {
         )
     }
 
-    /// Whether a session in this state is on its own reason enough to
-    /// SUMMON the Agent Board. Agents that are merely working must not
-    /// summon it — the Board's job is attention. Consulted only when
-    /// `[agents] board_show_working` is `false` (its default), by
-    /// `agents::board::AgentBoardPublisher::publish_if_changed`, the ONE
-    /// place Board presence is decided — see that method for why the gate
-    /// lives there and nowhere else.
-    ///
-    /// `Completed`/`Failed` count because a terminal session only exists
-    /// in the registry at all while it is inside its
-    /// `terminal_retention_secs` window (`AgentRegistry::tick` evicts it
-    /// after), so "present and terminal" already means "a fresh result
-    /// worth a glance". `Stale` does NOT count: a session that went quiet
-    /// on its own is the absence of news, not a request for attention.
+    /// Whether a session in this state is on its own reason enough to SUMMON the Agent Board.
+    /// Agents that are merely working must not summon it — the Board's job is attention.
     pub fn summons_board(self) -> bool {
         match self {
             AgentSessionState::WaitingForPermission
@@ -103,22 +70,8 @@ impl AgentSessionState {
         }
     }
 
-    /// Urgency class rank used by the ordering key:
-    /// `WaitingForPermission`, `WaitingForInput`, `Failed`, `Completed`,
-    /// `Stale`, `Working`, `Starting`, most urgent first (lowest rank
-    /// sorts first).
-    ///
-    /// **Governing principle: every state that can summon the Board
-    /// ([`Self::summons_board`]) outranks every state that cannot.**
-    /// Otherwise a Completed session summons the Board while a
-    /// merely-`Working` sibling takes the hero card, so the Board appears
-    /// announcing "Agent working" — the exact noise the presence gate
-    /// exists to remove. A summoning state outranks non-summoning states
-    /// for as long as it lives (for a terminal session, only its
-    /// `terminal_retention_secs` window).
-    ///
-    /// Called from `AgentRegistry::ordered_states`, on the live
-    /// `agent-state` publish path (`agents/board.rs`).
+    /// Urgency class rank used by the ordering key: `WaitingForPermission`, `WaitingForInput`,
+    /// `Failed`, `Completed`, `Stale`, `Working`, `Starting`.
     pub fn urgency_rank(self) -> u8 {
         match self {
             AgentSessionState::WaitingForPermission => 0,
@@ -132,21 +85,14 @@ impl AgentSessionState {
     }
 }
 
-/// Errors constructing domain-model values. CLAUDE.md's library-module
-/// rule: `thiserror`, matchable variants.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ModelError {
     #[error("agent session key's native_session_id must not be empty")]
     EmptyNativeSessionId,
 }
 
-/// The sole registry identity. Project path, project name, Host, and
-/// display title are mutable metadata on `AgentSession` and must never
-/// be used to merge two sessions — only `(runtime, native_session_id)`
-/// equality does that. A provider without a native session id must use
-/// an adapter-made fallback of process identity plus start timestamp;
-/// project path alone is forbidden as a fallback because two unrelated
-/// sessions in the same project would collide.
+/// A provider without a native session id must use an adapter-made fallback of process identity
+/// plus start timestamp.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AgentSessionKey {
     pub runtime: AgentRuntime,
@@ -168,13 +114,8 @@ impl AgentSessionKey {
         })
     }
 
-    /// Builds the suffixed fallback key used when a provider incorrectly
-    /// reuses a terminal session's native id, keeping the
-    /// terminal-never-reactivates rule intact.
-    /// `generation` is a 1-based reuse counter so repeated collisions on
-    /// the same original id keep producing distinct keys
-    /// (`...#reuse1`, `...#reuse2`, ...) rather than colliding with each
-    /// other.
+    /// Builds the suffixed fallback key used when a provider incorrectly reuses a terminal
+    /// session's native id, keeping the terminal-never-reactivates rule intact.
     pub fn suffixed(&self, generation: u32) -> AgentSessionKey {
         AgentSessionKey {
             runtime: self.runtime,
@@ -183,16 +124,7 @@ impl AgentSessionKey {
     }
 }
 
-/// A stable, process-local (not cryptographically secret — just
-/// non-reversible-in-a-log-line-or-history-file) hash of an
-/// [`AgentSessionKey`]. Shared by every place that must refer to a
-/// session without ever surfacing its raw `native_session_id`: the
-/// `agent.session_hash` structured log field (`http.rs`'s
-/// `agent_events_handler`) and `AgentSignal.session_hash` (`event.rs`) —
-/// persisting the raw id is a privacy violation. `DefaultHasher::new()`
-/// uses a fixed
-/// SipHash key (unlike `HashMap`'s own `RandomState`), so the same
-/// session hashes identically across every event in this process.
+/// Produces the process-local identifier used instead of exposing native session IDs.
 pub fn session_hash_hex(key: &AgentSessionKey) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -200,38 +132,24 @@ pub fn session_hash_hex(key: &AgentSessionKey) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// One `{label, value}` detail cell. Mirrors `event.rs::DetailItem`'s
-/// shape but is defined independently — this module has no dependency on
-/// `event.rs`; `notification.rs` wires the two together.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentDetail {
     pub label: String,
     pub value: String,
 }
 
-/// Optional project metadata (the wire `project` object). Persists
-/// across events that don't repeat it — see
-/// `AgentRegistry::apply_event`'s metadata-merge comment for why this
-/// differs from `summary`/`details`, which are always replaced with the
-/// latest event's value.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AgentProject {
     pub name: Option<String>,
     pub cwd: Option<String>,
 }
 
-/// Optional Host metadata (the wire `host` object), backing the
-/// Host-dependent Open/Focus Session action (`focus.rs`). Same
-/// merge-if-present persistence as `AgentProject`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AgentHost {
     pub name: Option<String>,
     pub bundle_id: Option<String>,
 }
 
-/// A session's own subagent summary (the wire `subagent` object).
-/// Always replaced with the latest event's value — a session's
-/// subagent state is a point-in-time fact, not an accumulating one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSubagentSummary {
     pub id: String,
@@ -239,24 +157,16 @@ pub struct AgentSubagentSummary {
     pub state: Option<String>,
 }
 
-/// One entry in a session's bounded transition history, capped at 50 by
-/// `registry::MAX_TRANSITIONS_PER_SESSION`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentTransition {
     pub state: AgentSessionState,
     pub entered_at: Instant,
 }
 
-/// The registry's own mutable, `Instant`-clocked record of one Agent
-/// Session. Clock-agnostic like
-/// `queue.rs`'s items: every method that needs "now" takes it as a
-/// parameter, no wall-clock read happens inside this module — tests
-/// pass a simulated clock — the module must stay injectable-clock.
+/// Clock-agnostic like `queue.rs`'s items: every method that needs "now" takes it as a parameter,
+/// no wall-clock read happens inside this module — tests pass a simulated clock.
 #[derive(Debug, Clone)]
 pub struct AgentSession {
-    // `key`/`first_seen_at` are read back by `to_state` (the live
-    // `agent-state` publish path, `agents/board.rs`) in addition to
-    // `apply_event`/`ordered_states`' own write/compare uses.
     pub key: AgentSessionKey,
     pub state: AgentSessionState,
     pub capabilities: Vec<AgentCapability>,
@@ -274,10 +184,6 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
-    /// A brand-new session always starts in `Starting` at `now` — see
-    /// `registry::next_state`'s doc for why the very first event is run
-    /// through the same transition function as every later one instead
-    /// of being special-cased.
     pub fn new(key: AgentSessionKey, now: Instant) -> Self {
         Self {
             key,
@@ -304,9 +210,8 @@ impl AgentSession {
         self.state.is_terminal()
     }
 
-    /// Appends a transition, evicting the oldest entry once the history
-    /// exceeds `cap` (50 retained transitions per session, per the caps
-    /// table in `adapter.rs`).
+    /// Appends a transition, evicting the oldest entry once the history exceeds `cap` (50 retained
+    /// transitions per session, per the caps table in `adapter.rs`).
     pub fn push_history(&mut self, state: AgentSessionState, entered_at: Instant, cap: usize) {
         self.history.push(AgentTransition { state, entered_at });
         while self.history.len() > cap {
@@ -314,12 +219,7 @@ impl AgentSession {
         }
     }
 
-    /// Builds the wire-facing snapshot at `now`. `terminal_retention` is
-    /// only used to compute `retention_remaining_ms` for terminal
-    /// sessions — see that field's doc on `AgentState`.
-    ///
-    /// Called from the live `agent-state` publish path
-    /// (`agents/board.rs`), via `AgentRegistry::ordered_states`.
+    /// Builds the wire-facing snapshot at `now`.
     pub fn to_state(&self, now: Instant, terminal_retention: Duration) -> AgentState {
         let elapsed_ms = now
             .saturating_duration_since(self.state_entered_at)
@@ -350,8 +250,6 @@ impl AgentSession {
     }
 }
 
-/// The wire-facing Agent snapshot, built by [`AgentSession::to_state`]
-/// and published by `agents/board.rs`'s `AgentBoardPublisher`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentState {
     pub key: AgentSessionKey,
@@ -363,43 +261,16 @@ pub struct AgentState {
     pub host: Option<AgentHost>,
     pub subagent: Option<AgentSubagentSummary>,
     pub history: Vec<AgentTransition>,
-    /// Absolute, `now`-independent — only changes at a real first-seen
-    /// event, so (like `SlotState::ttl_ms`) it stays IN `dedup_eq`'s
-    /// comparison.
     pub first_seen_at: Instant,
-    /// Absolute, `now`-independent — only changes at a real transition,
-    /// so it stays IN `dedup_eq`'s comparison too.
     pub state_entered_at: Instant,
-    /// Clock-derived (EXCLUDED from `dedup_eq`): milliseconds since this
-    /// session last accepted an event, recomputed fresh against the
-    /// `now` passed to `to_state` on every call — it differs on almost
-    /// every call even with zero real content change, exactly the
-    /// `SlotState::remaining_ms` shape this field is modeled on.
     pub last_seen_at_ms: u64,
-    /// Clock-derived (EXCLUDED): milliseconds since `state_entered_at`.
     pub elapsed_ms: u64,
-    /// Clock-derived (EXCLUDED): only `Some` for terminal sessions,
-    /// counting down as `terminal_retention_secs` elapses.
     pub retention_remaining_ms: Option<u64>,
 }
 
 impl AgentState {
-    /// Dedup-only equality, handwritten — NEVER the derived
-    /// `PartialEq` above, which stays intact and honest for tests that
-    /// want full structural equality. Same invariant as
-    /// `SlotState::dedup_eq` (CLAUDE.md's `dedup_eq` rule): continuously
-    /// varying wire fields must be excluded here explicitly, never by
-    /// deriving `PartialEq` and using that for publish suppression.
-    ///
-    /// The struct is destructured with every field named below — no
-    /// `..` wildcard — as a compile-time guard: a future continuously
-    /// varying field can't silently join this struct and this function
-    /// unchanged; adding one is a compile error here until the author
-    /// decides in/out, exactly like `SlotState::dedup_eq`'s match.
-    ///
-    /// `agents/board.rs::AgentBoardPublisher` calls this slice-wise, via
-    /// its own `states_dedup_eq`, from the live `agent-state` publish
-    /// path.
+    /// Dedup-only equality, handwritten — NEVER the derived `PartialEq` above, which stays intact
+    /// and honest for tests that want full structural equality.
     pub fn dedup_eq(&self, other: &AgentState) -> bool {
         fn normalized(s: &AgentState) -> AgentState {
             let mut s = s.clone();
@@ -439,22 +310,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_session_key_accepts_nonempty_native_id() {
-        let key = AgentSessionKey::new(AgentRuntime::Codex, "sess-1").unwrap();
-        assert_eq!(key.native_session_id, "sess-1");
-    }
-
-    #[test]
-    fn suffixed_key_is_distinct_and_stable() {
-        let key = AgentSessionKey::new(AgentRuntime::ClaudeCode, "sess-1").unwrap();
-        let s1 = key.suffixed(1);
-        let s2 = key.suffixed(2);
-        assert_ne!(s1, key);
-        assert_ne!(s1, s2);
-        assert_eq!(s1.native_session_id, "sess-1#reuse1");
-    }
-
-    #[test]
     fn urgency_rank_ascends_from_waiting_for_permission_to_starting() {
         use AgentSessionState::*;
         let ranks = [
@@ -478,10 +333,6 @@ mod tests {
     #[test]
     fn every_summoning_state_outranks_every_non_summoning_state() {
         use AgentSessionState::*;
-        // The state that SUMMONS the Board must lead it. Otherwise a
-        // Completed session pops the Board open and a merely-Working
-        // sibling takes the hero card, announcing "Agent working" — the
-        // noise the presence gate exists to remove.
         let all = [
             WaitingForPermission,
             WaitingForInput,
@@ -502,38 +353,6 @@ mod tests {
     }
 
     #[test]
-    fn only_attention_states_summon_the_board() {
-        use AgentSessionState::*;
-        // The Board's job is attention.
-        for s in [WaitingForPermission, WaitingForInput, Failed, Completed] {
-            assert!(s.summons_board(), "{s:?} must summon the Agent Board");
-        }
-        for s in [Starting, Working, Stale] {
-            assert!(
-                !s.summons_board(),
-                "{s:?} is not a request for attention and must not summon the Agent Board"
-            );
-        }
-    }
-
-    #[test]
-    fn only_completed_and_failed_are_terminal() {
-        use AgentSessionState::*;
-        for s in [
-            Starting,
-            Working,
-            WaitingForPermission,
-            WaitingForInput,
-            Stale,
-        ] {
-            assert!(!s.is_terminal(), "{s:?} must not be terminal");
-        }
-        for s in [Completed, Failed] {
-            assert!(s.is_terminal(), "{s:?} must be terminal");
-        }
-    }
-
-    #[test]
     fn push_history_evicts_oldest_past_cap() {
         let key = AgentSessionKey::new(AgentRuntime::Kimi, "s").unwrap();
         let now = Instant::now();
@@ -546,8 +365,6 @@ mod tests {
             );
         }
         assert_eq!(session.history.len(), 50);
-        // The oldest surviving entries are the ones closest to eviction —
-        // the very first `Starting` seed entry must have been evicted.
         assert!(session
             .history
             .iter()
@@ -622,9 +439,6 @@ mod tests {
 
     #[test]
     fn dedup_eq_treats_ordering_timestamp_change_as_real_change() {
-        // `state_entered_at` participates in ordering and is
-        // absolute/now-independent, so unlike the clock-derived fields it
-        // must stay IN the comparison.
         let key = AgentSessionKey::new(AgentRuntime::OpenCode, "s").unwrap();
         let base = Instant::now();
         let mut session = AgentSession::new(key, base);

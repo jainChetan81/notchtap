@@ -34,7 +34,6 @@ import { QueueSection } from "./sections/QueueSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import type { Config } from "./types";
 
-// Wire types live in ./types; re-exporting keeps external import paths stable.
 export type {
   AboutInfo,
   AppearanceConfig,
@@ -152,9 +151,6 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
-// Normalized match key for the rss_feeds rebuild: strips the hash and one
-// trailing slash so a cosmetic edit keeps the old entry's source/category,
-// while a different path/host resets metadata — it IS a different feed.
 function feedKey(url: string): string {
   try {
     const u = new URL(url);
@@ -208,10 +204,7 @@ export function SettingsApp() {
   const [rssTopicsText, setRssTopicsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  // Owned here, not inside AppearanceSection — so a reset's own live-apply
-  // failure survives regardless of which section is open.
   const appearanceStatus = useActionStatus("appearance-live-apply");
-  // Defaults-fetch is a passive, mount-only read — never announced.
   const defaultsStatus = useActionStatus("defaults");
 
   function runAppearanceApply(scale: number, radius: number, opacity: number) {
@@ -245,9 +238,6 @@ export function SettingsApp() {
       .catch((reason: ActionError) => {
         if (active) setErrors(errorList(reason));
       });
-    // Defaults are advisory (Reset-to-defaults only) — isolate their failure
-    // so it never blocks the panel from loading; the button stays disabled
-    // with a visible reason.
     void defaultsStatus.run(
       () =>
         settingsInvoke("get_default_config").then((loadedDefaults) => {
@@ -270,8 +260,6 @@ export function SettingsApp() {
 
   function resetLoaded() {
     if (!lastLoadedConfig) return;
-    // The form always resets from lastLoadedConfig; a failed live-apply
-    // reports through appearanceStatus, it doesn't block the form reset.
     applyForm(lastLoadedConfig);
     const { card_scale, card_radius, card_opacity } = lastLoadedConfig.appearance;
     runAppearanceApply(card_scale, card_radius, card_opacity);
@@ -291,8 +279,6 @@ export function SettingsApp() {
       ...config,
       espn_leagues: lines(espnLeaguesText),
       rss_feeds: lines(rssFeedsText).map((url) => {
-        // Match by normalized key, but keep the url the user actually typed
-        // — only source/category carry over from the old entry.
         const match = config.rss_feeds.find((feed) => feedKey(feed.url) === feedKey(url));
         return match
           ? { url, source: match.source, category: match.category }
@@ -426,9 +412,6 @@ export function SettingsApp() {
                     {activeSection === "queue" ? <QueueSection /> : null}
                     {activeSection === "about" ? <AboutSection /> : null}
                     {activeSection === "appearance" ? (
-                      // Reads config.appearance directly, so no remount key is
-                      // needed. The live-apply status renders in the footer,
-                      // reachable from every section, not here.
                       <AppearanceSection
                         config={config}
                         patchConfig={patchConfig}
@@ -480,9 +463,6 @@ export function SettingsApp() {
               className="defaults-status mt-0"
               showPending={false}
             />
-            {/* Visible from every section; the appearance sliders are
-                high-frequency, so only a deduplicated error renders here,
-                cleared by the next successful apply. */}
             <ActionStatus
               status={appearanceStatus.status}
               className="appearance-live-status mt-0"

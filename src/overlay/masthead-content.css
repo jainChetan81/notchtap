@@ -1,25 +1,9 @@
-/* `.compact` is plain block flow — the Stamp badge sits INSIDE the
-   header row (see `.notif-header-row`/`.masthead-row` below) for both
-   card types. `Track`/`.compact-hint` stay absolutely positioned against
-   this element, and the accent edge below is unaffected. */
 .card-root .compact {
   position: relative;
   box-sizing: border-box;
   overflow: hidden;
   min-height: 74px;
-  /* content inset rhythm: right/bottom match every other content block's
-     16px/13px (`.notif-block`, `.manifest-block`, `.below-block.idle-peek`)
-     so card-type handoffs never shift the content margin. Left stays wider
-     (20px, not 16px) on purpose: `.compact::before` (below) is a 3px
-     accent edge flush against this block's own left edge, so its content
-     needs the extra 4px to clear it — no other block carries that edge. */
   padding: 12px 16px 13px 20px;
-  /* `.expanded .compact` below lifts this floor 74px -> 82px; the
-     transition is declared on the BASE rule so BOTH directions animate —
-     the modifier only overrides the value. Same duration/curve as the
-     width and manifest legs of the same gesture, so all three finish
-     together. agent-board.css's static `.agent-board-primary` override
-     never changes value at runtime, so nothing there animates. */
   transition: min-height var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 
@@ -27,8 +11,6 @@
   min-height: 82px;
 }
 
-/* priority reads from a 3px accent edge on the compact row's left; the
-   Stamp pill and Track rail are the other two non-color cues. */
 .card-root .compact::before {
   content: "";
   position: absolute;
@@ -45,15 +27,9 @@
   min-width: 0;
 }
 
-/* shared headline treatment for both card types — both branches
-   converge on this SAME `.title.headline` combo. `.headline`
-   (news-category.css) only overrides size/line-clamp specifics;
-   `display`/`overflow`/`font-weight`/`box-orient` come from here. */
 .card-root .title {
   display: -webkit-box;
   overflow: hidden;
-  /* `.title` never renders alone — NotificationBody.tsx always pairs it
-     with `.headline` (news-category.css, which overrides to 13px). */
   font-weight: 680;
   line-height: 1.2;
   white-space: normal;
@@ -61,14 +37,6 @@
   -webkit-line-clamp: 2;
 }
 
-/* the general card's subtitle-row/body language, ported from the locked
-   reference (`prototype/notch-states.html:158-166`,
-   `.notif-subtitle-row`/`.notif-subtitle`/`.notif-time-inline`/
-   `.notif-body`). The header row itself converges onto news's own
-   `.masthead-row`/`.title.headline` treatment, so only the subtitle row
-   and body stay unique to this branch. News reuses `.notif-time-inline`
-   too (ageLabel) via its own `.masthead-row`/meta-row below, not this
-   row. */
 .card-root .notif-subtitle-row {
   display: flex;
   align-items: baseline;
@@ -87,9 +55,6 @@
   white-space: nowrap;
 }
 
-/* shared by news's meta row (ageLabel) and the generic header's
-   subtitle row (no data today — no non-news event carries a
-   publishedAtMs, so this slot never renders there). */
 .card-root .notif-time-inline {
   flex: none;
   color: rgba(255, 255, 255, 0.35);
@@ -108,14 +73,11 @@
   -webkit-line-clamp: 2;
 }
 
-/* inline-markdown code spans (lib/markdown.tsx, in .notif-body and the
-   manifest's .detail-value cells). */
 .card-root .notif-body code,
 .card-root .detail-value code {
   padding: 1px 5px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--accent);
-  /* --font-mono from shared-ui. */
   font-family: var(--font-mono);
 }
 
@@ -139,12 +101,6 @@
   text-transform: uppercase;
 }
 
-/* hotkey hints — the overlay's own raised-key look for every inline
-   `<kbd>` it renders, scaled for a 400-500px card. `.manifest-hint kbd`
-   included — the expanded manifest's hint footer (Manifest.tsx's
-   `.manifest-hint`, news-category.css) renders `<kbd>` too. No
-   `.detail-value kbd`: detail values render as plain strings
-   (NotificationBody.tsx), never markdown. */
 .card-root .compact-hint kbd,
 .card-root .manifest-hint kbd {
   display: inline-flex;

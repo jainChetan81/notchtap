@@ -1,14 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-/// The frontend half of the `agent-viewed-session-changed` channel —
-/// mirrors `useTabSelection.ts`'s shape exactly (listen-only, strict
-/// validator, dead-listener `console.error`, no boot seed since a
-/// viewed-session index is only meaningful once sessions exist).
-/// **Rust owns this value, not this hook** — both the manual prefix-key
-/// cycling (`handle_prefix_followup` in `src-tauri/src/lib.rs`) and the
-/// auto-advance timer write `tab_wire.viewed_session` and emit this
-/// event; the frontend only ever renders what it's told.
 export type AgentViewedSessionPayload = { index: number };
 
 export function isValidAgentViewedSession(v: unknown): v is AgentViewedSessionPayload {

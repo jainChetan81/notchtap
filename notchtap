@@ -1,22 +1,7 @@
 #!/bin/sh
-# notchtap — cli push for the notchtap notification engine.
-# flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--port <p>]
-# second, distinct mode — the one exception to "flags only": `notchtap run`
-# wraps a command and pushes a completion notification (see below).
-# --subtitle posts as its own optional wire field, and each
-# repeatable --detail Label=Value adds a {label,value} pair to a details array
-# (max 8; the value may itself contain '=' — the split is on the FIRST '='; the
-# label must be non-empty). the server caps/truncates both for display safety.
-# --priority and --signal fold into the posted json as-is; when omitted, the
-# field is left off the payload entirely and the server's own default applies
-# so the server remains the single source for defaults. --signal is mainly a
-# manual-testing aid. Real
-# football signals come from the espn poller, which knows the specific event
-# structurally. Every push from this script has Origin Manual.
-# port resolution: --port flag → $NOTCHTAP_PORT → 9789. never reads
-# config.toml. exits non-zero on connection failure or any non-2xx
-# response so callers surface failures instead of swallowing them.
+# Push manual notifications, or use `notchtap run` to notify when a command finishes.
+# Usage: notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--port <p>]
+# Port resolution is `--port`, `$NOTCHTAP_PORT`, then 9789; direct push failures exit non-zero.
 
 set -u
 
@@ -25,28 +10,14 @@ usage() {
   exit 2
 }
 
-# notchtap run — the one deliberate exception to "flags only": wraps a
-# command, times it, and pushes a completion notification via a
-# self-invocation of this same script's flags path below (zero
-# duplicated push logic, so the two modes can never drift apart).
-#   notchtap run [--label <name>] [--min-secs <n>]
-#     [--priority-success low|medium|high] [--priority-failure low|medium|high]
-#     [--port <p>] -- <command...>
-# exit code is ALWAYS the wrapped command's own — a failed push never
-# changes it (best-effort only; a push failure warns to stderr).
-# a fast, successful run is suppressed below --min-secs (default 15s);
-# a failure always pushes regardless of duration — a fast failure is
-# exactly the "did something break while I looked away" case a slow one
-# isn't.
+# `run` preserves the wrapped command's exit status; notification failures only warn.
+# Successful runs under `--min-secs` are suppressed, while failures always notify.
 run_usage() {
   echo "usage: notchtap run [--label <name>] [--min-secs <n>] [--priority-success low|medium|high] [--priority-failure low|medium|high] [--port <p>] -- <command...>" >&2
   exit 2
 }
 
-# a port value is interpolated raw into a curl URL below (both here and
-# in the flags path further down) — validated the same way --min-secs
-# already was, plus a range check, so a stray non-numeric or out-of-range
-# $NOTCHTAP_PORT/--port can't smuggle anything into that URL.
+# Ports enter curl URLs verbatim, so validate environment and flag values first.
 port_is_valid() {
   case "$1" in
     ''|*[!0-9]*) return 1 ;;
@@ -70,9 +41,7 @@ if [ "${1:-}" = "run" ]; then
         run_label="$2"; shift 2 ;;
       --min-secs)
         [ $# -ge 2 ] || run_usage
-        # must be a non-negative integer — it feeds a `[ -lt ]` numeric
-        # comparison below, which errors out on non-numeric input rather
-        # than failing cleanly.
+        # The numeric comparison below requires a non-negative integer.
         case "$2" in
           ''|*[!0-9]*) run_usage ;;
         esac
@@ -138,9 +107,7 @@ priority=""
 signal=""
 port="${NOTCHTAP_PORT:-9789}"
 port_is_valid "$port" || usage
-# details accumulates as a JSON array; each --detail appends one {label,value}
-# pair via jq (safe escaping), capped at 8 (the server caps too — this is the
-# earlier, courtesy cap decision 4 mentions).
+# Build details with jq for safe escaping and cap them before server validation.
 details="[]"
 detail_count=0
 DETAIL_MAX=8
@@ -158,7 +125,7 @@ while [ $# -gt 0 ]; do
       subtitle="$2"; shift 2 ;;
     --detail)
       [ $# -ge 2 ] || usage
-      # must contain '=', split on the FIRST one so the value may hold '='.
+      # Split on the first '=' so values may contain '='.
       case "$2" in
         *=*) ;;
         *) usage ;;
@@ -197,12 +164,7 @@ done
 [ -n "$title" ] || usage
 [ -n "$body" ] || usage
 
-# jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
-# subtitle/priority/signal are merged in only when set, so an unspecified
-# field is genuinely absent from the wire (not sent as an empty string) —
-# the server's own default is the single source of truth for "unspecified".
-# details is merged only when non-empty; it is already a JSON
-# array built safely via jq per --detail above.
+# Let jq escape user input and omit unset fields so server defaults remain authoritative.
 payload=$(jq -n \
   --arg title "$title" --arg body "$body" --arg subtitle "$subtitle" \
   --arg priority "$priority" --arg signal "$signal" \

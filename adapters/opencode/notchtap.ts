@@ -1,86 +1,9 @@
-// notchtap — OpenCode plugin adapter.
-//
-// OpenCode's lifecycle surface is a plugin event bus, not command hooks
-// (unlike Claude Code/Codex/Kimi, which post via the `notchtap-agent`
-// Rust binary). This file normalizes OpenCode's bus
-// events into the same schema-v1 `POST /agent/events` body the Rust
-// helper sends, and posts them to the same loopback endpoint
-// (`127.0.0.1:9789` by default, `NOTCHTAP_PORT` override), matching its
-// network behavior, caps, sanitization, and fail-open semantics exactly.
-//
-// ## Install
-//
-// OpenCode loads plugins from https://opencode.ai/docs/plugins/:
-//   - project directory:  .opencode/plugins/  (drop this file there)
-//   - global directory:   ~/.config/opencode/plugins/
-//   - or as an npm package referenced from `plugin` in opencode.json
-//     (project `opencode.json`, or global `~/.config/opencode/opencode.json`)
-//
-// Simplest local install: copy (or symlink) this file to
-// `.opencode/plugins/notchtap.ts` in the project you want notifications
-// from. No build step, no extra dependency — this module only uses
-// runtime globals (`fetch`, `AbortController`, `crypto.randomUUID`,
-// `process.env`) that OpenCode's Bun/Node runtime already provides.
-//
-// ## Structure
-//
-// Everything that decides WHAT gets sent is a pure function (bus event
-// in, `AgentWireEvent | null` out) — testable without OpenCode
-// installed, mirroring the Rust adapter's own pure/impure split
-// (`src-tauri/src/agents/adapter.rs` is pure wire parsing; the HTTP
-// layer is separate). Only `NotchtapPlugin` at the bottom binds those
-// pure functions to OpenCode's actual hook shape and performs the
-// (fire-and-forget, fail-open) network call.
-//
-// ## OpenCode plugin API this was built against
-//
-// https://opencode.ai/docs/plugins/:
-//
-//   export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
-//     return {
-//       event: async ({ event }) => { if (event.type === "session.idle") { ... } },
-//       "tool.execute.before": async (input, output) => { ... },
-//       "tool.execute.after": async (input, output) => { ... },
-//     };
-//   };
-//
-// i.e. session/permission lifecycle arrives through ONE `event` hook key
-// keyed by a `event.type` discriminated union (not one hook method per
-// event name), while tool execution has its own two dedicated hook
-// keys taking `(input, output)`. The docs enumerate `event.type` values
-// including `permission.asked`,
-// `permission.replied`, `session.created`, `session.updated`,
-// `session.status`, `session.idle`, `session.error`,
-// `session.deleted`) but do NOT publish the exact `event.properties`
-// payload shape per type, or whether `tool.execute.after`'s `output`
-// carries a success/failure flag. See "Known gaps" below for how this
-// file handles that.
-//
-// ## Known gaps vs. the documented surface (report these, don't guess)
-//
-// - `event.properties` field shapes for the session/permission events
-//   are undocumented. This file reads only conservatively-named,
-//   plausible fields (`sessionID`, `info.id`, `error.name`, etc.) and
-//   drops (`null`) an event rather than inventing a shape when the
-//   session id can't be found — schema v1 requires `sessionId`.
-// - `session.status`'s exact status vocabulary is undocumented. Per
-//   the spec's "wording is never parsed to infer state" rule, this
-//   file only reacts to an explicit `waiting_for_input` / `input_required`
-//   token and drops everything else, rather than guessing at synonyms.
-// - `tool.execute.after`'s `output` is documented with `title` /
-//   `output` / `metadata` fields but no explicit error flag, so this
-//   adapter cannot distinguish a failed tool call at that hook and
-//   never emits `kind: "failed"` from it (spec: never infer state from
-//   wording/heuristics on undocumented payloads).
-// - The plugin docs list no subagent lifecycle event. This adapter never emits a
-//   `subagent` field and never declares the `subagents` capability.
-// - OpenCode plugin docs don't expose Host app identity, so this
-//   adapter never sends a `host` field and never declares
-//   `open_or_focus`.
-
-// ---------------------------------------------------------------------
-// Wire schema v1 (mirrors src-tauri/src/agents/adapter.rs exactly)
-// ---------------------------------------------------------------------
+// Standalone OpenCode adapter; see https://opencode.ai/docs/plugins/.
+// Install as `.opencode/plugins/notchtap.ts` or `~/.config/opencode/plugins/notchtap.ts`.
+// It maps lifecycle and tool hooks to schema-v1 `POST /agent/events` requests.
+// Undocumented payloads are never guessed: missing session IDs and unknown statuses are dropped.
+// Tool results expose no failure flag, so failures are not inferred from output text.
+// OpenCode exposes neither subagent lifecycle nor host identity, so those capabilities stay absent.
 
 type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
 type UnparsedObject = { [key: string]: UnparsedValue };
@@ -143,13 +66,7 @@ export interface AgentWireEvent {
   terminal: boolean;
 }
 
-/** §1 matrix row for OpenCode: session lifecycle, permission requests,
- * session/status-derived input-required, idle/session-derived
- * completion, session-error-derived failure, and tool detail are
- * declared. Subagent lifecycle and Open/Focus are deliberately absent
- * — see this file's header "Known gaps". Never mutate this in place;
- * treat as a frozen constant so every emitted event declares the same
- * truthful set. */
+/** Keep frozen and limited to signals the OpenCode API exposes. */
 export const OPENCODE_CAPABILITIES: readonly AgentCapability[] = Object.freeze([
   "session_lifecycle",
   "permission_requests",
@@ -159,40 +76,28 @@ export const OPENCODE_CAPABILITIES: readonly AgentCapability[] = Object.freeze([
   "tool_details",
 ]);
 
-// ---------------------------------------------------------------------
-// Sanitization (mirrors adapter.rs's caps table, spec §3.2)
-// ---------------------------------------------------------------------
-
 const MAX_ID_BYTES = 256;
 const MAX_SUMMARY_SCALARS = 500;
 const MAX_NAME_OR_LABEL_SCALARS = 120;
 const MAX_VALUE_SCALARS = 1024;
 const MAX_DETAILS = 12;
 
-/** Unicode "control" category only (matches Rust's `char::is_control`:
- * C0 controls + DEL + C1 controls), not the broader "whitespace" or
- * "format" categories — same scope as adapter.rs's `sanitize_trim`. */
+/** Matches Rust `char::is_control`: C0, DEL, and C1 controls only. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control characters to strip them
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/gu; // oxlint-disable-line eslint/no-control-regex
 
-/** Trim outer whitespace FIRST, then strip control characters — same
- * order as adapter.rs's `sanitize_trim`, for the same reason: stripping
- * first could leave now-interior whitespace unindented at the edges. */
+/** Trim before stripping controls to preserve Rust sanitization parity. */
 function sanitizeTrim(s: string): string {
   return s.trim().replace(CONTROL_CHARS, "");
 }
 
-/** Truncate to at most `max` Unicode scalar values without splitting a
- * surrogate pair — `Array.from` iterates by codepoint, not UTF-16 code
- * unit, so this is the JS equivalent of adapter.rs's `cap_scalars`. */
+/** `Array.from` caps Unicode scalars without splitting surrogate pairs. */
 function capScalars(s: string, max: number): string {
   const chars = Array.from(s);
   return chars.length <= max ? s : chars.slice(0, max).join("");
 }
 
-/** Truncate to at most `maxBytes` UTF-8 bytes without splitting a
- * codepoint — the JS equivalent of adapter.rs's `cap_bytes`, used only
- * for opaque identifiers (never display text). */
+/** Cap opaque identifiers by UTF-8 bytes without splitting codepoints. */
 function capBytes(s: string, maxBytes: number): string {
   const encoder = new TextEncoder();
   if (encoder.encode(s).length <= maxBytes) return s;
@@ -238,10 +143,7 @@ function sanitizeDetails(details: WireDetail[]): WireDetail[] | undefined {
   return cleaned.length === 0 ? undefined : cleaned;
 }
 
-/** Only a path's final segment, never the full path — used for
- * tool-argument file paths so a project layout / home directory never
- * leaks (spec §3.2: "a safe tool name, a basename, and a short human
- * summary", never raw tool input). */
+/** Return only the final segment so local filesystem paths never leak. */
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter((p) => p.length > 0);
   return parts.length > 0 ? parts[parts.length - 1] : path;
@@ -251,23 +153,14 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-// ---------------------------------------------------------------------
-// Pure mapping: OpenCode bus event -> AgentWireEvent | null
-// ---------------------------------------------------------------------
-
 export interface EventContext {
-  /** Unique per event — the binding layer uses `crypto.randomUUID()`;
-   * tests inject a deterministic id. */
   eventId: string;
   occurredAtMs: number;
   sequence?: number;
 }
 
 export interface BusEvent {
-  /** OpenCode's documented `event.type` discriminated union. The
-   * `string & Record<never, never>` widening keeps this an open union
-   * (forward-compatible with event types this adapter doesn't know
-   * about yet) while still giving autocomplete on the known values. */
+  /** Keep the documented event union open for forward compatibility. */
   type: BusEventType | (string & Record<never, never>);
   properties?: UnparsedObject;
 }
@@ -308,10 +201,7 @@ function baseEvent(
   return event;
 }
 
-/** Reads a session id out of an undocumented `event.properties` shape.
- * Providers vary in whether the id sits at the top level or nested
- * under `info`/`session` — this checks the plausible spots and returns
- * `undefined` (never a guess) if none hold a non-empty string. */
+/** Accept known ID locations in the undocumented payload; never invent one. */
 function extractSessionId(properties: UnparsedObject | undefined): string | undefined {
   if (!properties) return undefined;
   const direct = properties.sessionID ?? properties.sessionId;
@@ -333,10 +223,7 @@ function extractProjectName(properties: UnparsedObject | undefined): string | un
   return isNonEmptyString(title) ? sanitizeNameOrLabel(title) : undefined;
 }
 
-/** `cwd` is genuinely a local filesystem path, unlike `name` — spec
- * §3.1 keeps them as separate `WireProject` fields with separate caps
- * (120 scalars for `name`, 1,024 for `cwd`), so this uses
- * `sanitizeValue` rather than `sanitizeNameOrLabel`. */
+/** `cwd` uses the path-value cap, not the shorter display-name cap. */
 function extractProjectCwd(properties: UnparsedObject | undefined): string | undefined {
   if (!properties) return undefined;
   // SAFETY: validated as record via preceding checks.
@@ -395,9 +282,7 @@ function mapSessionCreated(event: BusEvent, ctx: EventContext): AgentWireEvent |
 function mapSessionUpdated(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
-  // Undocumented payload — never infer a terminal/waiting state from it
-  // (spec: "wording is never parsed to infer state"). session.idle and
-  // session.error are the dedicated terminal signals.
+  // Never infer state from the undocumented update payload.
   const wire = baseEvent(event.type, sessionId, "informational", "working", false, ctx);
   wire.summary = sanitizeSummary("Session updated");
   const project = extractProject(event.properties);
@@ -405,9 +290,7 @@ function mapSessionUpdated(event: BusEvent, ctx: EventContext): AgentWireEvent |
   return wire;
 }
 
-/** `session.status`'s status vocabulary is undocumented (see file
- * header). Only the one explicit, unambiguous token is acted on; any
- * other value is dropped rather than guessed at. */
+/** Accept only explicit input-required tokens; drop undocumented statuses. */
 function mapSessionStatus(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
@@ -420,10 +303,7 @@ function mapSessionStatus(event: BusEvent, ctx: EventContext): AgentWireEvent | 
   return wire;
 }
 
-/** `session.idle` fires once per turn while the agent awaits the user.
- * The registry resolves it into
- * `WaitingForInput` rather than a terminal state. Only `session.deleted`
- * (`mapSessionDeleted`) is the explicit session-end signal. */
+/** `session.idle` is per-turn; only `session.deleted` ends the session. */
 function mapSessionIdle(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
@@ -436,11 +316,7 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
   const wire = baseEvent(event.type, sessionId, "failed", "failed", true, ctx);
-  // Deliberately a fixed, generic summary — an undocumented `error`
-  // payload could be a stack trace or otherwise contain sensitive
-  // command/prompt content. Only a
-  // short, safe error *name*/*code* (never a message) is allowed
-  // through as a detail.
+  // Never expose the undocumented error message; only a bounded name is safe.
   wire.summary = sanitizeSummary("Session failed");
   // SAFETY: validated as record via preceding checks.
   const error = event.properties?.error as UnparsedObject | undefined;
@@ -451,8 +327,6 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   return wire;
 }
 
-/** `session.deleted` is OpenCode's explicit terminal completion signal.
- * It emits the same completion card as the other runtimes' `SessionEnd` hook. */
 function mapSessionDeleted(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
@@ -475,20 +349,12 @@ const BUS_EVENT_MAPPERS = new Map<
   ["session.deleted", mapSessionDeleted],
 ]);
 
-/** The single pure entry point for the `event` hook. Returns `null` for
- * any event type this adapter doesn't recognize (including future
- * OpenCode event types) or one whose session id can't be established —
- * the binding layer simply skips delivery in that case. */
 export function mapBusEvent(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   // SAFETY: BusEventType is a closed union of known OpenCode bus event types — the Map lookup is the runtime check, and a miss returns null for future unknown types.
   const mapper = BUS_EVENT_MAPPERS.get(event.type as BusEventType);
   if (!mapper) return null;
   return mapper(event, ctx);
 }
-
-// ---------------------------------------------------------------------
-// Pure mapping: tool.execute.before / tool.execute.after
-// ---------------------------------------------------------------------
 
 export interface ToolExecuteInput {
   tool?: unknown;
@@ -508,11 +374,7 @@ export interface ToolExecuteAfterOutput {
   metadata?: unknown;
 }
 
-/** Never forwards `output.args` verbatim (a shell command, a full file
- * write payload, ...) — only the tool name plus, when an argument looks
- * like a file path, its basename. This is the "safe tool name, a
- * basename, and a short human summary" allowance from spec §3.2, not a
- * general args passthrough. */
+/** Never forward raw tool arguments; retain only the tool name and path basename. */
 function safeToolDetail(toolName: string, args: UnparsedObject | undefined): WireDetail[] {
   const details: WireDetail[] = [{ label: "Tool", value: toolName }];
   const filePath = args?.filePath ?? args?.path;
@@ -552,14 +414,7 @@ export function mapToolExecuteAfter(
       : undefined;
   const toolName = input.tool;
   if (!sessionId || !isNonEmptyString(toolName)) return null;
-  // No documented success/failure flag on `output` at this hook — see
-  // file header "Known gaps". Always informational/working, never
-  // `failed`, so this adapter never manufactures a failure signal it
-  // can't actually observe. `output.title` (when present and a plain
-  // string) is the one field of `output` this adapter forwards — a
-  // short display title, never `output.output` (raw tool output) or
-  // `output.metadata` (may carry provider-internal, potentially
-  // sensitive data).
+  // No failure flag exists here; never infer one or forward raw output/metadata.
   const wire = baseEvent("tool.execute.after", sessionId, "informational", "working", false, ctx);
   wire.summary = sanitizeSummary(`Finished ${toolName}`);
   const details: WireDetail[] = [{ label: "Tool", value: toolName }];
@@ -570,26 +425,14 @@ export function mapToolExecuteAfter(
   return wire;
 }
 
-// ---------------------------------------------------------------------
-// Delivery (mirrors the Rust `notchtap-agent hook` helper, spec §4.1)
-// ---------------------------------------------------------------------
-
 export interface DeliverOptions {
-  /** Defaults to `NOTCHTAP_PORT` env var, falling back to
-   * `DEFAULT_PORT` — same override contract as the Rust helper. */
   port?: number;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
-  /** Bounded diagnostic sink — the Rust helper writes to notchtap's
-   * adapter log, never stdout; this defaults to a no-op so a plugin
-   * host with no logging story stays silent by default. Never throws,
-   * never rejects the caller. */
+  /** Optional bounded diagnostic sink; delivery never throws or rejects. */
   onDiagnostic?: (message: string) => void;
 }
 
-/** Reads `NOTCHTAP_PORT` if present and a valid positive integer,
- * otherwise `DEFAULT_PORT` — mirrors adapter.rs/http.rs's own port
- * resolution. Guards `process` being undefined (non-Node hosts). */
 export function resolvePort(
   // SAFETY: globalThis may not have process in non-Node hosts — the cast only narrows the optional env access, the optional chain handles absence.
   env: Record<string, string | undefined> | undefined = (
@@ -602,13 +445,7 @@ export function resolvePort(
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULT_PORT;
 }
 
-/** POSTs one normalized event to the loopback endpoint. Fail-open by
- * construction: every failure path (network error, timeout, non-2xx
- * response, thrown exception) is caught here and reported only through
- * `onDiagnostic` — this function's returned promise NEVER rejects, so a
- * caller can safely fire-and-forget it from inside an OpenCode hook
- * without risking the session. Bounded by `timeoutMs` (default 750ms,
- * spec §4.1) via `AbortController`, never leaving a hanging request. */
+/** Fail-open delivery: catch every failure and bound requests with `timeoutMs`. */
 export async function deliverAgentEvent(
   event: AgentWireEvent,
   opts: DeliverOptions = {},
@@ -637,10 +474,6 @@ export async function deliverAgentEvent(
   }
 }
 
-// ---------------------------------------------------------------------
-// Binding layer — the only OpenCode-shaped part of this file
-// ---------------------------------------------------------------------
-
 function freshContext(sequence: { current: number }): EventContext {
   sequence.current += 1;
   return {
@@ -650,13 +483,7 @@ function freshContext(sequence: { current: number }): EventContext {
   };
 }
 
-/** The plugin export. Structurally matches OpenCode's documented
- * `Plugin` shape (`async (ctx) => Hooks`) without importing
- * `@opencode-ai/plugin` — this repo doesn't depend on OpenCode, and the
- * shape is small enough to satisfy structurally. A real install may add
- * `import type { Plugin } from "@opencode-ai/plugin"` and annotate this
- * export with it for editor support; that's optional, not required for
- * OpenCode to load the plugin. */
+/** Structurally matches OpenCode's plugin shape without adding its package as a dependency. */
 export const NotchtapPlugin = async () => {
   const sequence = { current: 0 };
 

@@ -12,10 +12,6 @@ export function AppearanceSection({
 }: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
-  // Owned by SettingsApp, not this component: this section may be unmounted
-  // while another section is open — but Reset/Reset to defaults are footer
-  // buttons, clickable from any section. So the function lives one level up,
-  // and its status renders in the footer (always visible), not here.
   applyAppearanceLive: (scale: number, radius: number, opacity: number) => void;
 }) {
   const { card_scale: scale, card_radius: radius, card_opacity: opacity } = config.appearance;
@@ -96,13 +92,6 @@ export function AppearanceSection({
           {PREVIEW_SAMPLES.map(({ label, slot }) => (
             <div className="preview-row" key={slot.id}>
               <div className="preview-label">{label}</div>
-              {/* `.card-root` scopes the shared card-shape stylesheet
-                  (overlay-card.css) — each sample gets its OWN scope (one
-                  wrapper per card), and `.preview-stage` is already the
-                  per-sample frame box, so the scope class composes onto it
-                  rather than adding a nested element. `.appearance-preview`
-                  itself stays frame chrome only (settings.css) — never the
-                  scope host. */}
               <div className="preview-stage card-root">
                 <StatusRailCard slot={slot} />
               </div>

@@ -2,12 +2,7 @@
   --card-scale: 1;
   --card-radius: 8px;
   --card-opacity: 1;
-  /* `--ease-notchtap` resolves only inside tokens.css's `@theme inline`
-     block, which Tailwind expands only for CSS reached via an
-     `@import "tailwindcss"` root — the overlay entry never has one, so
-     redeclare the plain value here (defense-in-depth, same convention as
-     `--ease-notchtap-pop`). Value must stay the exact twin of tokens.css
-     and lib/constants.ts's `NOTCHTAP_EASE` — keep all three in sync. */
+  /* Keep this value in lockstep with notchtap-tokens.css and NOTCHTAP_EASE. */
   --ease-notchtap: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }
@@ -27,14 +22,7 @@ body {
   user-select: none;
 }
 
-/* Overlay-only residue: the shared card shape lives in
-   `../src/overlay-card.css`, imported ahead of this file so these rules
-   still win any specificity tie by source order. Left here: the
-   window-level reset and this wrapper. `App.tsx` needed a NEW ancestor
-   around `<StatusRailCard>` to host `.card-root`; `display: contents`
-   makes it a layout-neutral scoping node (matches but contributes no
-   box). The settings preview's scope host (`.preview-stage`) is a REAL
-   layout box — this override must stay overlay-only. */
+/* Overlay scope stays layout-neutral; the settings preview uses a real box. */
 .card-root {
   display: contents;
 }

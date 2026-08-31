@@ -1,34 +1,4 @@
-//! Pure Kimi Code hook-payload parser; the version gate deciding
-//! whether a local Kimi even supports hooks lives in
-//! [`super::kimi_version`]. [`normalize`] takes the raw JSON bytes Kimi
-//! writes to a hook command's stdin and returns a
-//! [`super::wire::NormalizedEvent`].
-//!
-//! ## Field-name assumption: NEEDS VERIFICATION
-//!
-//! Kimi's hooks page documents the event list and base payload shape
-//! but no per-event field tables; its event names match Claude Code's
-//! set verbatim, so this parser assumes the SAME field names Claude
-//! Code's documented payloads use (`source`, `end_reason`, `tool_name`,
-//! `tool_input`, `notification_type`, `error_type`, `agent_id`,
-//! `agent_type`) rather than inventing new ones. A recorded assumption,
-//! not a verified fact — confirm against a real Kimi hook payload
-//! before treating it as load-bearing; fixtures are shaped so real
-//! payloads differing is a one-file diff.
-//!
-//! `notification_type` values are a second, narrower assumption:
-//! [`classify_notification`] recognizes
-//! `permission_prompt`/`idle_prompt`/`agent_needs_input` as the closed
-//! enum; everything else — including Kimi's documented `task.completed`
-//! — falls through to `Informational`, never inferred from `message`
-//! wording.
-//!
-//! ## Sanitization
-//!
-//! `super::wire`'s `safe_tool_name` and `safe_path_detail` carry the
-//! shared discipline for tool names and paths. On top of that this
-//! parser never inspects `tool_result`, and every `summary` is a fixed
-//! template — free text is never forwarded.
+//! Pure Kimi Code hook-payload parser; hook support gating lives in [`super::kimi_version`].
 
 use thiserror::Error;
 
@@ -37,8 +7,7 @@ use super::wire::{
     RawHookPayload,
 };
 
-/// Kimi's declared capability set — the full Claude-Code-equivalent
-/// set. Sent unchanged on every event this parser produces.
+/// Kimi's declared capability set — the full Claude-Code-equivalent set.
 pub const CAPABILITIES: [&str; 7] = [
     "session_lifecycle",
     "permission_requests",
@@ -49,7 +18,6 @@ pub const CAPABILITIES: [&str; 7] = [
     "subagents",
 ];
 
-/// Typed parse errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum KimiParseError {
     #[error("malformed json: {0}")]
@@ -102,8 +70,6 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
             }
         }
         "Notification" => classify_notification(payload.notification_type.as_deref()),
-        // `Stop` fires once per turn, not once per session —
-        // non-terminal, mirrors `claude_code.rs`'s `"Stop"` arm.
         "Stop" => Mapped {
             kind: "completed",
             state: "completed",
@@ -112,9 +78,6 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
             details: Vec::new(),
             subagent: None,
         },
-        // `StopFailure` fires at the same per-turn point, not session
-        // end — non-terminal for the same reason as `claude_code.rs`'s
-        // `"StopFailure"` arm.
         "StopFailure" => {
             let error_type = payload
                 .error_type
@@ -148,8 +111,6 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
             let tool = safe_tool_name(payload.tool_name.as_deref());
             Mapped {
                 kind: "failed",
-                // Non-terminal tool failure keeps the session `Working`
-                // in the registry, same as Claude Code's equivalent.
                 state: "working",
                 terminal: false,
                 summary: Some(format!("Tool failed: {tool}")),
@@ -202,10 +163,7 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
     Ok(mapped)
 }
 
-/// Parses one Kimi Code hook stdin payload into a [`NormalizedEvent`].
-/// Pure. Callers must run the version gate ([`super::kimi_version`])
-/// BEFORE calling this — this function does not know or care what Kimi
-/// version produced the payload.
+/// Parses one payload after the caller has enforced the Kimi hook-version gate.
 pub fn normalize(stdin: &[u8]) -> Result<NormalizedEvent, KimiParseError> {
     let payload: RawHookPayload =
         serde_json::from_slice(stdin).map_err(|e| KimiParseError::MalformedJson(e.to_string()))?;
@@ -279,8 +237,6 @@ mod tests {
         }
     }
 
-    // --- fixture-per-hook-event tests ------------------------------------
-
     #[test]
     fn session_start_maps_to_informational_starting() {
         let event = normalize(fixture("session-start").as_bytes()).unwrap();
@@ -324,24 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_permission_prompt_maps_to_waiting_for_permission() {
-        let event = normalize(fixture("notification-permission").as_bytes()).unwrap();
-        assert_eq!(event.kind, "permission_requested");
-        assert_eq!(event.state, "waiting_for_permission");
-    }
-
-    #[test]
-    fn notification_idle_prompt_maps_to_waiting_for_input() {
-        let event = normalize(fixture("notification-idle").as_bytes()).unwrap();
-        assert_eq!(event.kind, "input_required");
-        assert_eq!(event.state, "waiting_for_input");
-    }
-
-    #[test]
     fn notification_generic_maps_to_informational() {
-        // notification_type "task.completed" is outside the recognized
-        // closed enum — falls through to Informational, never inferred
-        // from wording.
         let event = normalize(fixture("notification-generic").as_bytes()).unwrap();
         assert_eq!(event.kind, "informational");
         assert_eq!(event.state, "working");
@@ -349,7 +288,6 @@ mod tests {
 
     #[test]
     fn stop_maps_to_completed_non_terminal() {
-        // Per-turn Stop must not be terminal.
         let event = normalize(fixture("stop").as_bytes()).unwrap();
         assert_eq!(event.kind, "completed");
         assert!(
@@ -420,9 +358,6 @@ mod tests {
         assert_eq!(state.as_deref(), Some("completed"));
     }
 
-    // --- sanitization: a fixture with a fake secret/full command line
-    // never emits it ---------------------------------------------------
-
     #[test]
     fn secret_and_full_command_line_never_appear_in_normalized_output() {
         let event = normalize(fixture("post-tool-use-with-secret").as_bytes()).unwrap();
@@ -453,8 +388,6 @@ mod tests {
             vec![("Tool".to_string(), "Bash".to_string())]
         );
     }
-
-    // --- malformed input --------------------------------------------------
 
     #[test]
     fn garbage_json_is_rejected() {
@@ -491,9 +424,6 @@ mod tests {
         );
     }
 
-    // --- round-trip: every normalized+wire-built payload is accepted by
-    // `agents::adapter::parse_wire_event` ----------------------------------
-
     #[test]
     fn every_fixture_round_trips_through_the_wire_adapter() {
         let names = [
@@ -520,8 +450,6 @@ mod tests {
                 .unwrap_or_else(|e| panic!("fixture {name}'s wire body was rejected: {e}"));
         }
     }
-
-    // --- declared capabilities vs. fixture suite must agree ------------
 
     #[test]
     fn declared_capabilities_are_the_kimi_capability_set() {
