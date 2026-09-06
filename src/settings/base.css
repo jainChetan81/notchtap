@@ -2,7 +2,6 @@
 @layer base, theme, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
-@import "@chetanjain/shared-ui/design/tokens.css";
 @import "../notchtap-tokens.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";

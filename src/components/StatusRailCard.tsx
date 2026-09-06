@@ -340,11 +340,7 @@ export function StatusRailCard({
       </div>
       <div className="synthetic-cutout" aria-hidden="true" />
 
-      {idleFaceEligible && (
-        <div className="rest-cluster" aria-hidden="true">
-          <IdleFace idle={trueIdle} />
-        </div>
-      )}
+      {idleFaceEligible && <IdleFace idle={trueIdle} />}
       <div className="flank-right">
         {railRevealed && !exitToBare && !renderedShowing && (
           <IconStrip

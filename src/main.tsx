@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { applyAnimationTiming } from "./applyAnimationTiming";
 // Import order is load-bearing: tokens, shared card CSS, then overlay overrides.
-import "@chetanjain/shared-ui/design/tokens.css";
 import "./notchtap-tokens.css";
 import "./overlay-card.css";
 import "./styles.css";

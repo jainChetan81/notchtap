@@ -31,7 +31,6 @@ notchtap-detect/.build
 .claude/worktrees/
 .mcp.json
 opencode.json
-opencode.json.bak*
 .opencode/
 
 # Cross-tool skill discovery. The one tracked path here is the

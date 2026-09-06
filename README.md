@@ -59,6 +59,65 @@ one key within 2 seconds:
 | `p` | pause/resume |
 | `esc` or the prefix again | disarm, no side effect |
 
+## architecture
+
+one rust core owns everything — the loopback HTTP listener, the
+single-slot priority queue, the Agent Registry, window positioning —
+and the webview renders only what rust publishes. the overlay window is
+receive-only (it listens, never invokes); the settings window is the
+one invoke surface, gated by a build-time command allowlist.
+
+```mermaid
+flowchart TB
+    subgraph inputs["input sources"]
+        CLI["notchtap CLI<br/>(shell script: jq + curl)"]
+        ADAPT["Agent Adapters<br/>(Claude Code · Codex · Kimi: notchtap-agent binary<br/>OpenCode: TS plugin)"]
+        POLL["internal pollers<br/>(ESPN football · RSS news)"]
+        TEST["settings test events<br/>(same paths as /notify · /agent/events)"]
+    end
+
+    subgraph core["rust core (src-tauri/)"]
+        HTTP["loopback HTTP listener<br/>127.0.0.1:9789<br/>POST /notify · POST /agent/events"]
+        VALID["validation + idempotency<br/>(eventId/sequence LRU, caps, sanitization)"]
+        ENGINE["Engine (engine.rs)<br/>typed event bus · single-slot priority queue<br/>promotion · rotation · preemption · Topic supersession"]
+        SILENCE["silence.rs<br/>Paused (absolute) · Silenced (High = Breakthrough)"]
+        REGISTRY["Agent Registry (agents/registry.rs)<br/>live + retained sessions"]
+        POLLERS["poller.rs · rss_poller.rs<br/>crests.rs · news_charge.rs"]
+        TRAY["tray.rs · prefix.rs · global hotkeys"]
+        CONFIG["config.rs<br/>~/.config/notchtap/config.toml<br/>(read once, restart = reload)"]
+    end
+
+    subgraph detect["runtime presentation-mode decision"]
+        SHIM["notchtap-detect (Swift CLI)<br/>prints safe-area JSON"]
+        DECIDE["presentation_mode(safe_area_top)<br/>Notch | HUD"]
+    end
+
+    subgraph ui["presentation ui (react/ts webview)"]
+        OVERLAY["overlay window 'main' (index.html → App.tsx)<br/>receive-only · listen/unlisten only<br/>Notch mode (macbook) | HUD mode (mac mini)"]
+        SETTINGS["settings window (settings.html → src/settings/)<br/>the only window allowed to invoke"]
+        AGENTBOARD["Agent Board (idle surface,<br/>reads from rust-published registry state)"]
+    end
+
+    CLI -->|"flags-only HTTP"| HTTP
+    ADAPT -->|"normalized schema v1, fail-open"| HTTP
+    POLL -->|"deltas only"| POLLERS --> ENGINE
+    TEST --> HTTP
+    HTTP --> VALID --> ENGINE
+    ENGINE <--> SILENCE
+    ENGINE -->|"noteworthy agent events"| OVERLAY
+    REGISTRY -->|"session lifecycle events"| AGENTBOARD
+    SETTINGS -->|"tauri commands (allowlisted)"| CONFIG
+    SETTINGS -->|"test events"| HTTP
+    SHIM --> DECIDE -->|"window placement"| OVERLAY
+    ENGINE -->|"emit SlotState"| OVERLAY
+```
+
+more diagrams — the queue model, the ipc trust boundaries, agent
+integration, and the frontend composition — live in
+[`docs/diagrams/architecture.md`](docs/diagrams/architecture.md)
+(mermaid source; previews in VS Code/Zed with a mermaid extension and
+on GitHub).
+
 ## tech stack
 
 - **core**: Rust (Tauri) — HTTP listener, event bus, notification queue
@@ -107,7 +166,7 @@ command — `brew install just` first.
 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, the hardware checklist |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | domain glossary: the product's terms, one definition each |
 | [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint |
-| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance (`AGENTS.md` and `CONTEXT.md` are symlinks to it) |
+| [`AGENTS.md`](AGENTS.md) | canonical repository guidance |
 
 ## scope
 

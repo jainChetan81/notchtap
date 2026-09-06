@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
-    "@chetanjain/shared-ui": "file:vendor/shared-ui",
     "@oxlint/plugins": "^1.78.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2",
