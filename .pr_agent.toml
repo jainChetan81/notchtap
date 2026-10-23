@@ -1,7 +1,3 @@
-[config]
-fallback_models = ["openrouter/anthropic/claude-haiku-4.5"]
-reasoning_effort = "none"
-
 [pr_reviewer]
 persistent_comment = true
 require_ticket_analysis_review = true
